@@ -1,0 +1,8 @@
+{
+	"servers": {
+		"contextCore": {
+			"type": "sse",
+			"url": "http://localhost:3210/mcp/sse"
+		}
+	}
+}

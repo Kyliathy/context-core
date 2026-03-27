@@ -1,0 +1,42 @@
+{
+	"name": "context-core",
+	"version": "0.7.0",
+	"description": "Summarize AI chatbot conversation histories from various IDEs into one place",
+	"type": "module",
+	"scripts": {
+		"dev": "bun --watch src/ContextCore.ts",
+		"start": "bun run src/ContextCore.ts",
+		"start-himem": "BUN_JSC_forceRAMSize=17179869184 bun run src/ContextCore.ts",
+		"mcp": "bun run src/mcp/serve.ts",
+		"setup": "bun run src/setup.ts",
+		"test": "bun test ./src/mcp/tests/*.test.ts ./src/mcp/tests/test_*.ts",
+		"typecheck": "tsc --noEmit",
+		"build:viz": "cd visualizer && npm run build"
+	},
+	"devDependencies": {
+		"@types/bun": "latest",
+		"@types/cors": "^2.8.19",
+		"@types/express": "^5.0.6",
+		"@types/luxon": "^3.7.1",
+		"@types/uuid": "^11.0.0",
+		"typescript": "^5.7.2"
+	},
+	"dependencies": {
+		"@ai-sdk/openai": "^3.0.41",
+		"@langchain/textsplitters": "^1.0.1",
+		"@modelcontextprotocol/sdk": "^1.27.1",
+		"@qdrant/js-client-rest": "^1.17.0",
+		"ai": "^6.0.116",
+		"chalk": "^5.6.2",
+		"cors": "^2.8.6",
+		"express": "^5.2.1",
+		"fuse.js": "^7.1.0",
+		"keytar": "^7.9.0",
+		"luxon": "^3.7.2",
+		"protobufjs": "^8.0.0",
+		"uuid": "^13.0.0",
+		"win-dpapi": "^1.1.0",
+		"wink-eng-lite-web-model": "^1.8.1",
+		"wink-nlp": "^2.4.0"
+	}
+}

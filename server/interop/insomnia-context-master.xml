@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions name="ContextMaster" targetNamespace="http://context-core.local/wsdl"
+	xmlns="http://schemas.xmlsoap.org/wsdl/" xmlns:tns="http://context-core.local/wsdl"
+	xmlns:http="http://schemas.xmlsoap.org/wsdl/http/"
+	xmlns:mime="http://schemas.xmlsoap.org/wsdl/mime/" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+
+	<types>
+		<schema xmlns="http://www.w3.org/2001/XMLSchema" targetNamespace="http://context-core.local/wsdl" elementFormDefault="qualified">
+			<element name="GetMessages" type="string" />
+			<element name="GetMessageById" type="string" />
+			<element name="GetSessions" type="string" />
+			<element name="GetSessionById" type="string" />
+			<element name="SearchMessages" type="string" />
+		</schema>
+	</types>
+
+	<message name="GetMessagesRequest">
+		<part name="role" type="xsd:string" />
+		<part name="harness" type="xsd:string" />
+		<part name="model" type="xsd:string" />
+		<part name="project" type="xsd:string" />
+		<part name="subject" type="xsd:string" />
+		<part name="from" type="xsd:string" />
+		<part name="to" type="xsd:string" />
+		<part name="page" type="xsd:string" />
+		<part name="pageSize" type="xsd:string" />
+	</message>
+	<message name="GetMessagesResponse">
+		<part name="Body" type="xsd:string" />
+	</message>
+
+	<message name="GetMessageByIdRequest">
+		<part name="id" type="xsd:string" />
+	</message>
+	<message name="GetMessageByIdResponse">
+		<part name="Body" type="xsd:string" />
+	</message>
+
+	<message name="GetSessionsRequest">
+		<part name="empty" type="xsd:string" />
+	</message>
+	<message name="GetSessionsResponse">
+		<part name="Body" type="xsd:string" />
+	</message>
+
+	<message name="GetSessionByIdRequest">
+		<part name="sessionId" type="xsd:string" />
+	</message>
+	<message name="GetSessionByIdResponse">
+		<part name="Body" type="xsd:string" />
+	</message>
+
+	<message name="SearchMessagesRequest">
+		<part name="q" type="xsd:string" />
+	</message>
+	<message name="SearchMessagesResponse">
+		<part name="Body" type="xsd:string" />
+	</message>
+
+	<portType name="ContextMasterPortType">
+		<operation name="GetMessages">
+			<documentation>GET /api/messages with optional filters and pagination.</documentation>
+			<input message="tns:GetMessagesRequest" />
+			<output message="tns:GetMessagesResponse" />
+		</operation>
+		<operation name="GetMessageById">
+			<documentation>GET /api/messages/:id for one normalized AgentMessage.</documentation>
+			<input message="tns:GetMessageByIdRequest" />
+			<output message="tns:GetMessageByIdResponse" />
+		</operation>
+		<operation name="GetSessions">
+			<documentation>GET /api/sessions for session summaries.</documentation>
+			<input message="tns:GetSessionsRequest" />
+			<output message="tns:GetSessionsResponse" />
+		</operation>
+		<operation name="GetSessionById">
+			<documentation>GET /api/sessions/:sessionId for session messages.</documentation>
+			<input message="tns:GetSessionByIdRequest" />
+			<output message="tns:GetSessionByIdResponse" />
+		</operation>
+		<operation name="SearchMessages">
+			<documentation>GET /api/search?q=... for fuzzy matches.</documentation>
+			<input message="tns:SearchMessagesRequest" />
+			<output message="tns:SearchMessagesResponse" />
+		</operation>
+	</portType>
+
+	<binding name="ContextMasterHttpBinding" type="tns:ContextMasterPortType">
+		<http:binding verb="GET" />
+
+		<operation name="GetMessages">
+			<http:operation location="/api/messages" />
+			<input>
+				<http:urlEncoded />
+			</input>
+			<output>
+				<mime:content part="Body" type="application/json" />
+			</output>
+		</operation>
+
+		<operation name="GetMessageById">
+			<http:operation location="/api/messages/(id)" />
+			<input>
+				<http:urlReplacement />
+			</input>
+			<output>
+				<mime:content part="Body" type="application/json" />
+			</output>
+		</operation>
+
+		<operation name="GetSessions">
+			<http:operation location="/api/sessions" />
+			<input>
+				<http:urlEncoded />
+			</input>
+			<output>
+				<mime:content part="Body" type="application/json" />
+			</output>
+		</operation>
+
+		<operation name="GetSessionById">
+			<http:operation location="/api/sessions/(sessionId)" />
+			<input>
+				<http:urlReplacement />
+			</input>
+			<output>
+				<mime:content part="Body" type="application/json" />
+			</output>
+		</operation>
+
+		<operation name="SearchMessages">
+			<http:operation location="/api/search" />
+			<input>
+				<http:urlEncoded />
+			</input>
+			<output>
+				<mime:content part="Body" type="application/json" />
+			</output>
+		</operation>
+	</binding>
+
+	<service name="ContextMasterService">
+		<documentation>Import in Insomnia, then set host to your running API endpoint.</documentation>
+		<port name="ContextMasterHttpPort" binding="tns:ContextMasterHttpBinding">
+			<http:address location="http://localhost:3210" />
+		</port>
+	</service>
+</definitions>

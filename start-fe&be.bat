@@ -1,0 +1,1 @@
+cd server & start.bat & cd.. & cd visualizer & start.bat

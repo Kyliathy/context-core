@@ -1,0 +1,735 @@
+{
+	"_type": "export",
+	"__export_format": 4,
+	"__export_date": "2026-03-21T10:00:00.000Z",
+	"__export_source": "contextcore:interop",
+	"resources": [
+		{
+			"_id": "wrk_context_core",
+			"_type": "workspace",
+			"name": "ContextCore",
+			"description": "Insomnia collection for ContextCore API"
+		},
+		{
+			"_id": "env_context_core_base",
+			"_type": "environment",
+			"parentId": "wrk_context_core",
+			"name": "Base Environment",
+			"data": {
+				"base_url": "http://localhost:3210",
+				"message_id": "replace-with-message-id",
+				"session_id": "replace-with-session-id",
+				"search_q": "refactor",
+				"search_symbols": "parseSearchQuery",
+				"search_subject": "refactor auth",
+				"from_date": "2026-03-01",
+				"threads_limit": "100",
+				"custom_topic": "My custom name",
+				"project_harness": "Cursor",
+				"project_name": "NexusPlatform",
+				"scope_id": "scope-1",
+				"scope_name": "Core Scope",
+				"scope_emoji": "*",
+				"scope_color": "#3366cc",
+				"agent_source_name": "Context Core Front",
+				"agent_name": "context-core-helper",
+				"agent_description": "Assist with context-core tasks.",
+				"agent_argument_hint": "what to optimize",
+				"agent_platform": "github",
+				"agent_path": "C:\\\\replace\\\\with\\\\agent.agent.md",
+				"file_path": "C:\\\\replace\\\\with\\\\file.ts",
+				"template_name": "context-core-template",
+				"template_description": "Template for context-core tasks",
+				"template_argument_hint": "task brief"
+			}
+		},
+		{
+			"_id": "fld_context_core_api",
+			"_type": "request_group",
+			"parentId": "wrk_context_core",
+			"name": "API",
+			"description": "Core REST API endpoints.",
+			"environment": {}
+		},
+		{
+			"_id": "req_list_sessions",
+			"_type": "request",
+			"parentId": "fld_context_core_api",
+			"name": "GET /api/sessions",
+			"method": "GET",
+			"url": "{{ base_url }}/api/sessions",
+			"description": "List session summaries.",
+			"body": {},
+			"parameters": [],
+			"headers": [
+				{
+					"name": "Accept",
+					"value": "application/json"
+				}
+			],
+			"authentication": {}
+		},
+		{
+			"_id": "req_get_session_by_id",
+			"_type": "request",
+			"parentId": "fld_context_core_api",
+			"name": "GET /api/sessions/:sessionId",
+			"method": "GET",
+			"url": "{{ base_url }}/api/sessions/{{ session_id }}",
+			"description": "Get all messages in one session.",
+			"body": {},
+			"parameters": [],
+			"headers": [
+				{
+					"name": "Accept",
+					"value": "application/json"
+				}
+			],
+			"authentication": {}
+		},
+		{
+			"_id": "req_list_messages",
+			"_type": "request",
+			"parentId": "fld_context_core_api",
+			"name": "GET /api/messages",
+			"method": "GET",
+			"url": "{{ base_url }}/api/messages",
+			"description": "Query messages with optional filters and pagination.",
+			"body": {},
+			"parameters": [
+				{
+					"name": "role",
+					"value": "assistant"
+				},
+				{
+					"name": "harness",
+					"value": "Cursor"
+				},
+				{
+					"name": "model",
+					"value": ""
+				},
+				{
+					"name": "project",
+					"value": "{{ project_name }}"
+				},
+				{
+					"name": "subject",
+					"value": ""
+				},
+				{
+					"name": "from",
+					"value": ""
+				},
+				{
+					"name": "to",
+					"value": ""
+				},
+				{
+					"name": "page",
+					"value": "1"
+				},
+				{
+					"name": "pageSize",
+					"value": "50"
+				}
+			],
+			"headers": [
+				{
+					"name": "Accept",
+					"value": "application/json"
+				}
+			],
+			"authentication": {}
+		},
+		{
+			"_id": "req_get_message_by_id",
+			"_type": "request",
+			"parentId": "fld_context_core_api",
+			"name": "GET /api/messages/:id",
+			"method": "GET",
+			"url": "{{ base_url }}/api/messages/{{ message_id }}",
+			"description": "Get one message by ID.",
+			"body": {},
+			"parameters": [],
+			"headers": [
+				{
+					"name": "Accept",
+					"value": "application/json"
+				}
+			],
+			"authentication": {}
+		},
+		{
+			"_id": "req_get_projects",
+			"_type": "request",
+			"parentId": "fld_context_core_api",
+			"name": "GET /api/projects",
+			"method": "GET",
+			"url": "{{ base_url }}/api/projects",
+			"description": "List known projects grouped by harness.",
+			"body": {},
+			"parameters": [],
+			"headers": [
+				{
+					"name": "Accept",
+					"value": "application/json"
+				}
+			],
+			"authentication": {}
+		},
+		{
+			"_id": "req_latest_threads",
+			"_type": "request",
+			"parentId": "fld_context_core_api",
+			"name": "GET /api/threads/latest",
+			"method": "GET",
+			"url": "{{ base_url }}/api/threads/latest",
+			"description": "Get latest threads by most recent activity.",
+			"body": {},
+			"parameters": [
+				{
+					"name": "limit",
+					"value": "{{ threads_limit }}"
+				}
+			],
+			"headers": [
+				{
+					"name": "Accept",
+					"value": "application/json"
+				}
+			],
+			"authentication": {}
+		},
+		{
+			"_id": "req_messages_post",
+			"_type": "request",
+			"parentId": "fld_context_core_api",
+			"name": "POST /api/messages",
+			"method": "POST",
+			"url": "{{ base_url }}/api/messages",
+			"description": "Primary message search endpoint. Supports full-text search, field-targeted filters (symbols, subject), date range, project scoping, and paginated browse.",
+			"body": {
+				"mimeType": "application/json",
+				"text": "{\n  \"searchTerms\": \"{{ search_q }}\",\n  \"symbols\": \"{{ search_symbols }}\",\n  \"subject\": \"{{ search_subject }}\",\n  \"fromDate\": \"{{ from_date }}\",\n  \"projects\": [\n    {\n      \"harness\": \"{{ project_harness }}\",\n      \"project\": \"{{ project_name }}\"\n    }\n  ],\n  \"page\": 1,\n  \"pageSize\": 50\n}"
+			},
+			"parameters": [],
+			"headers": [
+				{
+					"name": "Accept",
+					"value": "application/json"
+				},
+				{
+					"name": "Content-Type",
+					"value": "application/json"
+				}
+			],
+			"authentication": {}
+		},
+		{
+			"_id": "req_threads_post",
+			"_type": "request",
+			"parentId": "fld_context_core_api",
+			"name": "POST /api/threads",
+			"method": "POST",
+			"url": "{{ base_url }}/api/threads",
+			"description": "Primary thread search endpoint. Supports full-text search, field-targeted filters (symbols, subject), date range, and project scoping.",
+			"body": {
+				"mimeType": "application/json",
+				"text": "{\n  \"searchTerms\": \"{{ search_q }}\",\n  \"symbols\": \"{{ search_symbols }}\",\n  \"subject\": \"{{ search_subject }}\",\n  \"fromDate\": \"{{ from_date }}\",\n  \"projects\": [\n    {\n      \"harness\": \"{{ project_harness }}\",\n      \"project\": \"{{ project_name }}\"\n    }\n  ]\n}"
+			},
+			"parameters": [],
+			"headers": [
+				{
+					"name": "Accept",
+					"value": "application/json"
+				},
+				{
+					"name": "Content-Type",
+					"value": "application/json"
+				}
+			],
+			"authentication": {}
+		},
+		{
+			"_id": "req_list_topics",
+			"_type": "request",
+			"parentId": "fld_context_core_api",
+			"name": "GET /api/topics",
+			"method": "GET",
+			"url": "{{ base_url }}/api/topics",
+			"description": "List topic entries (AI summaries + custom topics).",
+			"body": {},
+			"parameters": [],
+			"headers": [
+				{
+					"name": "Accept",
+					"value": "application/json"
+				}
+			],
+			"authentication": {}
+		},
+		{
+			"_id": "req_get_topic_by_session_id",
+			"_type": "request",
+			"parentId": "fld_context_core_api",
+			"name": "GET /api/topics/:sessionId",
+			"method": "GET",
+			"url": "{{ base_url }}/api/topics/{{ session_id }}",
+			"description": "Get topic entry for one session.",
+			"body": {},
+			"parameters": [],
+			"headers": [
+				{
+					"name": "Accept",
+					"value": "application/json"
+				}
+			],
+			"authentication": {}
+		},
+		{
+			"_id": "req_set_custom_topic",
+			"_type": "request",
+			"parentId": "fld_context_core_api",
+			"name": "POST /api/topics",
+			"method": "POST",
+			"url": "{{ base_url }}/api/topics",
+			"description": "Set or clear custom topic for one session.",
+			"body": {
+				"mimeType": "application/json",
+				"text": "{\n  \"sessionId\": \"{{ session_id }}\",\n  \"customTopic\": \"{{ custom_topic }}\"\n}"
+			},
+			"parameters": [],
+			"headers": [
+				{
+					"name": "Accept",
+					"value": "application/json"
+				},
+				{
+					"name": "Content-Type",
+					"value": "application/json"
+				}
+			],
+			"authentication": {}
+		},
+		{
+			"_id": "fld_context_core_scopes",
+			"_type": "request_group",
+			"parentId": "wrk_context_core",
+			"name": "Scopes",
+			"description": "Scope persistence endpoints.",
+			"environment": {}
+		},
+		{
+			"_id": "req_list_scopes",
+			"_type": "request",
+			"parentId": "fld_context_core_scopes",
+			"name": "GET /api/list-scopes",
+			"method": "GET",
+			"url": "{{ base_url }}/api/list-scopes",
+			"description": "List persisted scopes.",
+			"body": {},
+			"parameters": [],
+			"headers": [
+				{
+					"name": "Accept",
+					"value": "application/json"
+				}
+			],
+			"authentication": {}
+		},
+		{
+			"_id": "req_save_scopes",
+			"_type": "request",
+			"parentId": "fld_context_core_scopes",
+			"name": "POST /api/scopes",
+			"method": "POST",
+			"url": "{{ base_url }}/api/scopes",
+			"description": "Replace and persist full scope list.",
+			"body": {
+				"mimeType": "application/json",
+				"text": "{\n  \"scopes\": [\n    {\n      \"id\": \"{{ scope_id }}\",\n      \"name\": \"{{ scope_name }}\",\n      \"emoji\": \"{{ scope_emoji }}\",\n      \"color\": \"{{ scope_color }}\",\n      \"projectIds\": [\n        {\n          \"harness\": \"{{ project_harness }}\",\n          \"project\": \"{{ project_name }}\"\n        }\n      ]\n    }\n  ]\n}"
+			},
+			"parameters": [],
+			"headers": [
+				{
+					"name": "Accept",
+					"value": "application/json"
+				},
+				{
+					"name": "Content-Type",
+					"value": "application/json"
+				}
+			],
+			"authentication": {}
+		},
+		{
+			"_id": "fld_context_core_agent_builder",
+			"_type": "request_group",
+			"parentId": "wrk_context_core",
+			"name": "Agent Builder",
+			"description": "Agent builder REST endpoints.",
+			"environment": {}
+		},
+		{
+			"_id": "req_agent_builder_prepare",
+			"_type": "request",
+			"parentId": "fld_context_core_agent_builder",
+			"name": "POST /api/agent-builder/prepare",
+			"method": "POST",
+			"url": "{{ base_url }}/api/agent-builder/prepare",
+			"description": "Index/list available files. Optional source-name filter.",
+			"body": {
+				"mimeType": "application/json",
+				"text": "{\n  \"name\": \"{{ agent_source_name }}\"\n}"
+			},
+			"parameters": [],
+			"headers": [
+				{
+					"name": "Accept",
+					"value": "application/json"
+				},
+				{
+					"name": "Content-Type",
+					"value": "application/json"
+				}
+			],
+			"authentication": {}
+		},
+		{
+			"_id": "req_agent_builder_create",
+			"_type": "request",
+			"parentId": "fld_context_core_agent_builder",
+			"name": "POST /api/agent-builder/create",
+			"method": "POST",
+			"url": "{{ base_url }}/api/agent-builder/create",
+			"description": "Create a github or claude agent file.",
+			"body": {
+				"mimeType": "application/json",
+				"text": "{\n  \"projectName\": \"{{ agent_source_name }}\",\n  \"agentName\": \"{{ agent_name }}\",\n  \"description\": \"{{ agent_description }}\",\n  \"argument-hint\": \"{{ agent_argument_hint }}\",\n  \"tools\": [\"Read\", \"Write\"],\n  \"agentKnowledge\": [\"server/README.md\"],\n  \"platform\": \"{{ agent_platform }}\"\n}"
+			},
+			"parameters": [],
+			"headers": [
+				{
+					"name": "Accept",
+					"value": "application/json"
+				},
+				{
+					"name": "Content-Type",
+					"value": "application/json"
+				}
+			],
+			"authentication": {}
+		},
+		{
+			"_id": "req_agent_builder_list",
+			"_type": "request",
+			"parentId": "fld_context_core_agent_builder",
+			"name": "GET /api/agent-builder/list",
+			"method": "GET",
+			"url": "{{ base_url }}/api/agent-builder/list",
+			"description": "List indexed agent files.",
+			"body": {},
+			"parameters": [],
+			"headers": [
+				{
+					"name": "Accept",
+					"value": "application/json"
+				}
+			],
+			"authentication": {}
+		},
+		{
+			"_id": "req_agent_builder_get_agent",
+			"_type": "request",
+			"parentId": "fld_context_core_agent_builder",
+			"name": "GET /api/agent-builder/get-agent",
+			"method": "GET",
+			"url": "{{ base_url }}/api/agent-builder/get-agent",
+			"description": "Get one agent definition by absolute path.",
+			"body": {},
+			"parameters": [
+				{
+					"name": "path",
+					"value": "{{ agent_path }}"
+				}
+			],
+			"headers": [
+				{
+					"name": "Accept",
+					"value": "application/json"
+				}
+			],
+			"authentication": {}
+		},
+		{
+			"_id": "req_agent_builder_get_file_content",
+			"_type": "request",
+			"parentId": "fld_context_core_agent_builder",
+			"name": "GET /api/agent-builder/get-file-content",
+			"method": "GET",
+			"url": "{{ base_url }}/api/agent-builder/get-file-content",
+			"description": "Get indexed file content by absolute path.",
+			"body": {},
+			"parameters": [
+				{
+					"name": "path",
+					"value": "{{ file_path }}"
+				}
+			],
+			"headers": [
+				{
+					"name": "Accept",
+					"value": "application/json"
+				}
+			],
+			"authentication": {}
+		},
+		{
+			"_id": "req_agent_builder_add_template",
+			"_type": "request",
+			"parentId": "fld_context_core_agent_builder",
+			"name": "POST /api/agent-builder/add-template",
+			"method": "POST",
+			"url": "{{ base_url }}/api/agent-builder/add-template",
+			"description": "Create or overwrite a JSON template.",
+			"body": {
+				"mimeType": "application/json",
+				"text": "{\n  \"templateName\": \"{{ template_name }}\",\n  \"description\": \"{{ template_description }}\",\n  \"argument-hint\": \"{{ template_argument_hint }}\",\n  \"tools\": [\"Read\"],\n  \"agentKnowledge\": [\"server/README.md\"]\n}"
+			},
+			"parameters": [],
+			"headers": [
+				{
+					"name": "Accept",
+					"value": "application/json"
+				},
+				{
+					"name": "Content-Type",
+					"value": "application/json"
+				}
+			],
+			"authentication": {}
+		},
+		{
+			"_id": "req_agent_builder_list_templates",
+			"_type": "request",
+			"parentId": "fld_context_core_agent_builder",
+			"name": "GET /api/agent-builder/list-templates",
+			"method": "GET",
+			"url": "{{ base_url }}/api/agent-builder/list-templates",
+			"description": "List all stored templates.",
+			"body": {},
+			"parameters": [],
+			"headers": [
+				{
+					"name": "Accept",
+					"value": "application/json"
+				}
+			],
+			"authentication": {}
+		},
+		{
+			"_id": "fld_context_core_mcp",
+			"_type": "request_group",
+			"parentId": "wrk_context_core",
+			"name": "MCP (SSE)",
+			"description": "MCP server endpoints for network MCP clients. Each GET /mcp/sse opens a session; POST /mcp/messages sends JSON-RPC.",
+			"environment": {
+				"mcp_session_id": "replace-after-sse-connect",
+				"mcp_auth_token": ""
+			}
+		},
+		{
+			"_id": "req_mcp_sse_connect",
+			"_type": "request",
+			"parentId": "fld_context_core_mcp",
+			"name": "GET /mcp/sse - open session",
+			"method": "GET",
+			"url": "{{ base_url }}/mcp/sse",
+			"description": "Establish an SSE stream for a new MCP session. Keep this request open, then copy the returned session ID for POST /mcp/messages.",
+			"body": {},
+			"parameters": [],
+			"headers": [
+				{
+					"name": "Accept",
+					"value": "text/event-stream"
+				},
+				{
+					"name": "Authorization",
+					"value": "Bearer {{ mcp_auth_token }}"
+				}
+			],
+			"authentication": {}
+		},
+		{
+			"_id": "req_mcp_list_tools",
+			"_type": "request",
+			"parentId": "fld_context_core_mcp",
+			"name": "POST /mcp/messages - tools/list",
+			"method": "POST",
+			"url": "{{ base_url }}/mcp/messages",
+			"description": "List all available MCP tools. Requires an active SSE session ID.",
+			"body": {
+				"mimeType": "application/json",
+				"text": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 1,\n  \"method\": \"tools/list\",\n  \"params\": {}\n}"
+			},
+			"parameters": [
+				{
+					"name": "sessionId",
+					"value": "{{ mcp_session_id }}"
+				}
+			],
+			"headers": [
+				{
+					"name": "Accept",
+					"value": "application/json"
+				},
+				{
+					"name": "Content-Type",
+					"value": "application/json"
+				},
+				{
+					"name": "Authorization",
+					"value": "Bearer {{ mcp_auth_token }}"
+				}
+			],
+			"authentication": {}
+		},
+		{
+			"_id": "req_mcp_search_messages",
+			"_type": "request",
+			"parentId": "fld_context_core_mcp",
+			"name": "POST /mcp/messages - search_messages",
+			"method": "POST",
+			"url": "{{ base_url }}/mcp/messages",
+			"description": "Invoke the search_messages MCP tool.",
+			"body": {
+				"mimeType": "application/json",
+				"text": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 2,\n  \"method\": \"tools/call\",\n  \"params\": {\n    \"name\": \"search_messages\",\n    \"arguments\": {\n      \"query\": \"{{ search_q }}\",\n      \"maxResults\": 20,\n      \"projects\": [\"{{ project_name }}\"]\n    }\n  }\n}"
+			},
+			"parameters": [
+				{
+					"name": "sessionId",
+					"value": "{{ mcp_session_id }}"
+				}
+			],
+			"headers": [
+				{
+					"name": "Accept",
+					"value": "application/json"
+				},
+				{
+					"name": "Content-Type",
+					"value": "application/json"
+				},
+				{
+					"name": "Authorization",
+					"value": "Bearer {{ mcp_auth_token }}"
+				}
+			],
+			"authentication": {}
+		},
+		{
+			"_id": "req_mcp_search_threads",
+			"_type": "request",
+			"parentId": "fld_context_core_mcp",
+			"name": "POST /mcp/messages - search_threads",
+			"method": "POST",
+			"url": "{{ base_url }}/mcp/messages",
+			"description": "Invoke the search_threads MCP tool.",
+			"body": {
+				"mimeType": "application/json",
+				"text": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 3,\n  \"method\": \"tools/call\",\n  \"params\": {\n    \"name\": \"search_threads\",\n    \"arguments\": {\n      \"query\": \"{{ search_q }}\",\n      \"projects\": [\"{{ project_name }}\"]\n    }\n  }\n}"
+			},
+			"parameters": [
+				{
+					"name": "sessionId",
+					"value": "{{ mcp_session_id }}"
+				}
+			],
+			"headers": [
+				{
+					"name": "Accept",
+					"value": "application/json"
+				},
+				{
+					"name": "Content-Type",
+					"value": "application/json"
+				},
+				{
+					"name": "Authorization",
+					"value": "Bearer {{ mcp_auth_token }}"
+				}
+			],
+			"authentication": {}
+		},
+		{
+			"_id": "req_mcp_get_session",
+			"_type": "request",
+			"parentId": "fld_context_core_mcp",
+			"name": "POST /mcp/messages - get_session",
+			"method": "POST",
+			"url": "{{ base_url }}/mcp/messages",
+			"description": "Invoke the get_session MCP tool.",
+			"body": {
+				"mimeType": "application/json",
+				"text": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 4,\n  \"method\": \"tools/call\",\n  \"params\": {\n    \"name\": \"get_session\",\n    \"arguments\": {\n      \"sessionId\": \"{{ session_id }}\"\n    }\n  }\n}"
+			},
+			"parameters": [
+				{
+					"name": "sessionId",
+					"value": "{{ mcp_session_id }}"
+				}
+			],
+			"headers": [
+				{
+					"name": "Accept",
+					"value": "application/json"
+				},
+				{
+					"name": "Content-Type",
+					"value": "application/json"
+				},
+				{
+					"name": "Authorization",
+					"value": "Bearer {{ mcp_auth_token }}"
+				}
+			],
+			"authentication": {}
+		},
+		{
+			"_id": "req_mcp_read_stats",
+			"_type": "request",
+			"parentId": "fld_context_core_mcp",
+			"name": "POST /mcp/messages - resources/read cxc://stats",
+			"method": "POST",
+			"url": "{{ base_url }}/mcp/messages",
+			"description": "Read the cxc://stats MCP resource.",
+			"body": {
+				"mimeType": "application/json",
+				"text": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 5,\n  \"method\": \"resources/read\",\n  \"params\": {\n    \"uri\": \"cxc://stats\"\n  }\n}"
+			},
+			"parameters": [
+				{
+					"name": "sessionId",
+					"value": "{{ mcp_session_id }}"
+				}
+			],
+			"headers": [
+				{
+					"name": "Accept",
+					"value": "application/json"
+				},
+				{
+					"name": "Content-Type",
+					"value": "application/json"
+				},
+				{
+					"name": "Authorization",
+					"value": "Bearer {{ mcp_auth_token }}"
+				}
+			],
+			"authentication": {}
+		}
+	]
+}

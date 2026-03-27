@@ -1,0 +1,27 @@
+node_modules/
+dist/
+*.log
+.DS_Store
+
+# Local Development Files
+.claude/agents/acxcui-cxc-ui-builder.json
+.claude/agents/acxcui-cxc-ui-builder.md
+.claude/agents/cxc-planner.json
+.claude/agents/cxc-planner.md
+.claude/settings.json
+.claude/settings.local.json
+.cursorindexingignore
+.github/agents/acxcui-cxc-ui-builder.agent.json
+.github/agents/acxcui-cxc-ui-builder.agent.md
+prepush.md
+server/.env
+server/cc.json
+server/logs/
+server/src/mcp/tests/latest_threads.json
+server/src/mcp/tests/messages_storyteller_nncharacter.json
+server/src/mcp/tests/threads_latest.json
+server/src/mcp/tests/threads_storyteller_nncharacter.json
+server/zz-reach2/upgrades/
+visualizer/ui/ContextCore.png
+visualizer/ui/CXC_Visualizer_1.mp4
+visualizer/zz-reach2/upgrades/

@@ -1,0 +1,1 @@
+start cmd /k bun --watch src/ContextCore.ts

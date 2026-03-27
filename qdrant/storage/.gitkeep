@@ -1,0 +1,15 @@
+services:
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: qdrant
+    restart: unless-stopped
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - type: bind
+        source: qdrant/storage
+        target: /qdrant/storage
+      - type: bind
+        source: qdrant/snapshots
+        target: /qdrant/snapshots

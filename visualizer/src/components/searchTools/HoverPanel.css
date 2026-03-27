@@ -1,0 +1,128 @@
+.hover-panel {
+  position: fixed;
+  width: 420px;
+  max-width: min(420px, calc(100vw - 16px));
+  max-height: 480px;
+  overflow-y: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  pointer-events: none;
+  z-index: 1000;
+  background: #1e293b;
+  border: 1px solid #475569;
+  border-radius: 8px;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
+  padding: 16px;
+}
+
+.hover-panel::-webkit-scrollbar {
+  display: none;
+}
+
+.hover-title {
+  font-size: 15px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.hover-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.hover-badge {
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid #64748b;
+  color: #e2e8f0;
+  font-size: 11px;
+}
+
+.hover-divider {
+  border: 0;
+  border-top: 1px solid #334155;
+  margin: 10px 0;
+}
+
+.hover-symbols {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+
+.hover-symbol {
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
+.hover-muted {
+  color: var(--text-muted);
+}
+
+.hover-excerpt {
+  margin-top: 10px;
+  color: #cbd5e1;
+  font-size: 13px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.hover-tools {
+  margin-top: 10px;
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+/* Metadata-only layout for medium/full LOD */
+.hover-panel-meta {
+  width: auto;
+  min-width: 260px;
+  max-width: 420px;
+}
+
+.hover-meta-row {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 3px 0;
+  font-size: 13px;
+}
+
+.hover-meta-label {
+  flex-shrink: 0;
+  width: 96px;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+
+.hover-session-id {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+/* Thread hover panel styling */
+.hover-panel-thread {
+  background: #1a1625;
+  border-color: #4c1d95;
+}
+
+.hover-panel-thread .hover-title {
+  color: #c4b5fd;
+}
+
+.hover-matches {
+  color: #fbbf24;
+  font-weight: 600;
+}

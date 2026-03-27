@@ -1,0 +1,135 @@
+/* ContentFileDialog.css — Styles for the file content viewer dialog */
+
+.cf-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.72);
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.cf-dialog {
+  background: #111827;
+  border: 1px solid #374151;
+  border-radius: 12px;
+  width: 100%;
+  max-width: 860px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.6);
+}
+
+.cf-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid #1f2937;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.cf-header-left {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.cf-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #f9fafb;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: "JetBrains Mono", "Fira Mono", "Consolas", monospace;
+}
+
+.cf-meta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: #6b7280;
+}
+
+.cf-meta-item {
+  color: #9ca3af;
+}
+
+.cf-meta-sep {
+  color: #4b5563;
+}
+
+.cf-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.cf-add-btn {
+  background: #1d4ed8;
+  border: none;
+  border-radius: 6px;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 12px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+  white-space: nowrap;
+}
+
+.cf-add-btn:hover {
+  background: #2563eb;
+}
+
+.cf-close-btn {
+  background: none;
+  border: none;
+  color: #6b7280;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 4px;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.cf-close-btn:hover {
+  color: #f9fafb;
+  background: #1f2937;
+}
+
+.cf-body {
+  flex: 1;
+  overflow: auto;
+  padding: 16px 20px;
+}
+
+.cf-loading,
+.cf-error {
+  font-size: 13px;
+  color: #9ca3af;
+  padding: 8px 0;
+}
+
+.cf-error {
+  color: #f87171;
+}
+
+.cf-content {
+  margin: 0;
+  font-family: "JetBrains Mono", "Fira Mono", "Consolas", monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #e5e7eb;
+  white-space: pre-wrap;
+  word-break: break-word;
+}

@@ -1,0 +1,65 @@
+.status-bar {
+  height: 32px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 12px;
+  background: #111827;
+  border-top: 1px solid #1f2937;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.lod-pill {
+  border-radius: 999px;
+  padding: 1px 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  font-size: 10px;
+  color: #fff;
+}
+
+.status-lod-minimal {
+  background: #6b7280;
+}
+
+.status-lod-summary {
+  background: #3b82f6;
+}
+
+.status-lod-medium {
+  background: #f59e0b;
+}
+
+.status-lod-full {
+  background: #10b981;
+}
+
+.status-offline-badge {
+  border-radius: 999px;
+  padding: 1px 8px;
+  background: #92400e;
+  color: #fde68a;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #3b82f6;
+  animation: pulse 1s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 1;
+  }
+}

@@ -1,0 +1,504 @@
+.agent-basket {
+	width: 420px;
+	flex-shrink: 0;
+	background: var(--bg-card);
+	border-right: 1px solid var(--border-card);
+	display: flex;
+	flex-direction: column;
+	z-index: 1000;
+}
+
+.agent-basket-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 10px 16px;
+	border-bottom: 1px solid var(--border-card);
+	flex-shrink: 0;
+}
+
+.agent-basket-header-title {
+	font-weight: 600;
+	font-size: 14px;
+	color: var(--text-primary);
+}
+
+.agent-basket-header-actions {
+	display: flex;
+	gap: 8px;
+	align-items: center;
+}
+
+.agent-basket-create-btn {
+	background: #10b981;
+	color: #fff;
+	border: none;
+	border-radius: 6px;
+	padding: 6px 12px;
+	font-size: 12px;
+	font-weight: 600;
+	cursor: pointer;
+	transition: background 0.15s ease, opacity 0.15s ease;
+}
+
+.agent-basket-create-btn:hover:not(:disabled) {
+	background: #059669;
+}
+
+.agent-basket-create-btn:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+}
+
+.agent-basket-clear-btn {
+	background: var(--bg-hover);
+	border: 1px solid var(--border-card);
+	border-radius: 6px;
+	padding: 6px 10px;
+	color: var(--text-primary);
+	cursor: pointer;
+	font-size: 12px;
+	transition: background 0.15s ease;
+}
+
+.agent-basket-clear-btn:hover {
+	background: var(--accent);
+}
+
+/* Save button (edit mode) — blue accent */
+.agent-basket-save-btn {
+	background: #3b82f6;
+	color: #fff;
+	border: none;
+	border-radius: 6px;
+	padding: 6px 12px;
+	font-size: 12px;
+	font-weight: 600;
+	cursor: pointer;
+	transition: background 0.15s ease, opacity 0.15s ease;
+}
+
+.agent-basket-save-btn:hover:not(:disabled) {
+	background: #2563eb;
+}
+
+.agent-basket-save-btn:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+}
+
+/* Cancel edit button */
+.agent-basket-cancel-btn {
+	background: transparent;
+	border: 1px solid var(--border-card);
+	border-radius: 6px;
+	padding: 6px 10px;
+	color: var(--text-secondary);
+	cursor: pointer;
+	font-size: 12px;
+	transition: background 0.15s ease, color 0.15s ease;
+}
+
+.agent-basket-cancel-btn:hover {
+	background: #7f1d1d;
+	color: #fca5a5;
+	border-color: #991b1b;
+}
+
+/* Platform checkboxes */
+.agent-basket-platforms {
+	display: flex;
+	gap: 16px;
+	padding: 6px 16px 8px;
+	border-bottom: 1px solid var(--border-card);
+	flex-shrink: 0;
+}
+
+.agent-basket-platforms label {
+	display: flex;
+	align-items: center;
+	gap: 5px;
+	font-size: 12px;
+	color: var(--text-secondary);
+	cursor: pointer;
+	user-select: none;
+}
+
+.agent-basket-platforms input[type="checkbox"] {
+	accent-color: #3b82f6;
+	cursor: pointer;
+	width: 13px;
+	height: 13px;
+}
+
+/* Feedback banners */
+.agent-basket-banner-error {
+	padding: 6px 12px;
+	font-size: 12px;
+	background: #7f1d1d;
+	color: #fca5a5;
+	border-bottom: 1px solid #991b1b;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	flex-shrink: 0;
+}
+
+.agent-basket-banner-success {
+	padding: 6px 12px;
+	font-size: 12px;
+	background: #14532d;
+	color: #86efac;
+	border-bottom: 1px solid #166534;
+	flex-shrink: 0;
+}
+
+.agent-basket-banner-dismiss {
+	background: none;
+	border: none;
+	color: inherit;
+	cursor: pointer;
+	font-size: 14px;
+	opacity: 0.7;
+	padding: 0 4px;
+}
+
+.agent-basket-banner-dismiss:hover {
+	opacity: 1;
+}
+
+/* Form section */
+.agent-basket-form {
+	padding: 10px 16px;
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	flex-shrink: 0;
+	border-bottom: 1px solid var(--border-card);
+}
+
+.agent-basket-form-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.agent-basket-form-label {
+	width: 56px;
+	flex-shrink: 0;
+	text-align: right;
+	font-size: 11px;
+	font-weight: 500;
+	color: var(--text-muted);
+	text-transform: uppercase;
+	letter-spacing: 0.3px;
+}
+
+.agent-basket-form input,
+.agent-basket-form select {
+	flex: 1;
+	background: var(--bg-primary);
+	border: 1px solid var(--border-card);
+	border-radius: 6px;
+	padding: 5px 10px;
+	color: var(--text-primary);
+	font-size: 13px;
+	font-family: inherit;
+	min-width: 0;
+}
+
+.agent-basket-form input:focus,
+.agent-basket-form select:focus {
+	outline: none;
+	border-color: var(--accent);
+}
+
+.agent-basket-form input.slug-invalid {
+	border-color: #ef4444;
+}
+
+.agent-basket-slug-hint {
+	font-size: 10px;
+	color: #ef4444;
+	margin-top: -4px;
+	padding-left: 64px;
+}
+
+/* Knowledge header */
+.agent-basket-knowledge-header {
+	padding: 8px 16px;
+	font-size: 11px;
+	font-weight: 600;
+	color: var(--text-muted);
+	text-transform: uppercase;
+	letter-spacing: 0.5px;
+	flex-shrink: 0;
+}
+
+.agent-basket-knowledge-count {
+	color: var(--text-secondary);
+	font-weight: 400;
+}
+
+/* Knowledge list */
+.agent-basket-knowledge-list {
+	flex: 1;
+	overflow-y: auto;
+	padding: 4px 8px;
+}
+
+.agent-basket-empty {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	height: 100%;
+	color: var(--text-muted);
+	font-size: 13px;
+	text-align: center;
+	padding: 16px;
+}
+
+/* Knowledge entry */
+.agent-basket-entry {
+	display: flex;
+	align-items: flex-start;
+	gap: 6px;
+	padding: 5px 6px;
+	background: var(--bg-primary);
+	border-radius: 6px;
+	margin-bottom: 3px;
+	font-size: 12px;
+	color: var(--text-secondary);
+}
+
+.agent-basket-entry.flash {
+	animation: agent-basket-flash 0.5s ease;
+}
+
+@keyframes agent-basket-flash {
+	0% { background: #10b981; }
+	100% { background: var(--bg-primary); }
+}
+
+.agent-basket-entry-controls {
+	display: flex;
+	flex-direction: column;
+	gap: 1px;
+	flex-shrink: 0;
+}
+
+.agent-basket-entry-controls button {
+	background: transparent;
+	border: none;
+	cursor: pointer;
+	color: var(--text-muted);
+	opacity: 0.6;
+	font-size: 13px;
+	padding: 1px 3px;
+	transition: opacity 0.15s ease, color 0.15s ease;
+	line-height: 1;
+}
+
+.agent-basket-entry-controls button:hover:not(:disabled) {
+	opacity: 1;
+}
+
+.agent-basket-entry-controls button:disabled {
+	opacity: 0.25;
+	cursor: not-allowed;
+}
+
+.agent-basket-entry-controls .remove-btn:hover:not(:disabled) {
+	color: #ef4444;
+}
+
+.agent-basket-entry-value {
+	flex: 1;
+	word-break: break-word;
+	min-width: 0;
+}
+
+.agent-basket-entry-file .agent-basket-entry-value {
+	font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.agent-basket-entry-custom .agent-basket-entry-value {
+	display: -webkit-box;
+	-webkit-line-clamp: 2;
+	line-clamp: 2;
+	-webkit-box-orient: vertical;
+	overflow: hidden;
+}
+
+.agent-basket-entry-icon {
+	flex-shrink: 0;
+	font-size: 12px;
+}
+
+/* Custom knowledge textarea */
+.agent-basket-custom-input {
+	display: flex;
+	align-items: flex-end;
+	gap: 6px;
+	border-top: 1px solid var(--border-card);
+	padding: 8px;
+	flex-shrink: 0;
+}
+
+.agent-basket-custom-input textarea {
+	flex: 1;
+	resize: none;
+	background: var(--bg-primary);
+	border: 1px solid var(--border-card);
+	border-radius: 6px;
+	padding: 6px 10px;
+	color: var(--text-primary);
+	font-size: 13px;
+	font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+	line-height: 1.4;
+}
+
+.agent-basket-custom-input textarea:focus {
+	outline: none;
+	border-color: var(--accent);
+}
+
+.agent-basket-custom-input .confirm-btn {
+	width: 32px;
+	height: 32px;
+	border-radius: 6px;
+	border: 1px solid #059669;
+	background: #10b981;
+	color: #fff;
+	cursor: pointer;
+	font-size: 16px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	flex-shrink: 0;
+	transition: background 0.15s ease, opacity 0.15s ease;
+}
+
+.agent-basket-custom-input .confirm-btn:hover:not(:disabled) {
+	background: #059669;
+}
+
+.agent-basket-custom-input .confirm-btn:disabled {
+	opacity: 0.4;
+	cursor: not-allowed;
+}
+
+/* Template-mode header (purple accent) */
+.agent-basket-template-header {
+	color: #8b5cf6;
+}
+
+/* Template save button (purple) */
+.agent-basket-template-btn {
+	background: #8b5cf6;
+	color: #fff;
+	border: none;
+	border-radius: 6px;
+	padding: 6px 12px;
+	font-size: 12px;
+	font-weight: 600;
+	cursor: pointer;
+	transition: background 0.15s ease, opacity 0.15s ease;
+}
+
+.agent-basket-template-btn:hover:not(:disabled) {
+	background: #7c3aed;
+}
+
+.agent-basket-template-btn:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+}
+
+/* Add Placeholder button (template mode) */
+.agent-basket-add-placeholder {
+	padding: 8px;
+	flex-shrink: 0;
+}
+
+.agent-basket-add-placeholder-btn {
+	width: 100%;
+	padding: 8px 12px;
+	background: transparent;
+	border: 2px dashed #8b5cf6;
+	border-radius: 6px;
+	color: #8b5cf6;
+	font-size: 12px;
+	font-weight: 700;
+	letter-spacing: 1px;
+	text-transform: uppercase;
+	cursor: pointer;
+	transition: background 0.15s ease, color 0.15s ease;
+}
+
+.agent-basket-add-placeholder-btn:hover {
+	background: rgba(139, 92, 246, 0.1);
+}
+
+/* Placeholder entry (template mode — neutral disabled look) */
+.agent-basket-entry-placeholder {
+	border: 1px dashed var(--border-card);
+	background: var(--bg-primary);
+}
+
+.agent-basket-entry-placeholder .agent-basket-entry-value {
+	font-weight: 600;
+	letter-spacing: 0.5px;
+	text-transform: uppercase;
+	font-size: 11px;
+}
+
+/* Placeholder active (green — current target in agent-from-template mode) */
+.placeholder-active {
+	background: rgba(34, 197, 94, 0.15) !important;
+	border: 1px solid #22c55e !important;
+	cursor: pointer;
+	box-shadow: 0 0 6px rgba(34, 197, 94, 0.3);
+}
+
+.placeholder-active .agent-basket-entry-value {
+	color: #22c55e;
+}
+
+/* Entry in edit mode — dark green background */
+.agent-basket-entry-editing {
+	background: #14532d !important;
+	border: 1px solid #22c55e;
+}
+
+.agent-basket-entry-editing .agent-basket-entry-value {
+	color: #86efac;
+}
+
+/* Inline edit icon button (shares .agent-basket-entry-icon sizing) */
+.agent-basket-edit-btn {
+	background: transparent;
+	border: none;
+	cursor: pointer;
+	opacity: 0.6;
+	padding: 1px 3px;
+	flex-shrink: 0;
+	transition: opacity 0.15s ease;
+	line-height: 1;
+}
+
+.agent-basket-edit-btn:hover {
+	opacity: 1;
+}
+
+/* Placeholder pending (blue — not yet active in agent-from-template mode) */
+.placeholder-pending {
+	background: rgba(59, 130, 246, 0.1) !important;
+	border: 1px solid #3b82f6 !important;
+	cursor: pointer;
+	opacity: 0.8;
+}
+
+.placeholder-pending .agent-basket-entry-value {
+	color: #3b82f6;
+}
