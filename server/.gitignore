@@ -5,3 +5,7 @@ dist/
 .cxc-port
 logs/
 cxc-storage
+
+cc.json
+cc.json.old
+cc.json.test

@@ -258,6 +258,25 @@
   box-shadow: 0 0 0 2px currentColor inset;
 }
 
+.edit-scope-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(2, 6, 23, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1300;
+}
+
+.edit-scope-modal {
+  width: min(640px, calc(100vw - 40px));
+  background: var(--bg-card);
+  border: 1px solid var(--border-card);
+  border-radius: 12px;
+  padding: 12px;
+  box-shadow: 0 16px 30px rgba(2, 6, 23, 0.45);
+}
+
 .edit-results-view-scope-editor {
   border: 1px solid #334155;
   border-radius: 8px;

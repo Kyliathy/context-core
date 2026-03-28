@@ -15,7 +15,6 @@ dist/
 .github/agents/acxcui-cxc-ui-builder.agent.md
 prepush.md
 server/.env
-server/cc.json
 server/logs/
 server/src/mcp/tests/latest_threads.json
 server/src/mcp/tests/messages_storyteller_nncharacter.json

@@ -453,55 +453,6 @@ export default function EditResultsView({
 								</div>
 							)}
 
-							{scopeEditorMode === "create" && (
-								<EditScope
-									title="Create Scope"
-									saveLabel="Save Scope"
-									onCancel={() => setScopeEditorMode(null)}
-									onSave={(payload) => {
-										const newScopeId = crypto.randomUUID();
-										const nextScopes = [
-											...scopes,
-											{
-												id: newScopeId,
-												name: payload.name,
-												emoji: payload.emoji,
-												color: payload.color,
-												projectIds: projects,
-											},
-										];
-										persistScopes(nextScopes);
-										setSelectedScopeIds(new Set([newScopeId]));
-										setScopeEditorMode(null);
-									}}
-								/>
-							)}
-
-							{scopeEditorMode === "modify" && singleSelectedScope && (
-								<EditScope
-									title="Modify Scope"
-									saveLabel="Update Scope Selection"
-									initialName={singleSelectedScope.name}
-									initialEmoji={singleSelectedScope.emoji}
-									initialColor={singleSelectedScope.color}
-									onCancel={() => setScopeEditorMode(null)}
-									onSave={(payload) => {
-										const nextScopes = scopes.map((scope) =>
-											scope.id === singleSelectedScope.id
-												? {
-														...scope,
-														name: payload.name,
-														emoji: payload.emoji,
-														color: payload.color,
-													}
-												: scope,
-										);
-										persistScopes(nextScopes);
-										setScopeEditorMode(null);
-									}}
-								/>
-							)}
-
 							<div className="edit-results-view-projects-grid" style={{ height: `${projectGridHeightPx}px` }}>
 								{filteredProjectEntries.map((entry) => {
 									const isChecked = projects.some((p) => p.harness === entry.harness && p.project === entry.project);
@@ -576,6 +527,55 @@ export default function EditResultsView({
 					</div>
 				)}
 			</div>
+
+			{scopeEditorMode === "create" && (
+				<EditScope
+					title="Create Scope"
+					saveLabel="Save Scope"
+					onCancel={() => setScopeEditorMode(null)}
+					onSave={(payload) => {
+						const newScopeId = crypto.randomUUID();
+						const nextScopes = [
+							...scopes,
+							{
+								id: newScopeId,
+								name: payload.name,
+								emoji: payload.emoji,
+								color: payload.color,
+								projectIds: projects,
+							},
+						];
+						persistScopes(nextScopes);
+						setSelectedScopeIds(new Set([newScopeId]));
+						setScopeEditorMode(null);
+					}}
+				/>
+			)}
+
+			{scopeEditorMode === "modify" && singleSelectedScope && (
+				<EditScope
+					title="Modify Scope"
+					saveLabel="Update Scope"
+					initialName={singleSelectedScope.name}
+					initialEmoji={singleSelectedScope.emoji}
+					initialColor={singleSelectedScope.color}
+					onCancel={() => setScopeEditorMode(null)}
+					onSave={(payload) => {
+						const nextScopes = scopes.map((scope) =>
+							scope.id === singleSelectedScope.id
+								? {
+										...scope,
+										name: payload.name,
+										emoji: payload.emoji,
+										color: payload.color,
+									}
+								: scope,
+						);
+						persistScopes(nextScopes);
+						setScopeEditorMode(null);
+					}}
+				/>
+			)}
 		</div>
 	);
 }
