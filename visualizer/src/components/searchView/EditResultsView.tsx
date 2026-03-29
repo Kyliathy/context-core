@@ -19,7 +19,7 @@
  *
  * Docs: zz-reach2/architecture/ui/archi-context-core-visualizer-ui.md section 4.2
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ViewDefinition, ViewType, SelectedProject, ProjectGroup, Scope } from "../../types";
 import { fetchProjects } from "../../api/search";
 import { VIEW_TYPE_DEFAULTS } from "../../hooks/useViews";
@@ -222,12 +222,22 @@ export default function EditResultsView({
 		}
 	};
 
+	const mouseDownTargetRef = useRef<EventTarget | null>(null);
+
 	if (!open) {
 		return null;
 	}
 
 	return (
-		<div className="edit-results-view-overlay" role="presentation" onClick={onCancel}>
+		<div
+			className="edit-results-view-overlay"
+			role="presentation"
+			onMouseDown={(e) => {
+				mouseDownTargetRef.current = e.target;
+			}}
+			onClick={(e) => {
+				if (e.target === e.currentTarget && mouseDownTargetRef.current === e.currentTarget) onCancel();
+			}}>
 			<div className="edit-results-view" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
 				<h2 className="edit-results-view-title">{mode === "add" ? "New View" : "Edit View"}</h2>
 				<label className="edit-results-view-label">

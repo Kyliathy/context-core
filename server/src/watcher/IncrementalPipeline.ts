@@ -240,8 +240,9 @@ export class IncrementalPipeline
 			{
 				try
 				{
+					const newTopicEntries = this.topicStore.getAll().filter(e => newSessionIds.has(e.sessionId));
 					await this.summaryEmbeddingCache.embedNewSummaries(
-						this.topicStore.getAll(),
+						newTopicEntries,
 						this.embeddingService,
 						0 // no extra delay for incremental pass
 					);
@@ -412,8 +413,9 @@ export class IncrementalPipeline
 		{
 			try
 			{
+				const newTopicEntries = this.topicStore.getAll().filter(e => newSessionIds.has(e.sessionId));
 				await this.summaryEmbeddingCache.embedNewSummaries(
-					this.topicStore.getAll(),
+					newTopicEntries,
 					this.embeddingService,
 					0
 				);

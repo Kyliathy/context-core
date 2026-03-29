@@ -82,7 +82,7 @@ In `src/db/BaseMessageStore.ts`:
 
 - `collectJsonFiles()` now skips non-session trees:
   - `*-RAW`
-  - `zeCache`
+  - `zzzcache`
   - `.settings`
 
 This avoids parsing large irrelevant JSON during DB load.

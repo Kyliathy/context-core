@@ -4,7 +4,7 @@ import { join } from 'path';
 import { DateTime } from 'luxon';
 import { CCSettings } from '../settings/CCSettings';
 
-const CACHE_SUBDIR = 'zeCache/queries';
+const CACHE_SUBDIR = 'zzzcache/queries';
 const HASH_LENGTH = 12;
 const PREFIX_MAX_LENGTH = 50;
 
@@ -38,7 +38,7 @@ export function computeQueryHash(query: string): string
 
 /**
  * Returns the cache directory path for today.
- * Format: {storage}/zeCache/queries/YYYY-MM-DD/
+ * Format: {storage}/zzzcache/queries/YYYY-MM-DD/
  */
 export function getTodayCacheDir(): string
 {

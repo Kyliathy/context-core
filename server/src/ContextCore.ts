@@ -318,36 +318,37 @@ async function main(): Promise<void>
 				}
 			}
 
-			// Summary embedding pass: pre-compute session summary vectors before chunk indexing.
-			// Now picks up freshly generated aiSummary entries from the summarization pass above.
 			summaryEmbeddingCache = new SummaryEmbeddingCache(settings.storage);
 			summaryEmbeddingCache.load();
 			summaryEmbeddingCache.loadSynced();
-			const cacheStats = await summaryEmbeddingCache.embedNewSummaries(
-				topicStore.getAll(),
-				embeddingService,
-				vectorConfig.batchDelayMs
-			);
-			console.log(
-				`[Pipeline] Summary embeddings: embedded=${cacheStats.summariesEmbedded}, ` +
-				`skipped=${cacheStats.summariesSkipped}, failed=${cacheStats.summariesFailed}`
-			);
-
-			// Create pipeline after cache is populated so it can attach summary vectors during indexing.
-			vectorPipeline = new VectorPipeline(
-				embeddingService,
-				qdrantService,
-				topicStore,
-				summaryEmbeddingCache,
-				50, // batch size
-				vectorConfig.batchDelayMs
-			);
 
 			if (skipStartupQdrantUpdate)
 			{
 				console.log("[Pipeline] Startup vector indexing skipped (SKIP_STARTUP_UPDATING_QDRANT=true).");
 			} else
 			{
+				// Summary embedding pass: pre-compute session summary vectors before chunk indexing.
+				// Now picks up freshly generated aiSummary entries from the summarization pass above.
+				const cacheStats = await summaryEmbeddingCache.embedNewSummaries(
+					topicStore.getAll(),
+					embeddingService,
+					vectorConfig.batchDelayMs
+				);
+				console.log(
+					`[Pipeline] Summary embeddings: embedded=${cacheStats.summariesEmbedded}, ` +
+					`skipped=${cacheStats.summariesSkipped}, failed=${cacheStats.summariesFailed}`
+				);
+
+				// Create pipeline after cache is populated so it can attach summary vectors during indexing.
+				vectorPipeline = new VectorPipeline(
+					embeddingService,
+					qdrantService,
+					topicStore,
+					summaryEmbeddingCache,
+					50, // batch size
+					vectorConfig.batchDelayMs
+				);
+
 				// Run embedding pipeline.
 				// Force-reindex sessions that need summary vector backfill:
 				//  - newlyEmbeddedSessionIds: sessions just embedded this run (hot path)

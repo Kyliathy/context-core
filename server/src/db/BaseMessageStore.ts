@@ -153,7 +153,7 @@ export abstract class BaseMessageStore implements IMessageStore
 			}
 
 			const lower = name.toLowerCase();
-			return lower.endsWith("-raw") || lower.startsWith("zecache") || lower.startsWith("zesettings");
+			return lower.endsWith("-raw") || lower.startsWith("zzzcache") || lower.startsWith("zesettings");
 		};
 
 		const stack = [root];

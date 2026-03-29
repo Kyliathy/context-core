@@ -1,7 +1,7 @@
 # Qdrant Vector Search — Architectural Review
 
 **Date**: 2026-03-10
-**Updated**: 2026-03-21 — R2BQ upgrade (dual vectors, V2 payload, summary embedding cache)
+**Updated**: 2026-03-28 — Fix: `SKIP_STARTUP_UPDATING_QDRANT` now correctly gates `embedNewSummaries()` in addition to `processMessages()`
 **Scope**: Semantic search pipeline — Qdrant, OpenAI embeddings, LangChain text splitters
 **Parent**: [`archi-context-core.md`](../archi-context-core.md)
 **Upgrade spec**: [`r2uq-qdrant.md`](../../upgrades/2026-03/r2uq-qdrant.md) | [`r2bq-better-qdrant.md`](../../upgrades/2026-03/r2bq-better-qdrant.md)
@@ -118,6 +118,8 @@ Startup indexing is controlled independently:
 
 ```
 Skip startup indexing  ⟺  SKIP_STARTUP_UPDATING_QDRANT is true
+                        (gates both SummaryEmbeddingCache.embedNewSummaries()
+                         AND VectorPipeline.processMessages())
 ```
 
 When only one of the two is present, a warning is logged identifying the missing variable. When neither is set, the system silently continues without vector search.
@@ -131,7 +133,7 @@ When only one of the two is present, a warning is logged identifying the missing
 | `OPENAI_API_KEY`                | For vector search | —            | OpenAI API key for embedding generation                 |
 | `QDRANT_MIN_SCORE`              | No                | `0.6`        | Minimum cosine similarity threshold for search results  |
 | `EMBEDDING_BATCH_DELAY_MS`      | No                | `200`        | Rate limiting delay (ms) between embedding batches      |
-| `SKIP_STARTUP_UPDATING_QDRANT`  | No                | `false`      | Skip bulk embedding/upsert during startup only          |
+| `SKIP_STARTUP_UPDATING_QDRANT`  | No                | `false`      | Skip summary embedding (`embedNewSummaries`) and bulk chunk indexing/upsert during startup |
 | `DO_NOT_USE_QDRANT`             | No                | `false`      | Disable all Qdrant usage at runtime (search + indexing) |
 | `SKIP_AI_SUMMARIZATION`         | No                | `true`       | Skip AI topic summarization during startup              |
 | `SKIP_AI_SUMMARIZATION_PASS_2`  | No                | `false`      | Skip second-pass re-summarization of long summaries     |
@@ -181,55 +183,59 @@ sequenceDiagram
     QDB-->>QS: { pointsCount, exists }
     QS-->>CC: collection status
 
-    Note over CC,QDB: Phase 3 — Summary Embedding Cache
+    Note over CC,QDB: Phase 3 — Summary Embedding Cache (always runs)
     CC->>SEC: new SummaryEmbeddingCache(storagePath)
     CC->>SEC: load() + loadSynced()
-    CC->>SEC: embedNewSummaries(topicEntries, embeddingService)
-    loop For each uncached session with summary text
-        SEC->>ES: embed(customTopic || aiSummary)
-        ES->>OAI: text-embedding-3-large
-        OAI-->>ES: number[3072]
-        ES-->>SEC: summary vector cached
-    end
-    SEC-->>CC: { newlyEmbeddedSessionIds, stats }
 
-    Note over CC,QDB: Phase 4 — Chunk Indexing Pipeline
-    CC->>VP: new VectorPipeline(ES, QS, topicStore, cache)
-    CC->>VP: processMessages(allMessages, forceSessionIds)
+    alt SKIP_STARTUP_UPDATING_QDRANT=false
+        Note over CC,QDB: Phase 3b — Summary Embedding
+        CC->>SEC: embedNewSummaries(topicEntries, embeddingService)
+        loop For each uncached session with summary text
+            SEC->>ES: embed(customTopic || aiSummary)
+            ES->>OAI: text-embedding-3-large
+            OAI-->>ES: number[3072]
+            ES-->>SEC: summary vector cached
+        end
+        SEC-->>CC: { newlyEmbeddedSessionIds, stats }
 
-    loop For each harness group
-        VP->>QS: ensureCollection(harness)
-        QS->>QDB: getCollection → create V2 if missing
+        Note over CC,QDB: Phase 4 — Chunk Indexing Pipeline
+        CC->>VP: new VectorPipeline(ES, QS, topicStore, cache)
+        CC->>VP: processMessages(allMessages, forceSessionIds)
 
-        loop For each message batch (50)
-            loop For each message
-                VP->>VP: role !== "user"? skip
-                VP->>VP: alreadyIndexed && !forceReindex? skip
-                VP->>TSt: getBySessionId(sessionId) → V2 payload fields
-                VP->>SEC: get(sessionId) → summary vector
+        loop For each harness group
+            VP->>QS: ensureCollection(harness)
+            QS->>QDB: getCollection → create V2 if missing
 
-                VP->>CH: chunkMessage(message.text)
-                CH->>CL: classifyBlob(text)
-                CL-->>CH: ContentKind
-                CH-->>VP: MessageChunk[]
+            loop For each message batch (50)
+                loop For each message
+                    VP->>VP: role !== "user"? skip
+                    VP->>VP: alreadyIndexed && !forceReindex? skip
+                    VP->>TSt: getBySessionId(sessionId) → V2 payload fields
+                    VP->>SEC: get(sessionId) → summary vector
 
-                loop For each chunk
-                    VP->>ES: embed(chunk.text)
-                    ES->>OAI: text-embedding-3-large
-                    OAI-->>ES: number[3072]
-                    ES-->>VP: chunk embedding
+                    VP->>CH: chunkMessage(message.text)
+                    CH->>CL: classifyBlob(text)
+                    CL-->>CH: ContentKind
+                    CH-->>VP: MessageChunk[]
 
-                    VP->>VP: build point with named vectors<br/>{ chunk: embedding, summary?: cachedVector }
+                    loop For each chunk
+                        VP->>ES: embed(chunk.text)
+                        ES->>OAI: text-embedding-3-large
+                        OAI-->>ES: number[3072]
+                        ES-->>VP: chunk embedding
+
+                        VP->>VP: build point with named vectors<br/>{ chunk: embedding, summary?: cachedVector }
+                    end
+
+                    VP->>QS: upsertPoints(harness, points[])
+                    QS->>QDB: Batch upsert (named vectors)
                 end
-
-                VP->>QS: upsertPoints(harness, points[])
-                QS->>QDB: Batch upsert (named vectors)
             end
         end
-    end
 
-    VP->>SEC: saveSynced()
-    VP-->>CC: VectorPipelineStats
+        VP->>SEC: saveSynced()
+        VP-->>CC: VectorPipelineStats
+    end
 ```
 
 ### 4.2 Startup Ordering (R2BQ)
@@ -245,6 +251,27 @@ TopicSummarizer → SummaryEmbeddingCache.embedNewSummaries() → VectorPipeline
 3. **VectorPipeline** runs third, building chunk points with V2 payload fields from TopicStore and attaching pre-computed summary vectors from the cache.
 
 This ordering ensures that freshly summarized sessions get both summary metadata and summary vectors in their Qdrant points on the same startup pass.
+
+**`SKIP_STARTUP_UPDATING_QDRANT=true`** gates steps 2 and 3 entirely — no OpenAI calls are made. The `SummaryEmbeddingCache` is still constructed and its files loaded (disk reads only) so it remains available for the incremental pipeline at runtime.
+
+```mermaid
+flowchart TD
+    START["ContextCore startup"] --> SUMM["Phase 1: TopicSummarizer<br/>(independent of Qdrant flags)"]
+    SUMM --> INIT["SummaryEmbeddingCache<br/>construct + load() + loadSynced()<br/>(disk reads only — always runs)"]
+
+    INIT --> SKIP{"SKIP_STARTUP<br/>_UPDATING_QDRANT?"}
+
+    SKIP -->|"true"| SKIP_MSG["Log: skipped<br/>No OpenAI calls<br/>Cache object available for runtime"]
+    SKIP -->|"false"| EMBED["Phase 2: embedNewSummaries()<br/>(calls OpenAI for uncached sessions)"]
+    EMBED --> PIPELINE["Phase 3: VectorPipeline<br/>.processMessages()<br/>(chunk + upsert to Qdrant)"]
+
+    SKIP_MSG --> SERVER["Start Express server"]
+    PIPELINE --> SERVER
+
+    style SKIP_MSG fill:#555,color:#fff
+    style EMBED fill:#2a6f97,color:#fff
+    style PIPELINE fill:#1b4332,color:#fff
+```
 
 ### 4.3 Per-Harness Collections
 
@@ -309,7 +336,7 @@ forceSessionIds = newlyEmbeddedSessionIds ∪ unsyncedSessionIds
 ```
 
 - **`newlyEmbeddedSessionIds`**: Sessions embedded in the current run's `embedNewSummaries()` pass.
-- **`unsyncedSessionIds`**: Sessions with cached embeddings that were never confirmed applied to Qdrant (e.g., because `SKIP_STARTUP_UPDATING_QDRANT` was true or Qdrant was disabled at the time).
+- **`unsyncedSessionIds`**: Sessions with cached embeddings that were never confirmed applied to Qdrant (e.g., because Qdrant was disabled when the cache was written, or the pipeline crashed mid-run).
 
 After the pipeline completes and summary vectors have been attached, the synced state is persisted via `summaryEmbeddingCache.saveSynced()`.
 
@@ -649,8 +676,7 @@ flowchart TD
 
 The cache tracks which sessions have had their summary vectors **confirmed applied to Qdrant** via a separate `summary-vectors-synced.json` file. This closes the gap where:
 
-- Qdrant was disabled when embeddings were cached
-- `SKIP_STARTUP_UPDATING_QDRANT` was true when embeddings were cached
+- Qdrant was disabled (`DO_NOT_USE_QDRANT=true`) when embeddings were cached
 - The pipeline crashed before reaching those sessions' messages
 
 `getUnsyncedSessionIds()` returns sessions with cached embeddings not yet confirmed in Qdrant. These are included in `forceSessionIds` on the next pipeline run.
@@ -885,31 +911,60 @@ The `VectorPipelineStats` now tracks summary-related metrics:
 
 ## 13. Incremental Pipeline (R2BQ)
 
-The `IncrementalPipeline` (`src/watcher/IncrementalPipeline.ts`) processes live file changes with the same three-step dependency chain as startup:
+The `IncrementalPipeline` (`src/watcher/IncrementalPipeline.ts`) processes live file changes with the same three-step dependency chain as startup, but **scoped to new sessions only**. Steps 4, 4b, and 5 only run when genuinely new messages are found, and the summary embedding pass receives only the topic entries for those new sessions — never the full TopicStore.
+
+### 13.1 Incremental Flow
 
 ```mermaid
 flowchart TD
-    CHANGE["File change detected"] --> READ["1. Re-read harness source"]
-    READ --> GROUP["2. Group by session"]
-    GROUP --> WRITE["3. Write to storage + DB"]
+    CHANGE["File change detected<br/>(FileWatcher)"] --> READ["1. Re-read harness source<br/>(skips unchanged files)"]
+    READ --> GROUP["2. Group messages by session"]
+    GROUP --> WRITE["3. Insert into DB<br/>(INSERT OR IGNORE)"]
 
-    WRITE --> SUMMARIZE["4. TopicSummarizer<br/>generates aiSummary"]
-    SUMMARIZE --> EMBED_SUMMARY["4b. SummaryEmbeddingCache<br/>embeds fresh summaries"]
-    EMBED_SUMMARY --> VECTOR["5. VectorPipeline<br/>attaches cached summary vectors"]
+    WRITE --> COUNT{"New messages<br/>found?"}
+    COUNT -->|"no"| DONE["No-op — already indexed"]
+    COUNT -->|"yes"| COLLECT["Collect newSessionIds<br/>+ allNewMessages"]
 
-    SUMMARIZE -.->|"dependency"| EMBED_SUMMARY
-    EMBED_SUMMARY -.->|"dependency"| VECTOR
+    COLLECT --> SUMMARIZE
 
+    subgraph Scoped["Steps 4–5: Scoped to newSessionIds"]
+        SUMMARIZE["4. TopicSummarizer<br/>summarizeSession() per new session<br/>→ TopicStore.upsert() + save()"]
+        SUMMARIZE --> FILTER["4b. Filter TopicStore<br/>to newSessionIds only"]
+        FILTER --> EMBED["SummaryEmbeddingCache<br/>.embedNewSummaries(filteredEntries)<br/>batchDelayMs=0"]
+        EMBED --> VECTOR["5. VectorPipeline<br/>.processMessages(allNewMessages)<br/>with cached summary vectors"]
+    end
+
+    style Scoped fill:#1a1a2e,color:#fff
     style SUMMARIZE fill:#264653,color:#fff
-    style EMBED_SUMMARY fill:#2a6f97,color:#fff
+    style FILTER fill:#2a6f97,color:#fff
+    style EMBED fill:#2a6f97,color:#fff
     style VECTOR fill:#1b4332,color:#fff
+    style DONE fill:#555,color:#fff
 ```
 
-| Step | Module                  | Purpose                                                             |
-| ---- | ----------------------- | ------------------------------------------------------------------- |
-| 4    | `TopicSummarizer`       | Generates aiSummary in TopicStore for new sessions                  |
-| 4b   | `SummaryEmbeddingCache` | Embeds fresh summaries into the cache (batchDelayMs=0 for speed)    |
-| 5    | `VectorPipeline`        | Chunks, embeds, and upserts points with V2 payload + summary vector |
+### 13.2 Scoping — Why Not the Full TopicStore?
+
+At startup, `embedNewSummaries()` receives the **full** `topicStore.getAll()` because every uncached session is a valid candidate. The method's internal `this.has(sessionId)` check makes this idempotent — already-cached sessions are skipped.
+
+During incremental ingestion, passing the full TopicStore would still be *correct* (the cache check prevents re-embedding), but for a store with 1000+ entries, the method would iterate every entry just to find the 1–2 new ones. Worse, if the cache file is empty or was cleared, it would attempt to embed the entire backlog on every file change.
+
+The fix: filter before calling:
+
+```ts
+const newTopicEntries = this.topicStore.getAll()
+    .filter(e => newSessionIds.has(e.sessionId));
+await this.summaryEmbeddingCache.embedNewSummaries(newTopicEntries, ...);
+```
+
+This ensures the incremental path is O(new sessions), not O(total sessions).
+
+### 13.3 Step Reference
+
+| Step | Module                  | Input scope                        | Purpose                                                             |
+| ---- | ----------------------- | ---------------------------------- | ------------------------------------------------------------------- |
+| 4    | `TopicSummarizer`       | `newSessionIds`                    | Generates aiSummary in TopicStore for new sessions                  |
+| 4b   | `SummaryEmbeddingCache` | `topicStore` filtered by `newSessionIds` | Embeds summaries for new sessions only. `batchDelayMs=0` for speed. |
+| 5    | `VectorPipeline`        | `allNewMessages`                   | Chunks, embeds, and upserts points with V2 payload + summary vector |
 
 This ordering ensures that a session discovered via file watch gets its AI summary, summary embedding, and Qdrant points all in a single ingestion pass.
 
@@ -995,8 +1050,10 @@ Phase 1: AI Summarization
     → generates aiSummary for sessions without one
     → persists to TopicStore (topics.json)
 
-Phase 2: Summary Embedding Cache
+Phase 2: Summary Embedding Cache init (always runs)
   SummaryEmbeddingCache.load() + loadSynced()
+
+  [skipped entirely if SKIP_STARTUP_UPDATING_QDRANT=true]
   SummaryEmbeddingCache.embedNewSummaries(topicEntries)
     → for each session with (customTopic || aiSummary):
         → already cached? skip
@@ -1005,7 +1062,7 @@ Phase 2: Summary Embedding Cache
     → save() to disk
     → return { newlyEmbeddedSessionIds }
 
-Phase 3: Chunk Indexing
+Phase 3: Chunk Indexing [skipped if SKIP_STARTUP_UPDATING_QDRANT=true]
   forceSessionIds = newlyEmbeddedSessionIds ∪ unsyncedSessionIds
   VectorPipeline.processMessages(allMessages, forceSessionIds)
     → group by harness
@@ -1044,15 +1101,21 @@ GET|POST /api/search?q=...
 
 ### 15.3 Incremental Ingestion (File Watch)
 
+All downstream steps are scoped to `newSessionIds` — the sessions that actually produced new DB rows.
+
 ```
 File change detected
-  → 1. Re-read harness source
-  → 2. Group by session
-  → 3. Write to storage + MessageDB
-  → 4. TopicSummarizer: summarize new sessions
-  → 4b. SummaryEmbeddingCache: embed new summaries (batchDelayMs=0)
-  → 5. VectorPipeline: chunk, embed, upsert with V2 payload + summary vectors
+  → 1. Re-read harness source (unchanged files cached)
+  → 2. Group messages by session
+  → 3. INSERT OR IGNORE into MessageDB → collect newSessionIds + allNewMessages
+  → [exit early if no new messages]
+  → 4. TopicSummarizer.summarizeSession() for each newSessionId
+  → 4b. Filter topicStore.getAll() to newSessionIds
+        → SummaryEmbeddingCache.embedNewSummaries(filteredEntries, batchDelayMs=0)
+  → 5. VectorPipeline.processMessages(allNewMessages) with cached summary vectors
 ```
+
+**Key invariant**: Step 4b receives only topic entries matching `newSessionIds`, never the full TopicStore. This keeps the incremental path O(new sessions) regardless of total topic count.
 
 ---
 

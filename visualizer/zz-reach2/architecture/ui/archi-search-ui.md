@@ -160,7 +160,7 @@ flowchart LR
 
 ### 2.5 Response Cache (`src/cache/ResponseCache.ts`)
 
-File-based query cache stored in `{storage}/zeCache/queries/{YYYY-MM-DD}/`.
+File-based query cache stored in `{storage}/zzzcache/queries/{YYYY-MM-DD}/`.
 
 - **File naming:** `{sanitized-query-prefix}--{12-char-SHA256-hash}.json`
 - **Scope:** 1 day (new directory per date)

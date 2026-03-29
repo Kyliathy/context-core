@@ -436,7 +436,7 @@ The `withCache()` wrapper supports an optional `maxAgeMs` parameter for finer-gr
 
 ```
 filename = {sanitized-query-prefix}--{sha256-hash-12chars}.json
-path     = {storage}/zeCache/queries/YYYY-MM-DD/{filename}
+path     = {storage}/zzzcache/queries/YYYY-MM-DD/{filename}
 ```
 
 The hash is computed from the **lowercased** query string, making cache lookups case-insensitive. The sanitized prefix makes cache files human-readable in the filesystem.

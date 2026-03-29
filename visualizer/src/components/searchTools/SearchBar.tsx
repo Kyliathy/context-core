@@ -421,8 +421,7 @@ const SearchBar = forwardRef<HTMLInputElement, SearchBarProps>(function SearchBa
 					onKeyDown={onDropdownKeyDown}
 					title="Select view"
 					aria-haspopup="listbox"
-					aria-expanded={isDropdownOpen}
-				>
+					aria-expanded={isDropdownOpen}>
 					{activeView && renderViewItem(activeView)}
 					<span className="view-select-caret" aria-hidden>
 						▾
@@ -435,8 +434,7 @@ const SearchBar = forwardRef<HTMLInputElement, SearchBarProps>(function SearchBa
 							className="view-menu-column view-menu-left"
 							role="listbox"
 							aria-label="Views"
-							aria-activedescendant={orderedViews[highlightedIndex]?.id}
-						>
+							aria-activedescendant={orderedViews[highlightedIndex]?.id}>
 							{typeaheadHint && <div className="view-typeahead-hint">Jump: {typeaheadHint}</div>}
 							<div className="view-menu-group">Built-in Views</div>
 							{builtInViews.map((view, index) => (
@@ -454,8 +452,7 @@ const SearchBar = forwardRef<HTMLInputElement, SearchBarProps>(function SearchBa
 									onFocus={() => setHighlightedIndex(index)}
 									onClick={() => {
 										selectViewByIndex(index);
-									}}
-								>
+									}}>
 									{renderViewItem(view)}
 								</button>
 							))}
@@ -480,8 +477,7 @@ const SearchBar = forwardRef<HTMLInputElement, SearchBarProps>(function SearchBa
 												onFocus={() => setHighlightedIndex(index)}
 												onClick={() => {
 													selectViewByIndex(index);
-												}}
-											>
+												}}>
 												{renderViewItem(view)}
 											</button>
 										);
@@ -509,8 +505,7 @@ const SearchBar = forwardRef<HTMLInputElement, SearchBarProps>(function SearchBa
 												onFocus={() => setHighlightedIndex(index)}
 												onClick={() => {
 													selectViewByIndex(index);
-												}}
-											>
+												}}>
 												{renderViewItem(view)}
 											</button>
 										);
@@ -538,8 +533,7 @@ const SearchBar = forwardRef<HTMLInputElement, SearchBarProps>(function SearchBa
 												onFocus={() => setHighlightedIndex(index)}
 												onClick={() => {
 													selectViewByIndex(index);
-												}}
-											>
+												}}>
 												{renderViewItem(view)}
 											</button>
 										);
@@ -573,8 +567,7 @@ const SearchBar = forwardRef<HTMLInputElement, SearchBarProps>(function SearchBa
 										event.preventDefault();
 										closeDropdown();
 									}
-								}}
-							>
+								}}>
 								▶ Launch Builder
 							</button>
 							<button
@@ -605,8 +598,7 @@ const SearchBar = forwardRef<HTMLInputElement, SearchBarProps>(function SearchBa
 										event.preventDefault();
 										closeDropdown();
 									}
-								}}
-							>
+								}}>
 								📋 List Agents
 							</button>
 							<div className="view-menu-divider" />
@@ -639,8 +631,7 @@ const SearchBar = forwardRef<HTMLInputElement, SearchBarProps>(function SearchBa
 										event.preventDefault();
 										closeDropdown();
 									}
-								}}
-							>
+								}}>
 								📝 Create Template
 							</button>
 							<button
@@ -666,8 +657,7 @@ const SearchBar = forwardRef<HTMLInputElement, SearchBarProps>(function SearchBa
 										event.preventDefault();
 										closeDropdown();
 									}
-								}}
-							>
+								}}>
 								📚 List Templates
 							</button>
 						</div>
@@ -689,8 +679,7 @@ const SearchBar = forwardRef<HTMLInputElement, SearchBarProps>(function SearchBa
 					className="time-range-select"
 					value={dateRangeValue}
 					onChange={(event) => onDateRangeChange(event.target.value)}
-					title="Select time range"
-				>
+					title="Select time range">
 					{timeRangeOptions.map((option) => (
 						<option key={option.value} value={option.value}>
 							{option.label}
@@ -712,8 +701,7 @@ const SearchBar = forwardRef<HTMLInputElement, SearchBarProps>(function SearchBa
 							className="latest-limit-select"
 							value={latestLimit}
 							onChange={(event) => onLatestLimitChange?.(Number(event.target.value))}
-							title="Select limit"
-						>
+							title="Select limit">
 							{[50, 100, 150, 200, 300, 400, 500].map((limitOption) => (
 								<option key={limitOption} value={limitOption}>
 									{limitOption}
@@ -733,7 +721,7 @@ const SearchBar = forwardRef<HTMLInputElement, SearchBarProps>(function SearchBa
 							placeholder="Search ContextCore..."
 							onChange={(event) => onValueChange(event.target.value)}
 							onFocus={() => {
-								if (!isSearchDisabled) {
+								if (!isSearchDisabled && !isLoading) {
 									setIsHistoryPanelOpen(true);
 									setHighlightedHistoryIndex(0);
 								}
@@ -756,8 +744,7 @@ const SearchBar = forwardRef<HTMLInputElement, SearchBarProps>(function SearchBa
 					className={`filter-button ${hasActiveFilters ? "has-active-filters" : ""}`}
 					onClick={onOpenFilter}
 					disabled={isFilterDisabled}
-					title={hasActiveFilters ? "Filters active - click to modify" : "Filter results"}
-				>
+					title={hasActiveFilters ? "Filters active - click to modify" : "Filter results"}>
 					Filter
 					{hasActiveFilters && <span className="filter-badge" aria-label="Filters active" />}
 				</button>
@@ -779,8 +766,7 @@ const SearchBar = forwardRef<HTMLInputElement, SearchBarProps>(function SearchBa
 									onClearHistory();
 									setIsHistoryPanelOpen(false);
 								}}
-								title="Clear all history"
-							>
+								title="Clear all history">
 								Clear All
 							</button>
 						</div>
@@ -795,8 +781,7 @@ const SearchBar = forwardRef<HTMLInputElement, SearchBarProps>(function SearchBa
 										className={`search-history-item ${index === highlightedHistoryIndex ? "is-highlighted" : ""}`}
 										role="option"
 										tabIndex={-1}
-										onClick={() => selectHistoryItem(query)}
-									>
+										onClick={() => selectHistoryItem(query)}>
 										{query}
 									</button>
 									<button
@@ -806,8 +791,7 @@ const SearchBar = forwardRef<HTMLInputElement, SearchBarProps>(function SearchBa
 											event.stopPropagation();
 											onRemoveHistory(query);
 										}}
-										title="Remove from history"
-									>
+										title="Remove from history">
 										×
 									</button>
 								</div>

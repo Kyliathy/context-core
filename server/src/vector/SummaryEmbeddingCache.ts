@@ -167,8 +167,7 @@ export class SummaryEmbeddingCache
 	 * applied to Qdrant. These sessions need force-reindex on next pipeline run.
 	 *
 	 * Covers the gap where:
-	 * - Qdrant was disabled when embeddings were cached
-	 * - SKIP_STARTUP_UPDATING_QDRANT was true when embeddings were cached
+	 * - Qdrant was disabled (DO_NOT_USE_QDRANT=true) when embeddings were cached
 	 * - Pipeline crashed before reaching those sessions' messages
 	 */
 	getUnsyncedSessionIds(): Set<string>
