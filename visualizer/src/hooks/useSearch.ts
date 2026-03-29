@@ -375,6 +375,17 @@ export function useSearch({ activeView, favoritesForActiveView, fromDate, limit 
 
 	const clearError = useCallback(() => setError(null), []);
 
+	const clearResults = useCallback(() =>
+	{
+		setQuery("");
+		setResults([]);
+		setCards([]);
+		setThreadCards([]);
+		setError(null);
+		setLatencyMs(null);
+		setHasSearched(false);
+	}, []);
+
 	return useMemo(
 		() => ({
 			query,
@@ -388,7 +399,8 @@ export function useSearch({ activeView, favoritesForActiveView, fromDate, limit 
 			hasSearched,
 			search,
 			clearError,
+			clearResults,
 		}),
-		[query, results, cards, threadCards, searchResetToken, isLoading, error, latencyMs, hasSearched, search, clearError]
+		[query, results, cards, threadCards, searchResetToken, isLoading, error, latencyMs, hasSearched, search, clearError, clearResults]
 	);
 }

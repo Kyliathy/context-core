@@ -194,6 +194,77 @@ Requires `MCP_ENABLED=true` and `MCP_SSE_ENABLED=true` on the server. If `MCP_AU
 
 A single `cc.json` contains per-hostname harness paths. The server detects `COMPUTERNAME` / `os.hostname()` and loads the matching machine config.
 
+## Agent Builder
+
+The Agent Builder lets you create `.agent.md` files (GitHub Copilot / VS Code agent format) from your project's knowledge sources directly in the visualizer. It is configured via `dataSources` entries in `server/cc.json`, nested inside the machine block that matches your hostname.
+
+### Configuration
+
+Add a `dataSources` block to your machine entry in `cc.json`:
+
+```json
+{
+  "machine": "MY-MACHINE",
+  "harnesses": { "..." },
+  "dataSources": {
+    "zz-reach2": [
+      {
+        "path": "/home/me/my-project/docs",
+        "agentPath": "/home/me/my-project/.github/agents",
+        "name": "My Project Docs",
+        "type": "Reach2 Architectural Repo",
+        "purpose": "AgentBuilder"
+      }
+    ]
+  }
+}
+```
+
+### Field Reference
+
+| Field       | Required | Description                                                                                                                                                      |
+| ----------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `path`      | yes      | Root directory to index. All files under this path (recursively) appear as selectable knowledge sources in the Agent Builder view. This is **what data shows up**. |
+| `agentPath` | no       | Directory where created `.agent.md` and `.agent.json` files are saved. Omit if this source is content-only and agents should not be written from it.              |
+| `name`      | yes      | Human-readable label shown in the visualizer's project dropdown. Also used as the filter key when preparing file listings.                                        |
+| `type`      | yes      | Informational tag describing the source kind (e.g. `"Reach2 Architectural Repo"`). Not used for filtering.                                                       |
+| `purpose`   | yes      | Must be `"AgentBuilder"` for the source to be indexed. Entries with any other value are ignored.                                                                  |
+
+### How It Works
+
+- **`path`** controls what shows up in the Agent Builder view. Point it at a directory containing documentation, architecture notes, or any files you want available as agent knowledge. The indexer recursively walks the directory, skipping `.git/` and `node_modules/`.
+- **`agentPath`** controls where agents are saved. When you create an agent in the visualizer, the resulting `.agent.md` and `.agent.json` files are written to this directory. Multiple data sources can share the same `agentPath` — the indexer deduplicates by absolute path.
+- If no `dataSources` entries with `purpose: "AgentBuilder"` exist for the current machine, the Agent Builder feature is disabled and its endpoints return 404.
+
+### Example: Two Sources, One Agent Directory
+
+A common pattern is indexing both backend and frontend docs while saving all agents to a shared `.github/agents/` directory:
+
+```json
+"dataSources": {
+  "zz-reach2": [
+    {
+      "path": "/project/server/docs",
+      "agentPath": "/project/.github/agents",
+      "name": "Backend Docs",
+      "type": "Reach2 Architectural Repo",
+      "purpose": "AgentBuilder"
+    },
+    {
+      "path": "/project/frontend/docs",
+      "agentPath": "/project/.github/agents",
+      "name": "Frontend Docs",
+      "type": "Reach2 Architectural Repo",
+      "purpose": "AgentBuilder"
+    }
+  ]
+}
+```
+
+Both sources appear in the visualizer. Files from each are labeled by their `name`. Created agents land in the shared `.github/agents/` directory.
+
+> Read more: [Agent Builder architecture](server/zz-reach2/architecture/agents/archi-agent-builder.md) | [Agent Builder UI](visualizer/zz-reach2/architecture/agents/archi-agent-builder-ui.md)
+
 ## Setup Wizard
 
 `bun run setup` launches an interactive CLI that discovers IDE chat sources (Windows, Linux, Darwin), proposes storage, supports harness-by-harness confirmation, and writes/merges `cc.json` safely.

@@ -570,7 +570,9 @@ stateDiagram-v2
     Searching --> Loaded : fetch success
     Searching --> Error : fetch failure
     Loaded --> Searching : new search(query)
+    Loaded --> Empty : clearResults() (view switch)
     Error --> Searching : new search(query)
+    Error --> Empty : clearResults() (view switch)
     Error --> Error : clearError() → banner dismissed
     Loaded --> Empty : search("") empty query
 
@@ -583,6 +585,8 @@ stateDiagram-v2
         Zooming --> Browsing : wheel ends
     }
 ```
+
+**View-switch reset:** When the active view changes, `App.tsx` calls `clearResults()` and `setHoverDetail(null)` in a dedicated `useEffect` before any auto-search effects fire. This ensures stale cards and hover panels from the previous view are removed immediately, providing a clean visual slate. Subsequent auto-search effects then repopulate with fresh data for the new view.
 
 ### 10.1 React State Inventory
 
@@ -599,7 +603,8 @@ stateDiagram-v2
 | `error`                 | `useSearch`        | `string \| null`           |                                                                           |
 | `latencyMs`             | `useSearch`        | `number \| null`           | `performance.now()` delta                                                 |
 | `hasSearched`           | `useSearch`        | `boolean`                  | Controls empty-state overlay                                              |
-| `hoverDetail`           | `App`              | `HoverEventDetail \| null` |                                                                           |
+| —                       | `useSearch`        | `clearResults()`           | Imperatively resets all result state; called on view switch               |
+| `hoverDetail`           | `App`              | `HoverEventDetail \| null` | Cleared to `null` on view switch to dismiss stale hover panels            |
 | `viewport`              | `App`              | `ViewportChangeDetail`     | `{x, y, k}`                                                               |
 | `isEditResultsViewOpen` | `App`              | `boolean`                  | Add/edit view modal visibility                                            |
 | `isFavoritesPickerOpen` | `App`              | `boolean`                  | Favorites target picker visibility                                        |

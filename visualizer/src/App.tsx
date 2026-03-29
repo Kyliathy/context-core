@@ -175,6 +175,7 @@ function findNextPlaceholderId(entries: AgentKnowledgeEntry[], afterIndex: numbe
 
 export default function App() {
 	const searchInputRef = useRef<HTMLInputElement>(null);
+	const prevDateKeyRef = useRef<string>("");
 	const {
 		views,
 		activeViewId,
@@ -226,14 +227,24 @@ export default function App() {
 	});
 	const [localFilterText, setLocalFilterText] = useState<string>("");
 
-	const { query, cards, threadCards, searchResetToken, isLoading, error, latencyMs, hasSearched, search, clearError } = useSearch(
-		{
-			activeView,
-			favoritesForActiveView,
-			fromDate: resolveFromDate(dateRangePreset, customSinceDate),
-			limit: latestLimit,
-		},
-	);
+	const {
+		query,
+		cards,
+		threadCards,
+		searchResetToken,
+		isLoading,
+		error,
+		latencyMs,
+		hasSearched,
+		search,
+		clearError,
+		clearResults,
+	} = useSearch({
+		activeView,
+		favoritesForActiveView,
+		fromDate: resolveFromDate(dateRangePreset, customSinceDate),
+		limit: latestLimit,
+	});
 
 	const { history: searchHistory, addToHistory, clearHistory, removeFromHistory, getMatches } = useSearchHistory();
 	const { isOnline } = useOnlineStatus();
@@ -435,7 +446,9 @@ export default function App() {
 	useEffect(() => {
 		setSearchInputValue(activeView.type === "search-threads" ? "" : activeView.query);
 		setLocalFilterText("");
-	}, [activeView.id, activeView.query, activeView.type]);
+		clearResults();
+		setHoverDetail(null);
+	}, [activeView.id, activeView.query, activeView.type, clearResults]);
 
 	useEffect(() => {
 		if (activeView.type === "search" || activeView.type === "search-threads") {
@@ -448,16 +461,18 @@ export default function App() {
 			search(activeView.query);
 			return;
 		}
-	}, [
-		activeView.id,
-		activeView.type,
-		activeView.query,
-		activeView.autoQuery,
-		search,
-		latestLimit,
-		dateRangePreset,
-		customSinceDate,
-	]);
+	}, [activeView.id, activeView.type, activeView.query, activeView.autoQuery, search, latestLimit]);
+
+	// Re-run search when date range changes (for search/search-threads views, regardless of autoQuery)
+	useEffect(() => {
+		const currentKey = `${dateRangePreset}|${customSinceDate}`;
+		if (currentKey === prevDateKeyRef.current) return;
+		prevDateKeyRef.current = currentKey;
+
+		if (activeView.type === "search" || activeView.type === "search-threads") {
+			search(activeView.query);
+		}
+	}, [dateRangePreset, customSinceDate, activeView.type, activeView.query, search]);
 
 	// Auto-fetch for other built-in views that don't depend on date/limit
 	useEffect(() => {

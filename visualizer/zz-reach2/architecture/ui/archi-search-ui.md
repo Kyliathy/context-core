@@ -301,6 +301,8 @@ flowchart TD
 
 **State:** `query`, `results` (raw SearchHit[]), `cards` (CardData[]), `threadCards` (ThreadCardData[]), `isLoading`, `error`, `latencyMs`, `hasSearched`.
 
+**`clearResults()`:** Imperatively resets all result state (`query`, `results`, `cards`, `threadCards`, `error`, `latencyMs`, `hasSearched`) to initial empty values. Called by `App.tsx` on view switch to ensure no stale data from the previous view persists. This is separate from `search()` — it clears without fetching.
+
 **Card conversion:** All result types are normalized to `CardData` or `ThreadCardData` shapes for the D3 visualization engine. This includes synthetic "fake cards" for agent files, agent definitions, and templates — enabling a unified rendering pipeline.
 
 **Excerpt normalization:** Whitespace-collapsed, trimmed excerpts at three levels: short (120 chars), medium (400 chars), long (1200 chars).
@@ -316,7 +318,8 @@ Five `useEffect` hooks in `App.tsx` control when searches fire automatically. An
 ```mermaid
 flowchart TD
     subgraph Triggers["Search Triggers in App.tsx"]
-        T1["View switch<br/>(activeView.id changes)"]
+        T0["View switch — clear<br/>(activeView.id changes)"]
+        T1["View switch — search<br/>(activeView.id changes)"]
         T2["Auto-refresh interval<br/>(activeView.autoRefreshSeconds)"]
         T3["Favorites change<br/>(favoritesSignature)"]
         T4["Save view with<br/>pendingSearch mechanism"]
@@ -324,6 +327,8 @@ flowchart TD
         T6["Date range change<br/>(dateRangePreset or customSinceDate)"]
     end
 
+    T0 -->|"clearResults() + setHoverDetail(null)"| CLEAR["Clean slate<br/>(empty cards, no hover)"]
+    CLEAR -.->|"then"| T1
     T1 -->|"if autoQuery or non-search type"| SEARCH["search(activeView.query)"]
     T2 -->|"setInterval, min 5s"| SEARCH
     T3 -->|"if type = favorites"| SEARCH
@@ -332,14 +337,15 @@ flowchart TD
     T6 -->|"re-run current search"| SEARCH
 ```
 
-| Trigger                   | Deps                                                                            | Behavior                                                                                                                                                                                                                             |
-| ------------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **View switch**           | `[activeView.id]`                                                               | For `search` type: fires only if `autoQuery` is true. All other types: always fires.                                                                                                                                                 |
-| **Perpetual refresh**     | `[activeView.id, .type, .query, .autoRefreshSeconds, search]`                   | `setInterval` at configured seconds (min 5). Cleanup on unmount/change.                                                                                                                                                              |
-| **Favorites mutation**    | `[activeView.id, .type, .query, favoritesSignature, search]`                    | Re-renders favorites view when starred items change.                                                                                                                                                                                 |
-| **Pending search (save)** | `[pendingSearch, search]`                                                       | Fires after `handleSaveView` sets `pendingSearch`. Clears to `null` after execution. Deferred to next render so `search` callback has fresh `activeView.projects`.                                                                   |
-| **Date range change**     | `[activeView.type, activeView.query, customSinceDate, dateRangePreset, search]` | For search / search-threads views: re-runs `activeView.query` whenever `dateRangePreset` or `customSinceDate` changes. Uses `activeView.query` (not internal `query` state) to avoid stale-closure issues with search-threads views. |
-| **Manual**                | N/A                                                                             | `handleSearch(value)` called from `SearchBar`'s Enter key or button.                                                                                                                                                                 |
+| Trigger                   | Deps                                                                            | Behavior                                                                                                                                                                                                                                 |
+| ------------------------- | ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **View switch (clear)**   | `[activeView.id, clearResults]`                                                 | Immediately clears all results (`clearResults()`), dismisses the hover panel (`setHoverDetail(null)`), resets search input and local filter text. Runs before auto-search effects so the UI shows a clean slate during view transitions. |
+| **View switch (search)**  | `[activeView.id]`                                                               | For `search` type: fires only if `autoQuery` is true. All other types: always fires.                                                                                                                                                     |
+| **Perpetual refresh**     | `[activeView.id, .type, .query, .autoRefreshSeconds, search]`                   | `setInterval` at configured seconds (min 5). Cleanup on unmount/change.                                                                                                                                                                  |
+| **Favorites mutation**    | `[activeView.id, .type, .query, favoritesSignature, search]`                    | Re-renders favorites view when starred items change.                                                                                                                                                                                     |
+| **Pending search (save)** | `[pendingSearch, search]`                                                       | Fires after `handleSaveView` sets `pendingSearch`. Clears to `null` after execution. Deferred to next render so `search` callback has fresh `activeView.projects`.                                                                       |
+| **Date range change**     | `[activeView.type, activeView.query, customSinceDate, dateRangePreset, search]` | For search / search-threads views: re-runs `activeView.query` whenever `dateRangePreset` or `customSinceDate` changes. Uses `activeView.query` (not internal `query` state) to avoid stale-closure issues with search-threads views.     |
+| **Manual**                | N/A                                                                             | `handleSearch(value)` called from `SearchBar`'s Enter key or button.                                                                                                                                                                     |
 
 **The `pendingSearch` mechanism** solves a React closure timing issue: when a view is saved with new project filters, `updateView` and `setPendingSearch` are batched into one re-render. After re-render, `search` is recreated with fresh `activeView.projects` (via `projectsKey`), and the `useEffect` fires with the updated callback.
 
@@ -756,7 +762,7 @@ classDiagram
 | Module                 | Path                                                         | Responsibility                                                                                                                                                                                                         |
 | ---------------------- | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **api/search**         | `visualizer/src/api/search.ts`                               | HTTP client; POSTs to `/api/messages` and `/api/threads` with `searchTerms`, `fromDate`, `projects`, `symbols?`, `subject?`                                                                                            |
-| **useSearch**          | `visualizer/src/hooks/useSearch.ts`                          | Search state machine; dispatches by view type; passes `fromDate`, `symbols`, `subject`; card conversion                                                                                                                |
+| **useSearch**          | `visualizer/src/hooks/useSearch.ts`                          | Search state machine; dispatches by view type; passes `fromDate`, `symbols`, `subject`; card conversion; `clearResults()` for view-switch reset                                                                        |
 | **useViews**           | `visualizer/src/hooks/useViews.ts`                           | View CRUD; localStorage persistence; 8 built-in views                                                                                                                                                                  |
 | **useSearchHistory**   | `visualizer/src/hooks/useSearchHistory.ts`                   | Recent query storage and filtering                                                                                                                                                                                     |
 | **SearchBar**          | `visualizer/src/components/searchTools/SearchBar.tsx`        | Query input, view dropdown with 4 categories (Built-in Views / Search Threads / Search Messages / Favorites), date-range filter, limit selector (latest + search-threads), instant filter, history panel, keyboard nav |
@@ -809,7 +815,17 @@ When multiple search dimensions are active (`searchTerms` + `symbols` + `subject
 
 The `subject` filter matches against `AgentMessage.subject` — the raw field, **not** the topic-resolved subject (which may be a `customTopic` or `aiSummary`). This is a deliberate choice: (1) it's deterministic and doesn't depend on `TopicStore` state, (2) `resolveSubject()` is applied after filtering for display purposes, and (3) the raw subject is what's indexed by Fuse.js. If topic-aware subject search is needed in the future, it would require a separate filter or index expansion.
 
-### 7.11 Route Overlap: messageRoutes vs searchRoutes
+### 7.11 View-Switch State Reset
+
+When switching views (`activeView.id` changes), a dedicated `useEffect` fires **before** any auto-search effects. It performs four resets in a single synchronous pass:
+1. `setSearchInputValue(...)` — resets the search input to the new view's query (or empty for search-threads)
+2. `setLocalFilterText("")` — clears the client-side instant filter
+3. `clearResults()` — empties `query`, `results`, `cards`, `threadCards`, `error`, `latencyMs`, and `hasSearched` so stale cards from the previous view are removed immediately
+4. `setHoverDetail(null)` — dismisses the HoverPanel if it was visible, preventing it from showing data belonging to the previous view's result set
+
+This ensures a clean visual slate between views. Subsequent auto-search effects (for `autoQuery` views, `latest`, agent-builder, etc.) then repopulate with fresh data. For `search`/`search-threads` views without `autoQuery`, the screen remains empty until the user manually triggers a search.
+
+### 7.12 Route Overlap: messageRoutes vs searchRoutes
 
 Both `POST /api/messages` and `POST /api/search` provide message-level search, but their POST bodies differ slightly (`searchTerms` vs `query`, `fromDate` support). The visualizer uses only `messageRoutes` and `threadRoutes` POST endpoints. `searchRoutes` POST endpoints exist for backward compatibility and MCP server usage. All four POST endpoints support `symbols` and `subject` parameters.
 
