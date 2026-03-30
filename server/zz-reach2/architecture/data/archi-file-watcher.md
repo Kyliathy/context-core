@@ -235,7 +235,7 @@ ContextCore is designed for multi-machine use — the same `cc.json` lists multi
   │   ├── Kiro/
   │   └── VSCode/
     ├── DEVBOX2-RAW/            ← raw archive → SKIP
-  ├── zecache/                ← internal → SKIP
+  ├── zzzcache/               ← internal → SKIP
   ├── .settings/             ← internal → SKIP
   └── cxc-db.sqlite           ← database file → SKIP
 ```
@@ -251,8 +251,8 @@ flowchart TD
     C1 -->|Yes| SKIP1["SKIP — handled by harness watcher"]
     C1 -->|No| C2{"name ends with '-RAW'?"}
     C2 -->|Yes| SKIP2["SKIP — raw archive"]
-    C2 -->|No| C3{"name starts with 'ze'?"}
-    C3 -->|Yes| SKIP3["SKIP — internal dir"]
+    C2 -->|No| C3{"name starts with 'zzz' or '.'?"}
+    C3 -->|Yes| SKIP3["SKIP — internal dir (zzz* / .*)"]
     C3 -->|No| WATCH["WATCH recursively for .json files"]
 ```
 
@@ -434,7 +434,7 @@ flowchart LR
 
 **Harness paths** come directly from the matched `MachineConfig.harnesses` entries — each harness has one or more `path` values pointing to the IDE's raw chat data.
 
-**Remote machine dirs** are NOT listed in `cc.json`. They are discovered dynamically by scanning the `storage` root and filtering out the current machine, `-RAW` archives, and `ze*` internal directories. This means the watcher automatically picks up sessions from any machine that syncs its storage output, with no configuration required.
+**Remote machine dirs** are NOT listed in `cc.json`. They are discovered dynamically by scanning the `storage` root and filtering out the current machine, `-RAW` archives, and `zzz*`/`.*` internal directories. This means the watcher automatically picks up sessions from any machine that syncs its storage output, with no configuration required.
 
 ---
 

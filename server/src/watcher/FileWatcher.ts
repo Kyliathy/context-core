@@ -246,7 +246,7 @@ export class FileWatcher
 
 	/**
 	 * Returns the names of top-level dirs in storage that belong to other machines.
-	 * Excludes: the current machine, dirs ending in "-RAW", dirs starting with "ze".
+	 * Excludes: the current machine, dirs ending in "-RAW", dirs starting with "zzz" or ".".
 	 */
 	private discoverRemoteMachineDirs(): string[]
 	{
@@ -277,7 +277,7 @@ export class FileWatcher
 		{
 			return false; // raw archive dirs
 		}
-		if (lower.startsWith("ze"))
+		if (lower.startsWith("zzz") || lower.startsWith("."))
 		{
 			return false; // internal cache/settings dirs
 		}
