@@ -8,7 +8,7 @@ We're actively developing ContextCore, so feel free to reach out by posting issu
 
 ☑️ 242 tests passing locally, but fixtures are missing from the repo due to privacy reasons. Will generate new fixtures when more developers join.
 
-Release 1 - Codename "LEO"
+Milestone 1 - Codename "LEO"
 
 ## Quick Start
 
