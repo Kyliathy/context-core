@@ -222,13 +222,13 @@ Add a `dataSources` block to your machine entry in `cc.json`:
 
 ### Field Reference
 
-| Field       | Required | Description                                                                                                                                                      |
-| ----------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Field       | Required | Description                                                                                                                                                        |
+| ----------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `path`      | yes      | Root directory to index. All files under this path (recursively) appear as selectable knowledge sources in the Agent Builder view. This is **what data shows up**. |
-| `agentPath` | no       | Directory where created `.agent.md` and `.agent.json` files are saved. Omit if this source is content-only and agents should not be written from it.              |
-| `name`      | yes      | Human-readable label shown in the visualizer's project dropdown. Also used as the filter key when preparing file listings.                                        |
-| `type`      | yes      | Informational tag describing the source kind (e.g. `"Reach2 Architectural Repo"`). Not used for filtering.                                                       |
-| `purpose`   | yes      | Must be `"AgentBuilder"` for the source to be indexed. Entries with any other value are ignored.                                                                  |
+| `agentPath` | no       | Directory where created `.agent.md` and `.agent.json` files are saved. Omit if this source is content-only and agents should not be written from it.               |
+| `name`      | yes      | Human-readable label shown in the visualizer's project dropdown. Also used as the filter key when preparing file listings.                                         |
+| `type`      | yes      | Informational tag describing the source kind (e.g. `"Reach2 Architectural Repo"`). Not used for filtering.                                                         |
+| `purpose`   | yes      | Must be `"AgentBuilder"` for the source to be indexed. Entries with any other value are ignored.                                                                   |
 
 ### How It Works
 
@@ -327,3 +327,17 @@ Recommended reading path:
 - [server/zz-reach2/architecture/techDebt/td-memory-optimization.md](server/zz-reach2/architecture/techDebt/td-memory-optimization.md): Memory-optimization technical debt analysis and proposed improvements.
 
 See [server/README.md](server/README.md) for complete backend configuration and API details.
+
+## Contributing & Roadmap
+
+Getting started with ContextCore is easy as having an IDE and installing `bun` and, if you want to contribute to the semantic/RAG part, installing `qdrant`.
+
+Here's where ContextCore is headed:
+
+- **More IDE harnesses** — Adding support for JetBrains IDEs and Antigravity, expanding the set of AI assistants ContextCore can ingest from.
+- **Cloud-hosted conversations** — Bringing in chat histories from cloud-hosted AI interfaces, not just local IDE sessions.
+- **Search improvements** — Better utilization of Qdrant data, richer extraction of conversation metadata into vector storage, more flexible Fuse.js query combinations, and symbol-aware searches to improve hybrid result quality.
+- **Summarization techniques** — Improving the AI summarization pipeline with better context selection, more accurate topic extraction, and smarter condensation strategies.
+- **More AI providers for summarization** — Making it easy to use other providers (Google, Anthropic, etc.) for topic summarization. The Vercel AI SDK is already in place, but today only OpenAI is wired up — there's no `.env` path for an Anthropic API key yet, for example.
+
+If any of these areas interest you, open an issue or submit a PR — we'd love the help.

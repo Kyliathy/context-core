@@ -175,7 +175,6 @@ function findNextPlaceholderId(entries: AgentKnowledgeEntry[], afterIndex: numbe
 
 export default function App() {
 	const searchInputRef = useRef<HTMLInputElement>(null);
-	const prevDateKeyRef = useRef<string>("");
 	const {
 		views,
 		activeViewId,
@@ -227,24 +226,14 @@ export default function App() {
 	});
 	const [localFilterText, setLocalFilterText] = useState<string>("");
 
-	const {
-		query,
-		cards,
-		threadCards,
-		searchResetToken,
-		isLoading,
-		error,
-		latencyMs,
-		hasSearched,
-		search,
-		clearError,
-		clearResults,
-	} = useSearch({
-		activeView,
-		favoritesForActiveView,
-		fromDate: resolveFromDate(dateRangePreset, customSinceDate),
-		limit: latestLimit,
-	});
+	const { query, cards, threadCards, searchResetToken, isLoading, error, latencyMs, hasSearched, search, clearError, clearResults } = useSearch(
+		{
+			activeView,
+			favoritesForActiveView,
+			fromDate: resolveFromDate(dateRangePreset, customSinceDate),
+			limit: latestLimit,
+		},
+	);
 
 	const { history: searchHistory, addToHistory, clearHistory, removeFromHistory, getMatches } = useSearchHistory();
 	const { isOnline } = useOnlineStatus();
@@ -461,18 +450,25 @@ export default function App() {
 			search(activeView.query);
 			return;
 		}
-	}, [activeView.id, activeView.type, activeView.query, activeView.autoQuery, search, latestLimit]);
+	}, [
+		activeView.id,
+		activeView.type,
+		activeView.query,
+		activeView.autoQuery,
+		search,
+		latestLimit,
+	]);
 
-	// Re-run search when date range changes (for search/search-threads views, regardless of autoQuery)
+	// Re-run search when date range changes (for search/search-threads, regardless of autoQuery)
+	const dateKey = `${dateRangePreset}|${customSinceDate}`;
+	const prevDateKeyRef = useRef(dateKey);
 	useEffect(() => {
-		const currentKey = `${dateRangePreset}|${customSinceDate}`;
-		if (currentKey === prevDateKeyRef.current) return;
-		prevDateKeyRef.current = currentKey;
-
+		if (dateKey === prevDateKeyRef.current) return;
+		prevDateKeyRef.current = dateKey;
 		if (activeView.type === "search" || activeView.type === "search-threads") {
 			search(activeView.query);
 		}
-	}, [dateRangePreset, customSinceDate, activeView.type, activeView.query, search]);
+	}, [dateKey, activeView.type, activeView.query, search]);
 
 	// Auto-fetch for other built-in views that don't depend on date/limit
 	useEffect(() => {

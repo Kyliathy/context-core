@@ -354,33 +354,33 @@ classDiagram
         +String harness
         +String machine
         +AgentRole role
-        +String|null model
+        +String_or_null model
         +String message
         +String subject
-        +String[] context
-        +String[] symbols
-        +String[] history
-        +String[] tags
+        +String_Array context
+        +String_Array symbols
+        +String_Array history
+        +String_Array tags
         +String project
-        +String|null parentId
-        +TokenUsage|null tokenUsage
-        +ToolCall[] toolCalls
-        +String[] rationale
+        +String_or_null parentId
+        +TokenUsage_or_null tokenUsage
+        +ToolCall_Array toolCalls
+        +String_Array rationale
         +String source
         +DateTime dateTime
         +serialize() SerializedAgentMessage
-        +deserialize(obj) AgentMessage$
+        +deserialize(obj) AgentMessage
     }
 
     class ToolCall {
         +String name
-        +String[] context
-        +String[] results
+        +String_Array context
+        +String_Array results
     }
 
     class TokenUsage {
-        +Number|null input
-        +Number|null output
+        +Number_or_null input
+        +Number_or_null output
     }
 
     AgentMessage "1" --> "*" ToolCall : toolCalls
@@ -393,7 +393,7 @@ classDiagram
 classDiagram
     class ContextCoreConfig {
         +String storage
-        +MachineConfig[] machines
+        +MachineConfig_Array machines
     }
 
     class MachineConfig {
@@ -402,13 +402,13 @@ classDiagram
     }
 
     class HarnessConfig {
-        +String|String[] path
-        +ProjectMappingRule[] projectMappingRules
-        +GenericProjectMappingRule[] genericProjectMappingRules
+        +String_or_StringArray path
+        +ProjectMappingRule_Array projectMappingRules
+        +GenericProjectMappingRule_Array genericProjectMappingRules
     }
 
     ContextCoreConfig "1" --> "*" MachineConfig : machines
-    MachineConfig "1" --> "*" HarnessConfig : harnesses[name]
+    MachineConfig "1" --> "*" HarnessConfig : harnesses
 ```
 
 ### 4.3 Storage Layout
@@ -546,7 +546,7 @@ flowchart TD
     FU --> VP["extractVerbSubjectPairs()<br/>verb + first non-prep noun<br/>→ 5 pairs for filename"]
 
     AT --> BS["buildSymbolSample()<br/>(sample if >100k spaces)"]
-    BS --> ES["extractSymbols()<br/>/[a-z][A-Z]/ regex<br/>→ top 10 by frequency"]
+    BS --> ES["extractSymbols()<br/>camelCase regex<br/>top 10 by frequency"]
 
     VE --> PS["generatePersistedSubject()<br/>'verb1-verb2-...-verb10 [Keywords- sym1-sym2-...-sym10]'"]
     ES --> PS
@@ -887,8 +887,8 @@ flowchart TD
     end
 
     subgraph Storage["Persistent Storage"]
-        STORE["<CXC-storage-path>\\<br/>{machine}/{harness}/{project}/{YYYY-MM}/"]
-        RAW["<CXC-storage-path>\\<br/>{machine}-RAW/{harness}/{project}/"]
+        STORE["CXC-storage-path\n machine/harness/project/YYYY-MM/"]
+        RAW["CXC-storage-path\n machine-RAW/harness/project/"]
     end
 
     CLAUDE_DIR -->|"read"| BUN
