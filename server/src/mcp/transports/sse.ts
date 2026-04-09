@@ -21,6 +21,8 @@ import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import chalk from "chalk";
 import type { IMessageStore } from "../../db/IMessageStore.js";
 import type { TopicStore } from "../../settings/TopicStore.js";
+import type { ScopeStore } from "../../settings/ScopeStore.js";
+import type { VectorServices } from "../MCPServer.js";
 import { registerAll } from "../registry.js";
 
 interface SseSession
@@ -65,11 +67,15 @@ function checkAuth(req: Request, res: Response): boolean
  * @param app - Express application to mount routes on.
  * @param db - Shared MessageDB instance.
  * @param topicStore - Optional TopicStore for topic resolution.
+ * @param vectorServices - Optional Qdrant + embedding services (hybrid search).
+ * @param scopeStore - Optional ScopeStore for scope-aware search (`scope` param).
  */
 export function mountMcpSse(
 	app: Express,
 	db: IMessageStore,
-	topicStore?: TopicStore
+	topicStore?: TopicStore,
+	vectorServices?: VectorServices,
+	scopeStore?: ScopeStore
 ): void
 {
 	// GET /mcp/sse — establish SSE stream for a new MCP client session
@@ -88,7 +94,7 @@ export function mountMcpSse(
 				},
 			}
 		);
-		registerAll(server, db, topicStore);
+		registerAll(server, db, topicStore, vectorServices, scopeStore);
 
 		// Create SSE transport pointing to the POST endpoint for messages
 		const transport = new SSEServerTransport(

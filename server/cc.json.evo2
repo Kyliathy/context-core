@@ -1,0 +1,60 @@
+{
+	"storage": "d:\\Codez\\Nexus\\design\\CXC",
+	"databaseFile": "d:\\Codez\\Nexus\\design\\CXC\\cxc-db.sqlite",
+	"machines": [
+		{
+			"machine": "Kyliathy3",
+			"harnesses": {
+				"ClaudeCode": {
+					"paths": []
+				},
+				"OpenCode": {},
+				"Codex": {},
+				"Kiro": {
+					"paths": [],
+					"projectMappingRules": []
+				},
+				"VSCode": {
+					"paths": [
+						"C:\\Users\\Axonn\\AppData\\Roaming\\Code\\User\\workspaceStorage\\c049926784bae2b1740b33f7a4a00184\\"
+					]
+				},
+				"Cursor": {
+					"paths": [],
+					"projectMappingRules": []
+				},
+				"genericProjectMappingRules": []
+			},
+			"dataSources": {
+				"zz-reach2": []
+			}
+		},
+		{
+			"machine": "Susan2",
+			"harnesses": {
+				"ClaudeCode": {
+					"paths": []
+				},
+				"OpenCode": {},
+				"Codex": {},
+				"Kiro": {
+					"paths": [],
+					"projectMappingRules": []
+				},
+				"VSCode": {
+					"paths": [
+						"C:\\Users\\Axonn\\AppData\\Roaming\\Code\\User\\workspaceStorage\\c049926784bae2b1740b33f7a4a00184\\"
+					]
+				},
+				"Cursor": {
+					"paths": [],
+					"projectMappingRules": []
+				},
+				"genericProjectMappingRules": []
+			},
+			"dataSources": {
+				"zz-reach2": []
+			}
+		}
+	]
+}

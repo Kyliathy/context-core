@@ -745,35 +745,3 @@ The `list()` method reads `.agent.json` or `.agent.md` files from disk on every 
 When multiple data sources share the same `agentPath`, the `create()` method uses the first source matching `projectName` to determine the target directory. The agent file is then attributed to that source's `sourceName`. If the user later retrieves the agent from a `/list` call, the `sourceName` may not match expectations if the same `agentPath` appears under a different source.
 
 **Recommendation**: This is a minor edge case given the current config. If it becomes problematic, consider associating agents with all sources that share the `agentPath`.
-
----
-
-## 15. Technology Stack
-
-| Layer         | Technology       | Purpose                                    |
-| ------------- | ---------------- | ------------------------------------------ |
-| Runtime       | **Bun**          | TypeScript execution, synchronous file I/O |
-| HTTP          | **Express 5**    | REST API endpoints                         |
-| Filesystem    | Node `fs` (sync) | Directory traversal, file read/write       |
-| Path          | Node `path`      | Join, relative path computation            |
-| UI Framework  | **React**        | AgentBasket component, hooks               |
-| Visualization | **D3.js**        | File card rendering in agent-builder view  |
-
----
-
-## 16. Metrics Summary
-
-| Metric                        | Value                                                                                                           |
-| ----------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| Source files (server)         | 1 TypeScript module (`AgentBuilder.ts`)                                                                         |
-| Lines of code (server)        | ~636 (class + helpers + interfaces)                                                                             |
-| API endpoints                 | 4                                                                                                               |
-| Exported interfaces           | 11                                                                                                              |
-| Module-level helper functions | 9                                                                                                               |
-| Class methods                 | 5 (`constructor`, `extractAgentBuilderSources`, `index`, `prepare`, `create`, `list`, `getAgent`)               |
-| UI components                 | 1 (`AgentBasket.tsx`, ~357 lines)                                                                               |
-| UI CSS                        | 1 (`AgentBasket.css`, ~364 lines)                                                                               |
-| Fetch wrappers                | 4 (`fetchAgentBuilderPrepare`, `fetchAgentBuilderCreate`, `fetchAgentBuilderList`, `fetchAgentBuilderGetAgent`) |
-| Data source entries (current) | 2 ("Context Core Server", "Context Core Front")                                                                 |
-| Indexed files (approx)        | ~30                                                                                                             |
-| Agent files (current)         | 3 `.agent.md` + 2 `.agent.json`                                                                                 |

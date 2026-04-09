@@ -20,7 +20,9 @@ server/src/mcp/tests/latest_threads.json
 server/src/mcp/tests/messages_storyteller_nncharacter.json
 server/src/mcp/tests/threads_latest.json
 server/src/mcp/tests/threads_storyteller_nncharacter.json
-server/zz-reach2/upgrades/
+
 visualizer/ui/ContextCore.png
 visualizer/ui/CXC_Visualizer_1.mp4
+
+server/zz-reach2/upgrades/
 visualizer/zz-reach2/upgrades/

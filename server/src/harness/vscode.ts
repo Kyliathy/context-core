@@ -12,6 +12,7 @@ import type { ToolCall } from "../types.js";
 import { generateMessageId } from "../utils/hashId.js";
 import { deriveProjectName } from "../utils/pathHelpers.js";
 import { copyRawSourceFile, isSourceFileCached } from "../utils/rawCopier.js";
+import { resolveVSCodeWorkspaceMetadata } from "../utils/vscodeWorkspace.js";
 
 type VSCodeVariable = {
 	kind?: string;
@@ -65,54 +66,16 @@ type JsonlToolPatch = {
 	toolCalls: Array<ToolCall>;
 };
 
-type VSCodeWorkspaceMeta = {
-	workspace?: string;
-	folder?: string;
-};
-
-/**
- * Decodes a file URI into a local filesystem path.
- * @param uri - URI from VSCode workspace metadata (file:///...).
- */
-function decodeFileUri(uri: string): string
-{
-	if (!uri.toLowerCase().startsWith("file://"))
-	{
-		return uri;
-	}
-
-	const decoded = decodeURIComponent(uri.replace(/^file:\/\//i, ""));
-	if (/^\/[a-zA-Z]:/.test(decoded))
-	{
-		return decoded.slice(1);
-	}
-	return decoded;
-}
-
 /**
  * Resolves a friendly workspace project name from `workspace.json`.
  * @param storagePath - VSCode workspaceStorage hash directory.
  */
 function resolveVSCodeProjectName(storagePath: string): string
 {
-	const workspaceMetaPath = join(storagePath, "workspace.json");
-	if (!existsSync(workspaceMetaPath))
+	const meta = resolveVSCodeWorkspaceMetadata(storagePath);
+	if (meta.workspaceMetaStatus === "ok" && meta.workspacePath)
 	{
-		return deriveProjectName("VSCode", storagePath);
-	}
-
-	try
-	{
-		const raw = readFileSync(workspaceMetaPath, "utf-8");
-		const parsed = JSON.parse(raw) as VSCodeWorkspaceMeta;
-		const workspaceUri = parsed.workspace ?? parsed.folder;
-		if (typeof workspaceUri === "string" && workspaceUri.trim())
-		{
-			return deriveProjectName("VSCode", decodeFileUri(workspaceUri));
-		}
-	} catch
-	{
-		//<Fallback to hash-based project when metadata parse fails.
+		return deriveProjectName("VSCode", meta.workspacePath);
 	}
 
 	return deriveProjectName("VSCode", storagePath);

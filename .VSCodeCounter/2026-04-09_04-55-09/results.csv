@@ -1,0 +1,203 @@
+"filename", "language", "Markdown", "Batch", "YAML", "JSON with Comments", "JSON", "TypeScript", "PostCSS", "TypeScript JSX", "XML", "HTML", "JavaScript", "comment", "blank", "total"
+"d:\Codez\Nexus\Reach2\context-core\README-MORE.md", "Markdown", 335, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 169, 504
+"d:\Codez\Nexus\Reach2\context-core\README.MD", "Markdown", 244, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 100, 344
+"d:\Codez\Nexus\Reach2\context-core\compose.yaml", "YAML", 0, 0, 15, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15
+"d:\Codez\Nexus\Reach2\context-core\server\README.md", "Markdown", 413, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 106, 519
+"d:\Codez\Nexus\Reach2\context-core\server\bun.lock", "JSON with Comments", 0, 0, 0, 240, 0, 0, 0, 0, 0, 0, 0, 0, 201, 441
+"d:\Codez\Nexus\Reach2\context-core\server\interop\insomnia-context-core.json", "JSON", 0, 0, 0, 0, 735, 0, 0, 0, 0, 0, 0, 0, 0, 735
+"d:\Codez\Nexus\Reach2\context-core\server\interop\insomnia-context-master.xml", "XML", 0, 0, 0, 0, 0, 0, 0, 0, 134, 0, 0, 0, 14, 148
+"d:\Codez\Nexus\Reach2\context-core\server\package.json", "JSON", 0, 0, 0, 0, 45, 0, 0, 0, 0, 0, 0, 0, 1, 46
+"d:\Codez\Nexus\Reach2\context-core\server\src\ContextCore.ts", "TypeScript", 0, 0, 0, 0, 0, 445, 0, 0, 0, 0, 0, 80, 56, 581
+"d:\Codez\Nexus\Reach2\context-core\server\src\agentBuilder\AgentBuilder.ts", "TypeScript", 0, 0, 0, 0, 0, 739, 0, 0, 0, 0, 0, 131, 113, 983
+"d:\Codez\Nexus\Reach2\context-core\server\src\analysis\SubjectGenerator.ts", "TypeScript", 0, 0, 0, 0, 0, 279, 0, 0, 0, 0, 0, 76, 39, 394
+"d:\Codez\Nexus\Reach2\context-core\server\src\analysis\TopicContextBuilder.ts", "TypeScript", 0, 0, 0, 0, 0, 124, 0, 0, 0, 0, 0, 38, 22, 184
+"d:\Codez\Nexus\Reach2\context-core\server\src\analysis\TopicSummarizer.ts", "TypeScript", 0, 0, 0, 0, 0, 272, 0, 0, 0, 0, 0, 51, 45, 368
+"d:\Codez\Nexus\Reach2\context-core\server\src\cache\ResponseCache.ts", "TypeScript", 0, 0, 0, 0, 0, 141, 0, 0, 0, 0, 0, 67, 22, 230
+"d:\Codez\Nexus\Reach2\context-core\server\src\cli\discovery.ts", "TypeScript", 0, 0, 0, 0, 0, 420, 0, 0, 0, 0, 0, 6, 31, 457
+"d:\Codez\Nexus\Reach2\context-core\server\src\cli\tests\add.integration.test.ts", "TypeScript", 0, 0, 0, 0, 0, 114, 0, 0, 0, 0, 0, 0, 10, 124
+"d:\Codez\Nexus\Reach2\context-core\server\src\cli\tests\ccjson.paths.test.ts", "TypeScript", 0, 0, 0, 0, 0, 94, 0, 0, 0, 0, 0, 0, 13, 107
+"d:\Codez\Nexus\Reach2\context-core\server\src\cli\tests\cxccli.interactive.test.ts", "TypeScript", 0, 0, 0, 0, 0, 23, 0, 0, 0, 0, 0, 0, 3, 26
+"d:\Codez\Nexus\Reach2\context-core\server\src\cli\tests\cxccli.mutations.test.ts", "TypeScript", 0, 0, 0, 0, 0, 147, 0, 0, 0, 0, 0, 0, 21, 168
+"d:\Codez\Nexus\Reach2\context-core\server\src\cli\tests\cxccli.vscode.integration.test.ts", "TypeScript", 0, 0, 0, 0, 0, 24, 0, 0, 0, 0, 0, 0, 5, 29
+"d:\Codez\Nexus\Reach2\context-core\server\src\cli\tests\fixtures\vscode-workspace\malformed\workspace.json", "JSON", 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 2
+"d:\Codez\Nexus\Reach2\context-core\server\src\cli\tests\fixtures\vscode-workspace\valid\workspace.json", "JSON", 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 1, 4
+"d:\Codez\Nexus\Reach2\context-core\server\src\cli\tests\vscodeWorkspace.test.ts", "TypeScript", 0, 0, 0, 0, 0, 41, 0, 0, 0, 0, 0, 2, 9, 52
+"d:\Codez\Nexus\Reach2\context-core\server\src\config.ts", "TypeScript", 0, 0, 0, 0, 0, 32, 0, 0, 0, 0, 0, 17, 8, 57
+"d:\Codez\Nexus\Reach2\context-core\server\src\cxccli.ts", "TypeScript", 0, 0, 0, 0, 0, 1631, 0, 0, 0, 0, 0, 13, 194, 1838
+"d:\Codez\Nexus\Reach2\context-core\server\src\db\BaseMessageStore.ts", "TypeScript", 0, 0, 0, 0, 0, 348, 0, 0, 0, 0, 0, 25, 42, 415
+"d:\Codez\Nexus\Reach2\context-core\server\src\db\DiskMessageStore.ts", "TypeScript", 0, 0, 0, 0, 0, 74, 0, 0, 0, 0, 0, 21, 12, 107
+"d:\Codez\Nexus\Reach2\context-core\server\src\db\IMessageStore.ts", "TypeScript", 0, 0, 0, 0, 0, 50, 0, 0, 0, 0, 0, 27, 17, 94
+"d:\Codez\Nexus\Reach2\context-core\server\src\db\InMemoryMessageStore.ts", "TypeScript", 0, 0, 0, 0, 0, 9, 0, 0, 0, 0, 0, 5, 2, 16
+"d:\Codez\Nexus\Reach2\context-core\server\src\harness\HarnessMatcher.ts", "TypeScript", 0, 0, 0, 0, 0, 158, 0, 0, 0, 0, 0, 28, 44, 230
+"d:\Codez\Nexus\Reach2\context-core\server\src\harness\antigravity.ts", "TypeScript", 0, 0, 0, 0, 0, 52, 0, 0, 0, 0, 0, 16, 13, 81
+"d:\Codez\Nexus\Reach2\context-core\server\src\harness\claude.ts", "TypeScript", 0, 0, 0, 0, 0, 349, 0, 0, 0, 0, 0, 44, 44, 437
+"d:\Codez\Nexus\Reach2\context-core\server\src\harness\codex.ts", "TypeScript", 0, 0, 0, 0, 0, 675, 0, 0, 0, 0, 0, 10, 88, 773
+"d:\Codez\Nexus\Reach2\context-core\server\src\harness\cursor-matcher.ts", "TypeScript", 0, 0, 0, 0, 0, 1017, 0, 0, 0, 0, 0, 177, 118, 1312
+"d:\Codez\Nexus\Reach2\context-core\server\src\harness\cursor-query.ts", "TypeScript", 0, 0, 0, 0, 0, 903, 0, 0, 0, 0, 0, 84, 55, 1042
+"d:\Codez\Nexus\Reach2\context-core\server\src\harness\cursor.ts", "TypeScript", 0, 0, 0, 0, 0, 286, 0, 0, 0, 0, 0, 15, 22, 323
+"d:\Codez\Nexus\Reach2\context-core\server\src\harness\index.ts", "TypeScript", 0, 0, 0, 0, 0, 44, 0, 0, 0, 0, 0, 12, 8, 64
+"d:\Codez\Nexus\Reach2\context-core\server\src\harness\kiro.ts", "TypeScript", 0, 0, 0, 0, 0, 873, 0, 0, 0, 0, 0, 51, 49, 973
+"d:\Codez\Nexus\Reach2\context-core\server\src\harness\opencode.ts", "TypeScript", 0, 0, 0, 0, 0, 330, 0, 0, 0, 0, 0, 66, 47, 443
+"d:\Codez\Nexus\Reach2\context-core\server\src\harness\vscode.ts", "TypeScript", 0, 0, 0, 0, 0, 511, 0, 0, 0, 0, 0, 70, 63, 644
+"d:\Codez\Nexus\Reach2\context-core\server\src\mcp\MCPServer.ts", "TypeScript", 0, 0, 0, 0, 0, 64, 0, 0, 0, 0, 0, 22, 11, 97
+"d:\Codez\Nexus\Reach2\context-core\server\src\mcp\formatters.ts", "TypeScript", 0, 0, 0, 0, 0, 288, 0, 0, 0, 0, 0, 51, 50, 389
+"d:\Codez\Nexus\Reach2\context-core\server\src\mcp\mcpLogger.ts", "TypeScript", 0, 0, 0, 0, 0, 178, 0, 0, 0, 0, 0, 61, 46, 285
+"d:\Codez\Nexus\Reach2\context-core\server\src\mcp\prompts\index.ts", "TypeScript", 0, 0, 0, 0, 0, 382, 0, 0, 0, 0, 0, 30, 40, 452
+"d:\Codez\Nexus\Reach2\context-core\server\src\mcp\registry.ts", "TypeScript", 0, 0, 0, 0, 0, 142, 0, 0, 0, 0, 0, 27, 24, 193
+"d:\Codez\Nexus\Reach2\context-core\server\src\mcp\resources\index.ts", "TypeScript", 0, 0, 0, 0, 0, 223, 0, 0, 0, 0, 0, 23, 38, 284
+"d:\Codez\Nexus\Reach2\context-core\server\src\mcp\serve.ts", "TypeScript", 0, 0, 0, 0, 0, 57, 0, 0, 0, 0, 0, 28, 14, 99
+"d:\Codez\Nexus\Reach2\context-core\server\src\mcp\tests\CXCTestBase.ts", "TypeScript", 0, 0, 0, 0, 0, 87, 0, 0, 0, 0, 0, 0, 15, 102
+"d:\Codez\Nexus\Reach2\context-core\server\src\mcp\tests\loadFixtures.ts", "TypeScript", 0, 0, 0, 0, 0, 200, 0, 0, 0, 0, 0, 0, 37, 237
+"d:\Codez\Nexus\Reach2\context-core\server\src\mcp\tests\messages.test.ts", "TypeScript", 0, 0, 0, 0, 0, 225, 0, 0, 0, 0, 0, 20, 33, 278
+"d:\Codez\Nexus\Reach2\context-core\server\src\mcp\tests\resources.test.ts", "TypeScript", 0, 0, 0, 0, 0, 265, 0, 0, 0, 0, 0, 18, 38, 321
+"d:\Codez\Nexus\Reach2\context-core\server\src\mcp\tests\runAllTests.ts", "TypeScript", 0, 0, 0, 0, 0, 66, 0, 0, 0, 0, 0, 0, 14, 80
+"d:\Codez\Nexus\Reach2\context-core\server\src\mcp\tests\search.test.ts", "TypeScript", 0, 0, 0, 0, 0, 490, 0, 0, 0, 0, 0, 53, 80, 623
+"d:\Codez\Nexus\Reach2\context-core\server\src\mcp\tests\test_cross_tool.ts", "TypeScript", 0, 0, 0, 0, 0, 53, 0, 0, 0, 0, 0, 0, 11, 64
+"d:\Codez\Nexus\Reach2\context-core\server\src\mcp\tests\test_get_latest_threads.ts", "TypeScript", 0, 0, 0, 0, 0, 60, 0, 0, 0, 0, 0, 9, 18, 87
+"d:\Codez\Nexus\Reach2\context-core\server\src\mcp\tests\test_get_message.ts", "TypeScript", 0, 0, 0, 0, 0, 41, 0, 0, 0, 0, 0, 2, 9, 52
+"d:\Codez\Nexus\Reach2\context-core\server\src\mcp\tests\test_get_session.ts", "TypeScript", 0, 0, 0, 0, 0, 46, 0, 0, 0, 0, 0, 2, 9, 57
+"d:\Codez\Nexus\Reach2\context-core\server\src\mcp\tests\test_get_topic.ts", "TypeScript", 0, 0, 0, 0, 0, 26, 0, 0, 0, 0, 0, 0, 6, 32
+"d:\Codez\Nexus\Reach2\context-core\server\src\mcp\tests\test_get_topics.ts", "TypeScript", 0, 0, 0, 0, 0, 26, 0, 0, 0, 0, 0, 0, 6, 32
+"d:\Codez\Nexus\Reach2\context-core\server\src\mcp\tests\test_list_sessions.ts", "TypeScript", 0, 0, 0, 0, 0, 32, 0, 0, 0, 0, 0, 0, 7, 39
+"d:\Codez\Nexus\Reach2\context-core\server\src\mcp\tests\test_project_matching.ts", "TypeScript", 0, 0, 0, 0, 0, 46, 0, 0, 0, 0, 0, 0, 11, 57
+"d:\Codez\Nexus\Reach2\context-core\server\src\mcp\tests\test_prompts.ts", "TypeScript", 0, 0, 0, 0, 0, 40, 0, 0, 0, 0, 0, 0, 7, 47
+"d:\Codez\Nexus\Reach2\context-core\server\src\mcp\tests\test_query_messages.ts", "TypeScript", 0, 0, 0, 0, 0, 42, 0, 0, 0, 0, 0, 0, 9, 51
+"d:\Codez\Nexus\Reach2\context-core\server\src\mcp\tests\test_resources.ts", "TypeScript", 0, 0, 0, 0, 0, 37, 0, 0, 0, 0, 0, 0, 7, 44
+"d:\Codez\Nexus\Reach2\context-core\server\src\mcp\tests\test_scope_resolution.ts", "TypeScript", 0, 0, 0, 0, 0, 127, 0, 0, 0, 0, 0, 4, 12, 143
+"d:\Codez\Nexus\Reach2\context-core\server\src\mcp\tests\test_search_by_symbol.ts", "TypeScript", 0, 0, 0, 0, 0, 72, 0, 0, 0, 0, 0, 3, 14, 89
+"d:\Codez\Nexus\Reach2\context-core\server\src\mcp\tests\test_search_messages.ts", "TypeScript", 0, 0, 0, 0, 0, 359, 0, 0, 0, 0, 0, 27, 49, 435
+"d:\Codez\Nexus\Reach2\context-core\server\src\mcp\tests\test_search_thread_messages.ts", "TypeScript", 0, 0, 0, 0, 0, 143, 0, 0, 0, 0, 0, 23, 24, 190
+"d:\Codez\Nexus\Reach2\context-core\server\src\mcp\tests\test_search_threads.ts", "TypeScript", 0, 0, 0, 0, 0, 226, 0, 0, 0, 0, 0, 11, 37, 274
+"d:\Codez\Nexus\Reach2\context-core\server\src\mcp\tests\test_set_topic.ts", "TypeScript", 0, 0, 0, 0, 0, 34, 0, 0, 0, 0, 0, 0, 6, 40
+"d:\Codez\Nexus\Reach2\context-core\server\src\mcp\tools\messages.ts", "TypeScript", 0, 0, 0, 0, 0, 261, 0, 0, 0, 0, 0, 18, 29, 308
+"d:\Codez\Nexus\Reach2\context-core\server\src\mcp\tools\search.ts", "TypeScript", 0, 0, 0, 0, 0, 684, 0, 0, 0, 0, 0, 85, 113, 882
+"d:\Codez\Nexus\Reach2\context-core\server\src\mcp\tools\topics.ts", "TypeScript", 0, 0, 0, 0, 0, 114, 0, 0, 0, 0, 0, 36, 14, 164
+"d:\Codez\Nexus\Reach2\context-core\server\src\mcp\transports\sse.ts", "TypeScript", 0, 0, 0, 0, 0, 124, 0, 0, 0, 0, 0, 39, 20, 183
+"d:\Codez\Nexus\Reach2\context-core\server\src\models\AgentMessage.ts", "TypeScript", 0, 0, 0, 0, 0, 131, 0, 0, 0, 0, 0, 18, 9, 158
+"d:\Codez\Nexus\Reach2\context-core\server\src\models\AgentMessageFound.ts", "TypeScript", 0, 0, 0, 0, 0, 116, 0, 0, 0, 0, 0, 44, 16, 176
+"d:\Codez\Nexus\Reach2\context-core\server\src\models\AgentThread.ts", "TypeScript", 0, 0, 0, 0, 0, 14, 0, 0, 0, 0, 0, 16, 13, 43
+"d:\Codez\Nexus\Reach2\context-core\server\src\models\ScopeEntry.ts", "TypeScript", 0, 0, 0, 0, 0, 11, 0, 0, 0, 0, 0, 11, 3, 25
+"d:\Codez\Nexus\Reach2\context-core\server\src\models\SearchResults.ts", "TypeScript", 0, 0, 0, 0, 0, 119, 0, 0, 0, 0, 0, 45, 19, 183
+"d:\Codez\Nexus\Reach2\context-core\server\src\models\TopicEntry.ts", "TypeScript", 0, 0, 0, 0, 0, 6, 0, 0, 0, 0, 0, 8, 5, 19
+"d:\Codez\Nexus\Reach2\context-core\server\src\search\fieldFilters.ts", "TypeScript", 0, 0, 0, 0, 0, 102, 0, 0, 0, 0, 0, 38, 15, 155
+"d:\Codez\Nexus\Reach2\context-core\server\src\search\queryParser.ts", "TypeScript", 0, 0, 0, 0, 0, 102, 0, 0, 0, 0, 0, 53, 22, 177
+"d:\Codez\Nexus\Reach2\context-core\server\src\search\searchEngine.ts", "TypeScript", 0, 0, 0, 0, 0, 258, 0, 0, 0, 0, 0, 51, 42, 351
+"d:\Codez\Nexus\Reach2\context-core\server\src\search\threadAggregator.ts", "TypeScript", 0, 0, 0, 0, 0, 136, 0, 0, 0, 0, 0, 40, 30, 206
+"d:\Codez\Nexus\Reach2\context-core\server\src\server\ContextServer.ts", "TypeScript", 0, 0, 0, 0, 0, 124, 0, 0, 0, 0, 0, 11, 14, 149
+"d:\Codez\Nexus\Reach2\context-core\server\src\server\RouteContext.ts", "TypeScript", 0, 0, 0, 0, 0, 19, 0, 0, 0, 0, 0, 0, 2, 21
+"d:\Codez\Nexus\Reach2\context-core\server\src\server\routeUtils.ts", "TypeScript", 0, 0, 0, 0, 0, 275, 0, 0, 0, 0, 0, 30, 38, 343
+"d:\Codez\Nexus\Reach2\context-core\server\src\server\routes\agentBuilderRoutes.ts", "TypeScript", 0, 0, 0, 0, 0, 153, 0, 0, 0, 0, 0, 0, 25, 178
+"d:\Codez\Nexus\Reach2\context-core\server\src\server\routes\messageRoutes.ts", "TypeScript", 0, 0, 0, 0, 0, 252, 0, 0, 0, 0, 0, 8, 35, 295
+"d:\Codez\Nexus\Reach2\context-core\server\src\server\routes\projectRoutes.ts", "TypeScript", 0, 0, 0, 0, 0, 21, 0, 0, 0, 0, 0, 0, 3, 24
+"d:\Codez\Nexus\Reach2\context-core\server\src\server\routes\scopeRoutes.ts", "TypeScript", 0, 0, 0, 0, 0, 43, 0, 0, 0, 0, 0, 0, 8, 51
+"d:\Codez\Nexus\Reach2\context-core\server\src\server\routes\sessionRoutes.ts", "TypeScript", 0, 0, 0, 0, 0, 20, 0, 0, 0, 0, 0, 0, 3, 23
+"d:\Codez\Nexus\Reach2\context-core\server\src\server\routes\threadRoutes.ts", "TypeScript", 0, 0, 0, 0, 0, 258, 0, 0, 0, 0, 0, 7, 36, 301
+"d:\Codez\Nexus\Reach2\context-core\server\src\server\routes\topicRoutes.ts", "TypeScript", 0, 0, 0, 0, 0, 77, 0, 0, 0, 0, 0, 3, 12, 92
+"d:\Codez\Nexus\Reach2\context-core\server\src\settings\CCSettings.ts", "TypeScript", 0, 0, 0, 0, 0, 69, 0, 0, 0, 0, 0, 39, 21, 129
+"d:\Codez\Nexus\Reach2\context-core\server\src\settings\CMSettings.ts", "TypeScript", 0, 0, 0, 0, 0, 31, 0, 0, 0, 0, 0, 13, 6, 50
+"d:\Codez\Nexus\Reach2\context-core\server\src\settings\ScopeStore.ts", "TypeScript", 0, 0, 0, 0, 0, 53, 0, 0, 0, 0, 0, 22, 10, 85
+"d:\Codez\Nexus\Reach2\context-core\server\src\settings\TopicStore.ts", "TypeScript", 0, 0, 0, 0, 0, 88, 0, 0, 0, 0, 0, 51, 17, 156
+"d:\Codez\Nexus\Reach2\context-core\server\src\setup.ts", "TypeScript", 0, 0, 0, 0, 0, 705, 0, 0, 0, 0, 0, 40, 116, 861
+"d:\Codez\Nexus\Reach2\context-core\server\src\storage\StorageWriter.ts", "TypeScript", 0, 0, 0, 0, 0, 133, 0, 0, 0, 0, 0, 49, 15, 197
+"d:\Codez\Nexus\Reach2\context-core\server\src\types.ts", "TypeScript", 0, 0, 0, 0, 0, 39, 0, 0, 0, 0, 0, 35, 11, 85
+"d:\Codez\Nexus\Reach2\context-core\server\src\utils\hashId.ts", "TypeScript", 0, 0, 0, 0, 0, 10, 0, 0, 0, 0, 0, 8, 2, 20
+"d:\Codez\Nexus\Reach2\context-core\server\src\utils\pathHelpers.ts", "TypeScript", 0, 0, 0, 0, 0, 34, 0, 0, 0, 0, 0, 17, 11, 62
+"d:\Codez\Nexus\Reach2\context-core\server\src\utils\rawCopier.ts", "TypeScript", 0, 0, 0, 0, 0, 66, 0, 0, 0, 0, 0, 33, 15, 114
+"d:\Codez\Nexus\Reach2\context-core\server\src\utils\vscodeWorkspace.ts", "TypeScript", 0, 0, 0, 0, 0, 67, 0, 0, 0, 0, 0, 7, 10, 84
+"d:\Codez\Nexus\Reach2\context-core\server\src\vector\Chunker.ts", "TypeScript", 0, 0, 0, 0, 0, 104, 0, 0, 0, 0, 0, 48, 22, 174
+"d:\Codez\Nexus\Reach2\context-core\server\src\vector\ContentClassifier.ts", "TypeScript", 0, 0, 0, 0, 0, 122, 0, 0, 0, 0, 0, 32, 25, 179
+"d:\Codez\Nexus\Reach2\context-core\server\src\vector\EmbeddingService.ts", "TypeScript", 0, 0, 0, 0, 0, 91, 0, 0, 0, 0, 0, 46, 20, 157
+"d:\Codez\Nexus\Reach2\context-core\server\src\vector\QdrantService.ts", "TypeScript", 0, 0, 0, 0, 0, 302, 0, 0, 0, 0, 0, 132, 48, 482
+"d:\Codez\Nexus\Reach2\context-core\server\src\vector\SummaryEmbeddingCache.ts", "TypeScript", 0, 0, 0, 0, 0, 169, 0, 0, 0, 0, 0, 81, 31, 281
+"d:\Codez\Nexus\Reach2\context-core\server\src\vector\VectorConfig.ts", "TypeScript", 0, 0, 0, 0, 0, 51, 0, 0, 0, 0, 0, 38, 12, 101
+"d:\Codez\Nexus\Reach2\context-core\server\src\vector\VectorPipeline.ts", "TypeScript", 0, 0, 0, 0, 0, 347, 0, 0, 0, 0, 0, 88, 46, 481
+"d:\Codez\Nexus\Reach2\context-core\server\src\vector\index.ts", "TypeScript", 0, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 4, 2, 13
+"d:\Codez\Nexus\Reach2\context-core\server\src\watcher\FileWatcher.ts", "TypeScript", 0, 0, 0, 0, 0, 432, 0, 0, 0, 0, 0, 109, 71, 612
+"d:\Codez\Nexus\Reach2\context-core\server\src\watcher\IncrementalPipeline.ts", "TypeScript", 0, 0, 0, 0, 0, 367, 0, 0, 0, 0, 0, 60, 41, 468
+"d:\Codez\Nexus\Reach2\context-core\server\start.bat", "Batch", 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1
+"d:\Codez\Nexus\Reach2\context-core\server\tsconfig.json", "JSON with Comments", 0, 0, 0, 17, 0, 0, 0, 0, 0, 0, 0, 0, 1, 18
+"d:\Codez\Nexus\Reach2\context-core\server\zz-reach2\architecture\agents\archi-agent-builder.md", "Markdown", 580, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 168, 748
+"d:\Codez\Nexus\Reach2\context-core\server\zz-reach2\architecture\archi-context-core-level0.md", "Markdown", 731, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 188, 919
+"d:\Codez\Nexus\Reach2\context-core\server\zz-reach2\architecture\cli\archi-cli.md", "Markdown", 182, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 60, 242
+"d:\Codez\Nexus\Reach2\context-core\server\zz-reach2\architecture\data\archi-database.md", "Markdown", 507, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 156, 663
+"d:\Codez\Nexus\Reach2\context-core\server\zz-reach2\architecture\data\archi-file-watcher.md", "Markdown", 493, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 159, 652
+"d:\Codez\Nexus\Reach2\context-core\server\zz-reach2\architecture\harness\archi-h-cursor.md", "Markdown", 399, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 526
+"d:\Codez\Nexus\Reach2\context-core\server\zz-reach2\architecture\harness\archi-harness.md", "Markdown", 823, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 213, 1036
+"d:\Codez\Nexus\Reach2\context-core\server\zz-reach2\architecture\mcp\archi-mcp.md", "Markdown", 660, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 221, 881
+"d:\Codez\Nexus\Reach2\context-core\server\zz-reach2\architecture\search\archi-qdrant.md", "Markdown", 945, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 330, 1275
+"d:\Codez\Nexus\Reach2\context-core\server\zz-reach2\architecture\search\archi-scopes.md", "Markdown", 384, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 117, 501
+"d:\Codez\Nexus\Reach2\context-core\server\zz-reach2\architecture\search\archi-search.md", "Markdown", 588, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 202, 790
+"d:\Codez\Nexus\Reach2\context-core\server\zz-reach2\architecture\setup\archi-setup.md", "Markdown", 392, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 89, 481
+"d:\Codez\Nexus\Reach2\context-core\server\zz-reach2\architecture\summarizer\archi-summarizer.md", "Markdown", 338, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 135, 473
+"d:\Codez\Nexus\Reach2\context-core\server\zz-reach2\architecture\techDebt\td-memory-optimization.md", "Markdown", 110, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 62, 172
+"d:\Codez\Nexus\Reach2\context-core\server\zz-reach2\guides\mcp-connection-guide.md", "Markdown", 260, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 96, 356
+"d:\Codez\Nexus\Reach2\context-core\server\zz-reach2\protocol\cxs.md", "Markdown", 812, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 225, 1037
+"d:\Codez\Nexus\Reach2\context-core\start be.bat", "Batch", 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1
+"d:\Codez\Nexus\Reach2\context-core\start-fe&be.bat", "Batch", 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1
+"d:\Codez\Nexus\Reach2\context-core\visualizer\dev-dist\suppress-warnings.js", "JavaScript", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1
+"d:\Codez\Nexus\Reach2\context-core\visualizer\dev-dist\sw.js", "JavaScript", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 96, 21, 10, 127
+"d:\Codez\Nexus\Reach2\context-core\visualizer\dev-dist\workbox-7e46c8bd.js", "JavaScript", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2583, 1988, 62, 4633
+"d:\Codez\Nexus\Reach2\context-core\visualizer\dev-dist\workbox-d940c54c.js", "JavaScript", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2583, 1988, 62, 4633
+"d:\Codez\Nexus\Reach2\context-core\visualizer\index.html", "HTML", 0, 0, 0, 0, 0, 0, 0, 0, 0, 18, 0, 0, 0, 18
+"d:\Codez\Nexus\Reach2\context-core\visualizer\package-lock.json", "JSON", 0, 0, 0, 0, 6987, 0, 0, 0, 0, 0, 0, 0, 1, 6988
+"d:\Codez\Nexus\Reach2\context-core\visualizer\package.json", "JSON", 0, 0, 0, 0, 27, 0, 0, 0, 0, 0, 0, 0, 0, 27
+"d:\Codez\Nexus\Reach2\context-core\visualizer\public\README-DATA-SOURCES.MD", "Markdown", 135, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 46, 181
+"d:\Codez\Nexus\Reach2\context-core\visualizer\public\pwa\offline.html", "HTML", 0, 0, 0, 0, 0, 0, 0, 0, 0, 43, 0, 0, 1, 44
+"d:\Codez\Nexus\Reach2\context-core\visualizer\src\App.css", "PostCSS", 0, 0, 0, 0, 0, 0, 29, 0, 0, 0, 0, 0, 3, 32
+"d:\Codez\Nexus\Reach2\context-core\visualizer\src\App.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 1357, 0, 0, 0, 54, 101, 1512
+"d:\Codez\Nexus\Reach2\context-core\visualizer\src\api\search.ts", "TypeScript", 0, 0, 0, 0, 0, 240, 0, 0, 0, 0, 0, 9, 28, 277
+"d:\Codez\Nexus\Reach2\context-core\visualizer\src\components\UpdatePrompt.css", "PostCSS", 0, 0, 0, 0, 0, 0, 45, 0, 0, 0, 0, 0, 6, 51
+"d:\Codez\Nexus\Reach2\context-core\visualizer\src\components\UpdatePrompt.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 32, 0, 0, 0, 5, 4, 41
+"d:\Codez\Nexus\Reach2\context-core\visualizer\src\components\agentBuilder\AgentBuilder.css", "PostCSS", 0, 0, 0, 0, 0, 0, 421, 0, 0, 0, 0, 17, 67, 505
+"d:\Codez\Nexus\Reach2\context-core\visualizer\src\components\agentBuilder\AgentBuilder.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 499, 0, 0, 0, 32, 32, 563
+"d:\Codez\Nexus\Reach2\context-core\visualizer\src\components\agentBuilder\ContentFileDialog.css", "PostCSS", 0, 0, 0, 0, 0, 0, 117, 0, 0, 0, 0, 1, 18, 136
+"d:\Codez\Nexus\Reach2\context-core\visualizer\src\components\agentBuilder\ContentFileDialog.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 91, 0, 0, 0, 10, 8, 109
+"d:\Codez\Nexus\Reach2\context-core\visualizer\src\components\agentBuilder\SourceFilterDropdown.css", "PostCSS", 0, 0, 0, 0, 0, 0, 125, 0, 0, 0, 0, 0, 18, 143
+"d:\Codez\Nexus\Reach2\context-core\visualizer\src\components\agentBuilder\SourceFilterDropdown.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 86, 0, 0, 0, 13, 11, 110
+"d:\Codez\Nexus\Reach2\context-core\visualizer\src\components\favorites\AddFavoriteMessage.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 93, 0, 0, 0, 13, 14, 120
+"d:\Codez\Nexus\Reach2\context-core\visualizer\src\components\favorites\FavoritesPickerDialog.css", "PostCSS", 0, 0, 0, 0, 0, 0, 91, 0, 0, 0, 0, 0, 14, 105
+"d:\Codez\Nexus\Reach2\context-core\visualizer\src\components\favorites\FavoritesPickerDialog.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 99, 0, 0, 0, 18, 10, 127
+"d:\Codez\Nexus\Reach2\context-core\visualizer\src\components\searchTools\FilterDialog.css", "PostCSS", 0, 0, 0, 0, 0, 0, 131, 0, 0, 0, 0, 0, 21, 152
+"d:\Codez\Nexus\Reach2\context-core\visualizer\src\components\searchTools\FilterDialog.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 97, 0, 0, 0, 21, 13, 131
+"d:\Codez\Nexus\Reach2\context-core\visualizer\src\components\searchTools\HoverPanel.css", "PostCSS", 0, 0, 0, 0, 0, 0, 109, 0, 0, 0, 0, 2, 18, 129
+"d:\Codez\Nexus\Reach2\context-core\visualizer\src\components\searchTools\HoverPanel.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 311, 0, 0, 0, 20, 18, 349
+"d:\Codez\Nexus\Reach2\context-core\visualizer\src\components\searchTools\SearchBar.css", "PostCSS", 0, 0, 0, 0, 0, 0, 435, 0, 0, 0, 0, 1, 63, 499
+"d:\Codez\Nexus\Reach2\context-core\visualizer\src\components\searchTools\SearchBar.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 749, 0, 0, 0, 19, 40, 808
+"d:\Codez\Nexus\Reach2\context-core\visualizer\src\components\searchTools\StatusBar.css", "PostCSS", 0, 0, 0, 0, 0, 0, 57, 0, 0, 0, 0, 0, 8, 65
+"d:\Codez\Nexus\Reach2\context-core\visualizer\src\components\searchTools\StatusBar.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 44, 0, 0, 0, 9, 5, 58
+"d:\Codez\Nexus\Reach2\context-core\visualizer\src\components\searchView\ChatMap.css", "PostCSS", 0, 0, 0, 0, 0, 0, 43, 0, 0, 0, 0, 0, 4, 47
+"d:\Codez\Nexus\Reach2\context-core\visualizer\src\components\searchView\ChatMap.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 86, 0, 0, 0, 13, 6, 105
+"d:\Codez\Nexus\Reach2\context-core\visualizer\src\components\searchView\ChatViewDialog.css", "PostCSS", 0, 0, 0, 0, 0, 0, 270, 0, 0, 0, 0, 8, 37, 315
+"d:\Codez\Nexus\Reach2\context-core\visualizer\src\components\searchView\ChatViewDialog.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 284, 0, 0, 0, 25, 26, 335
+"d:\Codez\Nexus\Reach2\context-core\visualizer\src\components\searchView\ClipboardBasket.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 73, 0, 0, 0, 13, 6, 92
+"d:\Codez\Nexus\Reach2\context-core\visualizer\src\components\searchView\ClipboardMessage.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 41, 0, 0, 0, 9, 3, 53
+"d:\Codez\Nexus\Reach2\context-core\visualizer\src\components\searchView\EditResultsView.css", "PostCSS", 0, 0, 0, 0, 0, 0, 279, 0, 0, 0, 0, 0, 49, 328
+"d:\Codez\Nexus\Reach2\context-core\visualizer\src\components\searchView\EditResultsView.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 540, 0, 0, 0, 21, 31, 592
+"d:\Codez\Nexus\Reach2\context-core\visualizer\src\components\searchView\EditScope.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 118, 0, 0, 0, 14, 10, 142
+"d:\Codez\Nexus\Reach2\context-core\visualizer\src\d3\chatMapEngine.ts", "TypeScript", 0, 0, 0, 0, 0, 967, 0, 0, 0, 0, 0, 13, 102, 1082
+"d:\Codez\Nexus\Reach2\context-core\visualizer\src\d3\colors.ts", "TypeScript", 0, 0, 0, 0, 0, 88, 0, 0, 0, 0, 0, 1, 11, 100
+"d:\Codez\Nexus\Reach2\context-core\visualizer\src\d3\dateFormat.ts", "TypeScript", 0, 0, 0, 0, 0, 44, 0, 0, 0, 0, 0, 8, 4, 56
+"d:\Codez\Nexus\Reach2\context-core\visualizer\src\d3\grouping.ts", "TypeScript", 0, 0, 0, 0, 0, 95, 0, 0, 0, 0, 0, 13, 14, 122
+"d:\Codez\Nexus\Reach2\context-core\visualizer\src\d3\layout.ts", "TypeScript", 0, 0, 0, 0, 0, 206, 0, 0, 0, 0, 0, 13, 30, 249
+"d:\Codez\Nexus\Reach2\context-core\visualizer\src\hooks\useChatMap.ts", "TypeScript", 0, 0, 0, 0, 0, 195, 0, 0, 0, 0, 0, 2, 23, 220
+"d:\Codez\Nexus\Reach2\context-core\visualizer\src\hooks\useFavorites.ts", "TypeScript", 0, 0, 0, 0, 0, 162, 0, 0, 0, 0, 0, 4, 18, 184
+"d:\Codez\Nexus\Reach2\context-core\visualizer\src\hooks\useOnlineStatus.ts", "TypeScript", 0, 0, 0, 0, 0, 18, 0, 0, 0, 0, 0, 1, 4, 23
+"d:\Codez\Nexus\Reach2\context-core\visualizer\src\hooks\useScopes.ts", "TypeScript", 0, 0, 0, 0, 0, 28, 0, 0, 0, 0, 0, 0, 5, 33
+"d:\Codez\Nexus\Reach2\context-core\visualizer\src\hooks\useSearch.ts", "TypeScript", 0, 0, 0, 0, 0, 382, 0, 0, 0, 0, 0, 2, 23, 407
+"d:\Codez\Nexus\Reach2\context-core\visualizer\src\hooks\useSearchHistory.ts", "TypeScript", 0, 0, 0, 0, 0, 93, 0, 0, 0, 0, 0, 2, 16, 111
+"d:\Codez\Nexus\Reach2\context-core\visualizer\src\hooks\useViews.ts", "TypeScript", 0, 0, 0, 0, 0, 337, 0, 0, 0, 0, 0, 0, 37, 374
+"d:\Codez\Nexus\Reach2\context-core\visualizer\src\index.css", "PostCSS", 0, 0, 0, 0, 0, 0, 445, 0, 0, 0, 0, 5, 72, 522
+"d:\Codez\Nexus\Reach2\context-core\visualizer\src\main.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 9, 0, 0, 0, 6, 2, 17
+"d:\Codez\Nexus\Reach2\context-core\visualizer\src\shared\greenFlash.ts", "TypeScript", 0, 0, 0, 0, 0, 32, 0, 0, 0, 0, 0, 0, 7, 39
+"d:\Codez\Nexus\Reach2\context-core\visualizer\src\types.ts", "TypeScript", 0, 0, 0, 0, 0, 288, 0, 0, 0, 0, 0, 23, 40, 351
+"d:\Codez\Nexus\Reach2\context-core\visualizer\start.bat", "Batch", 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1
+"d:\Codez\Nexus\Reach2\context-core\visualizer\tsconfig.app.json", "JSON", 0, 0, 0, 0, 17, 0, 0, 0, 0, 0, 0, 0, 1, 18
+"d:\Codez\Nexus\Reach2\context-core\visualizer\tsconfig.json", "JSON with Comments", 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 1, 5
+"d:\Codez\Nexus\Reach2\context-core\visualizer\tsconfig.node.json", "JSON", 0, 0, 0, 0, 12, 0, 0, 0, 0, 0, 0, 0, 1, 13
+"d:\Codez\Nexus\Reach2\context-core\visualizer\tsconfig.node.tsbuildinfo", "JSON", 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1
+"d:\Codez\Nexus\Reach2\context-core\visualizer\vite.config.ts", "TypeScript", 0, 0, 0, 0, 0, 85, 0, 0, 0, 0, 0, 0, 3, 88
+"d:\Codez\Nexus\Reach2\context-core\visualizer\zz-reach2\architecture\agents\archi-agent-builder-ui.md", "Markdown", 541, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 143, 684
+"d:\Codez\Nexus\Reach2\context-core\visualizer\zz-reach2\architecture\archi-context-core-visualizer.md", "Markdown", 649, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 179, 828
+"d:\Codez\Nexus\Reach2\context-core\visualizer\zz-reach2\architecture\ui\archi-context-core-visualizer-ui.md", "Markdown", 350, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 163, 513
+"d:\Codez\Nexus\Reach2\context-core\visualizer\zz-reach2\architecture\ui\archi-search-ui.md", "Markdown", 706, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 169, 875
+"Total", "-", 11577, 4, 15, 261, 7828, 24249, 2597, 4609, 134, 61, 5262, 7496, 8060, 72153

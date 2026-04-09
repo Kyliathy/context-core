@@ -9,6 +9,7 @@
 		"start-himem": "BUN_JSC_forceRAMSize=17179869184 bun run src/ContextCore.ts",
 		"mcp": "bun run src/mcp/serve.ts",
 		"setup": "bun run src/setup.ts",
+		"cxccli": "bun run src/cxccli.ts",
 		"test": "bun test ./src/mcp/tests/*.test.ts ./src/mcp/tests/test_*.ts",
 		"typecheck": "tsc --noEmit",
 		"build:viz": "cd visualizer && npm run build"
@@ -23,11 +24,13 @@
 	},
 	"dependencies": {
 		"@ai-sdk/openai": "^3.0.41",
+		"@clack/prompts": "^1.2.0",
 		"@langchain/textsplitters": "^1.0.1",
 		"@modelcontextprotocol/sdk": "^1.27.1",
 		"@qdrant/js-client-rest": "^1.17.0",
 		"ai": "^6.0.116",
 		"chalk": "^5.6.2",
+		"commander": "^14.0.3",
 		"cors": "^2.8.6",
 		"express": "^5.2.1",
 		"fuse.js": "^7.1.0",

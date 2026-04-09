@@ -11,10 +11,22 @@ import { join, basename, resolve as resolvePath } from "path";
 import { hostname } from "os";
 import * as readline from "readline";
 import chalk from "chalk";
+import {
+	type Platform,
+	dirName as sharedDirName,
+	formatBytes as sharedFormatBytes,
+	getClaudeCodeBasePath as sharedGetClaudeCodeBasePath,
+	getCursorDbPath as sharedGetCursorDbPath,
+	getKiroAgentPaths as sharedGetKiroAgentPaths,
+	getOpenCodeStoragePaths as sharedGetOpenCodeStoragePaths,
+	getVSCodeStoragePath as sharedGetVSCodeStoragePath,
+	scanChatSessionDirs as sharedScanChatSessionDirs,
+	scanJsonlProjects as sharedScanJsonlProjects,
+	scanKiroHexDirs as sharedScanKiroHexDirs,
+	withTrailingSlash as sharedWithTrailingSlash,
+} from "./cli/discovery.js";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-
-type Platform = "win32" | "darwin" | "linux";
 
 type ProjectMappingRule = {
 	path: string;
@@ -162,53 +174,30 @@ function detectUsername(): string
 /** Ensure a directory path ends with the platform separator. */
 function withTrailingSlash(p: string): string
 {
-	const slash = process.platform === "win32" ? "\\" : "/";
-	return p.endsWith("\\") || p.endsWith("/") ? p : p + slash;
+	return sharedWithTrailingSlash(p);
 }
 
 function formatBytes(bytes: number): string
 {
-	if (bytes < 1024) return `${bytes} B`;
-	if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-	return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+	return sharedFormatBytes(bytes);
 }
 
 /** Strip trailing slash and return the last path segment. */
 function dirName(p: string): string
 {
-	return basename(p.replace(/[\\/]$/, ""));
+	return sharedDirName(p);
 }
 
 // ─── Claude Code ──────────────────────────────────────────────────────────────
 
 function getClaudeCodeBasePath(username: string, platform: Platform): string
 {
-	switch (platform)
-	{
-		case "win32": return `C:\\Users\\${username}\\.claude\\projects\\`;
-		case "darwin": return `/Users/${username}/.claude/projects/`;
-		case "linux": return `/home/${username}/.claude/projects/`;
-	}
+	return sharedGetClaudeCodeBasePath(username, platform);
 }
 
 function scanJsonlProjects(basePath: string): Array<{ path: string; count: number }>
 {
-	try
-	{
-		return readdirSync(basePath, { withFileTypes: true })
-			.filter((e) => e.isDirectory())
-			.flatMap((e) =>
-			{
-				const dirPath = join(basePath, e.name);
-				try
-				{
-					const count = readdirSync(dirPath).filter((f) => f.endsWith(".jsonl")).length;
-					return count > 0 ? [{ path: withTrailingSlash(dirPath), count }] : [];
-				}
-				catch { return []; }
-			});
-	}
-	catch { return []; }
+	return sharedScanJsonlProjects(basePath);
 }
 
 async function discoverClaudeCode(username: string, platform: Platform): Promise<string[]>
@@ -261,12 +250,7 @@ async function discoverClaudeCode(username: string, platform: Platform): Promise
 
 function getCursorDbPath(username: string, platform: Platform): string
 {
-	switch (platform)
-	{
-		case "win32": return `C:\\Users\\${username}\\AppData\\Roaming\\Cursor\\User\\globalStorage\\state.vscdb`;
-		case "darwin": return `/Users/${username}/Library/Application Support/Cursor/User/globalStorage/state.vscdb`;
-		case "linux": return `/home/${username}/.config/Cursor/User/globalStorage/state.vscdb`;
-	}
+	return sharedGetCursorDbPath(username, platform);
 }
 
 async function discoverCursor(username: string, platform: Platform): Promise<string | null>
@@ -302,23 +286,12 @@ async function discoverCursor(username: string, platform: Platform): Promise<str
 
 function getVSCodeStoragePath(username: string, platform: Platform): string
 {
-	switch (platform)
-	{
-		case "win32": return `C:\\Users\\${username}\\AppData\\Roaming\\Code\\User\\workspaceStorage\\`;
-		case "darwin": return `/Users/${username}/Library/Application Support/Code/User/workspaceStorage/`;
-		case "linux": return `/home/${username}/.config/Code/User/workspaceStorage/`;
-	}
+	return sharedGetVSCodeStoragePath(username, platform);
 }
 
 function scanChatSessionDirs(basePath: string): string[]
 {
-	try
-	{
-		return readdirSync(basePath, { withFileTypes: true })
-			.filter((e) => e.isDirectory() && existsSync(join(basePath, e.name, "chatSessions")))
-			.map((e) => withTrailingSlash(join(basePath, e.name)));
-	}
-	catch { return []; }
+	return sharedScanChatSessionDirs(basePath);
 }
 
 async function discoverVSCode(username: string, platform: Platform): Promise<string[]>
@@ -369,30 +342,14 @@ async function discoverVSCode(username: string, platform: Platform): Promise<str
 
 // ─── Kiro ─────────────────────────────────────────────────────────────────────
 
-const KIRO_HEX_HASH = /^[0-9a-f]{32}$/;
-
 function getKiroAgentPaths(username: string, platform: Platform): string[]
 {
-	switch (platform)
-	{
-		case "win32": return [`C:\\Users\\${username}\\AppData\\Roaming\\Kiro\\User\\globalStorage\\kiro.kiroagent\\`];
-		case "darwin": return [`/Users/${username}/Library/Application Support/Kiro/User/globalStorage/kiro.kiroagent/`];
-		case "linux": return [
-			`/home/${username}/.kiro-server/data/User/globalStorage/kiro.kiroagent/`,
-			`/home/${username}/.config/Kiro/User/globalStorage/kiro.kiroagent/`,
-		];
-	}
+	return sharedGetKiroAgentPaths(username, platform);
 }
 
 function scanKiroHexDirs(basePath: string): string[]
 {
-	try
-	{
-		return readdirSync(basePath, { withFileTypes: true })
-			.filter((e) => e.isDirectory() && KIRO_HEX_HASH.test(e.name))
-			.map((e) => withTrailingSlash(join(basePath, e.name)));
-	}
-	catch { return []; }
+	return sharedScanKiroHexDirs(basePath);
 }
 
 function printKiroMappingAdvice(basePath: string): void
@@ -558,15 +515,7 @@ async function discoverKiro(username: string, platform: Platform): Promise<KiroD
 
 function getOpenCodeStoragePaths(username: string, platform: Platform): string[]
 {
-	switch (platform)
-	{
-		case "win32": return [
-			`C:\\Users\\${username}\\.local\\share\\opencode\\`,
-			`C:\\Users\\${username}\\AppData\\Roaming\\opencode\\`,
-		];
-		case "darwin": return [`/Users/${username}/.local/share/opencode/`];
-		case "linux": return [`/home/${username}/.local/share/opencode/`];
-	}
+	return sharedGetOpenCodeStoragePaths(username, platform);
 }
 
 async function discoverOpenCode(username: string, platform: Platform): Promise<string | null>

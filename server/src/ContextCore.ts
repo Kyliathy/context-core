@@ -427,7 +427,13 @@ async function main(): Promise<void>
 	{
 		// Mount MCP SSE transport on the Express app (network MCP clients).
 		// Optional auth via MCP_AUTH_TOKEN env var.
-		mountMcpSse(app, messageDB, topicStore);
+		mountMcpSse(
+			app,
+			messageDB,
+			topicStore,
+			embeddingService && qdrantService ? { embeddingService, qdrantService } : undefined,
+			scopeStore
+		);
 	}
 	else if (!settings.MCP_ENABLED)
 	{
