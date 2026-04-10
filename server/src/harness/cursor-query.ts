@@ -73,6 +73,10 @@ export type CursorKVRow = {
 	value: unknown;
 };
 
+export type CursorKVRowWithRowId = CursorKVRow & {
+	rowid: number;
+};
+
 export type CursorBubbleRecord = {
 	sessionId: string;
 	bubbleId: string;
@@ -786,6 +790,136 @@ export function extractCursorBubbleMessages(
 	if (dateNowFallbacks > 0)
 	{
 		console.warn(`${CUR} ${chalk.red("WARNING:")} ${chalk.red(dateNowFallbacks + '')} bubbles fell back to DateTime.now() — these messages will appear dated to today`);
+	}
+
+	records.sort((a, b) =>
+	{
+		const timeDiff = a.dateTime.toMillis() - b.dateTime.toMillis();
+		if (timeDiff !== 0)
+		{
+			return timeDiff;
+		}
+		return a.bubbleId.localeCompare(b.bubbleId);
+	});
+
+	return records;
+}
+
+/**
+ * Parses only bubbleId rows created/replaced after a cursorDiskKV rowid checkpoint.
+ * @param db - Open SQLite database handle.
+ * @param sessionModelMap - Session-ID -> model-name map from composerData.
+ * @param sessionTimestampMap - Session-ID -> DateTime fallback map.
+ * @param sinceRowId - Last processed cursorDiskKV rowid checkpoint.
+ */
+export function extractCursorBubbleMessagesSinceRowId(
+	db: Database,
+	sessionModelMap: Map<string, string>,
+	sessionTimestampMap: Map<string, DateTime>,
+	sinceRowId: number
+): Array<CursorBubbleRecord>
+{
+	const rows = db
+		.query<CursorKVRowWithRowId, [number]>(
+			"SELECT rowid, key, value FROM cursorDiskKV WHERE key LIKE 'bubbleId:%' AND rowid > ?"
+		)
+		.all(sinceRowId);
+
+	const records: Array<CursorBubbleRecord> = [];
+	let dateNowFallbacks = 0;
+	let sessionTsFallbacks = 0;
+	let sampleBubbleFieldsLogged = false;
+	console.log(`${CUR}${chalk.dim(`[bubble-delta>${sinceRowId}]`)} rows=${rows.length}`);
+
+	for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1)
+	{
+		const row = rows[rowIndex];
+		logCursorProgress(`bubble-delta>${sinceRowId}`, rowIndex, rows.length);
+		const keyParts = row.key.split(":");
+		if (keyParts.length < 3)
+		{
+			continue;
+		}
+
+		const sessionId = keyParts[1] || "cursor-session";
+		const bubbleId = keyParts[2] || row.key;
+		try
+		{
+			const rawValue = toDatabaseText(row.value);
+			if (!rawValue)
+			{
+				continue;
+			}
+			const parsed = JSON.parse(rawValue) as Record<string, unknown>;
+
+			if (!sampleBubbleFieldsLogged)
+			{
+				const fieldNames = Object.keys(parsed);
+				console.log(
+					`${CUR}${chalk.dim(`[bubble-delta>${sinceRowId}]`)} Sample bubble fields: ${chalk.dim(fieldNames.join(", "))}`
+				);
+				sampleBubbleFieldsLogged = true;
+			}
+
+			const role = mapBubbleTypeToRole(parsed.type);
+			if (!role)
+			{
+				continue;
+			}
+
+			const message = typeof parsed.text === "string" ? parsed.text.trim() : "";
+			if (!message)
+			{
+				continue;
+			}
+
+			const model = pickModel(parsed) ?? sessionModelMap.get(sessionId) ?? null;
+			let dateTime = parseCursorBubbleDateTime(parsed);
+			if (dateTime === null)
+			{
+				const sessionTs = sessionTimestampMap.get(sessionId);
+				if (sessionTs)
+				{
+					dateTime = sessionTs;
+					sessionTsFallbacks += 1;
+				}
+				else
+				{
+					dateTime = DateTime.now();
+					dateNowFallbacks += 1;
+				}
+			}
+			const contextPaths = new Set<string>(extractContextPaths(message));
+			collectPathLikeValues(parsed.context, contextPaths);
+			collectPathLikeValues(parsed.codeBlocks, contextPaths);
+			collectPathLikeValues(parsed.toolResults, contextPaths);
+
+			records.push({
+				sessionId,
+				bubbleId,
+				role,
+				message,
+				model,
+				dateTime,
+				context: Array.from(contextPaths),
+			});
+		} catch
+		{
+			// Skip malformed bubble payloads.
+		}
+	}
+	logCursorProgress(`bubble-delta>${sinceRowId}`, rows.length, rows.length);
+	if (sessionTsFallbacks > 0)
+	{
+		console.warn(
+			`${CUR} ${chalk.yellow(sessionTsFallbacks + '')} bubbles used session-level timestamp fallback (no per-bubble timestamp)`
+		);
+	}
+	if (dateNowFallbacks > 0)
+	{
+		console.warn(
+			`${CUR} ${chalk.red("WARNING:")} ${chalk.red(dateNowFallbacks + '')} bubbles fell back to DateTime.now() - these messages will appear dated to today`
+		);
 	}
 
 	records.sort((a, b) =>

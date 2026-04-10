@@ -221,9 +221,14 @@ export async function fetchAgentBuilderList(): Promise<AgentListResponse>
 	return response.json() as Promise<AgentListResponse>;
 }
 
-export async function fetchAgentBuilderGetAgent(path: string): Promise<GetAgentResponse>
+export async function fetchAgentBuilderGetAgent(path: string, codexEntryId?: string): Promise<GetAgentResponse>
 {
-	const response = await fetch(`${API_BASE}/api/agent-builder/get-agent?path=${encodeURIComponent(path)}`);
+	const query = new URLSearchParams({ path });
+	if (codexEntryId && codexEntryId.trim() !== "")
+	{
+		query.set("codexEntryId", codexEntryId.trim());
+	}
+	const response = await fetch(`${API_BASE}/api/agent-builder/get-agent?${query.toString()}`);
 	if (!response.ok)
 	{
 		throw new Error(`Get agent failed: ${response.status} ${response.statusText}`);

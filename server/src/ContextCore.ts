@@ -12,8 +12,10 @@ import type { Server } from "http";
 import type { AgentMessage } from "./models/AgentMessage.js";
 import { createMessageStore, type IMessageStore } from "./db/IMessageStore.js";
 import { readHarnessChats } from "./harness/index.js";
+import { getCursorRowIdCheckpoint } from "./harness/cursor.js";
 import { startServer } from "./server/ContextServer.js";
 import { CCSettings } from "./settings/CCSettings.js";
+import { GlobalSettingsStore } from "./settings/GlobalSettingsStore.js";
 import { StorageWriter } from "./storage/StorageWriter.js";
 import { getHarnessEntries, getHarnessNames } from "./types.js";
 import { deriveProjectName } from "./utils/pathHelpers.js";
@@ -43,6 +45,11 @@ type HarnessStats = {
 	/** Number of recoverable failures encountered for this harness. */
 	errors: number;
 };
+
+function formatCursorCheckpoint(checkpoint: { cursorDiskKVRowId: number; itemTableRowId: number }): string
+{
+	return `cursorDiskKV=${checkpoint.cursorDiskKVRowId}, ItemTable=${checkpoint.itemTableRowId}`;
+}
 
 /** Active HTTP server handle for lifecycle hooks and cleanup wiring. */
 let activeServer: Server | null = null;
@@ -102,6 +109,8 @@ async function main(): Promise<void>
 	const settings = CCSettings.getInstance();
 	const machine = settings.getMachineConfig(hostname);
 	const storageWriter = new StorageWriter(settings.storage);
+	const globalSettingsStore = new GlobalSettingsStore(settings.storage);
+	globalSettingsStore.load();
 
 	console.log(`ContextCore – hostname: ${hostname}`);
 	console.log(`Storage root: ${settings.storage}`);
@@ -140,6 +149,22 @@ async function main(): Promise<void>
 				if (message.source)
 				{
 					message.source = relative(settings.storage, message.source);
+				}
+			}
+
+			if (harnessName === "Cursor")
+			{
+				const cursorPaths = Array.isArray(harnessConfig.paths) ? harnessConfig.paths : [harnessConfig.paths];
+				const cursorDbPath = cursorPaths[0];
+				if (cursorDbPath)
+				{
+					const previousCheckpoint = globalSettingsStore.getCursorCheckpoint();
+					const checkpoint = getCursorRowIdCheckpoint(cursorDbPath);
+					globalSettingsStore.setCursorState(checkpoint);
+					console.log(
+						`[Cursor][Checkpoint] Startup full refresh: ` +
+						`${formatCursorCheckpoint(previousCheckpoint)} -> ${formatCursorCheckpoint(checkpoint)}`
+					);
 				}
 			}
 
@@ -486,6 +511,7 @@ async function main(): Promise<void>
 		topicSummarizer ?? null,
 		vectorPipeline ?? null,
 		topicStore,
+		globalSettingsStore,
 		summaryEmbeddingCache ?? null,
 		embeddingService ?? null
 	);

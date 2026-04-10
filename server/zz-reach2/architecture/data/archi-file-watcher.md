@@ -1,8 +1,9 @@
 # File System Watcher Architecture — ContextCore
 
 **Date**: 2026-03-16
+**Updated**: 2026-04-10
 **Status**: Active
-**Covers**: FileWatcher, IncrementalPipeline, dual-mode watching (harness + remote storage), debounce strategy, queue serialization
+**Covers**: FileWatcher, IncrementalPipeline, Cursor checkpoint persistence, dual-mode watching (harness + remote storage), debounce strategy, queue serialization
 **Source files**: `src/watcher/FileWatcher.ts`, `src/watcher/IncrementalPipeline.ts`
 
 ---
@@ -15,7 +16,7 @@ The watcher operates in **two modes simultaneously**:
 
 | Mode               | What it watches                                               | Pipeline                                                     | Debounce           |
 | ------------------ | ------------------------------------------------------------- | ------------------------------------------------------------ | ------------------ |
-| **Harness**        | Local IDE source files (`.jsonl`, `.vscdb`, `.chat`, `.json`) | Full: harness reader → StorageWriter → MessageDB → AI/Vector | 1s (5s for Cursor) |
+| **Harness**        | Local IDE source files (`.jsonl`, `.vscdb`, `.chat`, `.json`) | Mixed: full for most harnesses, rowid-incremental for Cursor watcher events | 1s (5s for Cursor) |
 | **Remote Storage** | Already-processed `.json` session files from other machines   | Short: parse JSON → MessageDB → AI/Vector                    | 3s                 |
 
 ```mermaid
@@ -43,8 +44,11 @@ flowchart TD
     Q -->|"remote item"| IP_R["IncrementalPipeline.ingestFromStorage()"]
 
     subgraph IngestHarness["Harness Ingest (full pipeline)"]
-        IP_H --> H1["readHarnessChats()"]
-        H1 --> H2["Stamp machine + harness"]
+        IP_H --> H0{"harness == Cursor?"}
+        H0 -->|"yes"| H1A["readCursorChatsIncremental()<br/>using rowid checkpoint"]
+        H0 -->|"no"| H1B["readHarnessChats()"]
+        H1A --> H2["Stamp machine + harness"]
+        H1B --> H2
         H2 --> H3["groupBySession()"]
         H3 --> H4["StorageWriter.writeSession()"]
         H4 --> H5["MessageDB.addMessages()"]
@@ -102,8 +106,14 @@ classDiagram
         -topicSummarizer: TopicSummarizer?
         -vectorPipeline: VectorPipeline?
         -topicStore: TopicStore
+        -globalSettingsStore: GlobalSettingsStore
         +ingest(harness, config, rawBase) IngestResult
         +ingestFromStorage(source, filePaths) StorageIngestResult
+    }
+
+    class GlobalSettingsStore {
+        +getCursorCheckpoint()
+        +setCursorState()
     }
 
     class WatchedPath {
@@ -124,6 +134,7 @@ classDiagram
     FileWatcher --> QueueItem : queues
     IncrementalPipeline --> IMessageStore : writes to
     IncrementalPipeline --> StorageWriter : persists via
+    IncrementalPipeline --> GlobalSettingsStore : checkpoint IO
     IncrementalPipeline --> TopicSummarizer : summarizes via
     IncrementalPipeline --> VectorPipeline : embeds via
 ```
@@ -134,6 +145,7 @@ classDiagram
 | ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
 | `src/watcher/FileWatcher.ts`         | Event detection, extension filtering, debouncing, queue management, remote machine dir discovery                             |
 | `src/watcher/IncrementalPipeline.ts` | Orchestrates downstream writes: harness re-read or JSON parse → StorageWriter → MessageDB → TopicSummarizer → VectorPipeline |
+| `src/settings/GlobalSettingsStore.ts` | Persists Cursor watcher checkpoints in `{storage}/.settings/global-settings.json` (`cursorDiskKVRowId`, `itemTableRowId`, `lastQueriedAt`) |
 
 ---
 
@@ -171,20 +183,29 @@ Each harness type has a strict extension allowlist. Events for files that don't 
 
 ### 3.3 Harness Ingest Pipeline
 
-When a debounced harness event fires, `IncrementalPipeline.ingest()` runs the full pipeline:
+When a debounced harness event fires, `IncrementalPipeline.ingest()` runs a harness-specific pipeline:
+- Cursor: rowid-incremental read using persisted checkpoint state
+- Other harnesses: existing full harness reader path
 
 ```mermaid
 sequenceDiagram
     participant FW as FileWatcher
     participant IP as IncrementalPipeline
-    participant HR as readHarnessChats()
+    participant GS as GlobalSettingsStore
+    participant HR as Harness Reader
     participant SW as StorageWriter
     participant DB as IMessageStore
     participant TS as TopicSummarizer
     participant VP as VectorPipeline
 
     FW->>IP: ingest(harnessName, config, rawBase)
-    IP->>HR: Re-read harness source
+    alt Cursor harness
+        IP->>GS: getCursorCheckpoint()
+        IP->>HR: readCursorChatsIncremental(checkpoint)
+        IP->>GS: setCursorState(newCheckpoint)
+    else Other harnesses
+        IP->>HR: readHarnessChats()
+    end
     HR-->>IP: AgentMessage[]
     IP->>IP: Stamp machine + harness, relativize source
 
@@ -211,6 +232,23 @@ sequenceDiagram
 ```
 
 The force-overwrite step is critical: when an active conversation grows (new messages appended to a `.jsonl` file), the storage JSON file from a prior run already exists and would be skipped by `writeSession()`. After `addMessages()` detects new rows, the pipeline re-fetches the full session from the DB and overwrites the storage file to capture the complete conversation.
+
+### 3.4 Cursor Checkpoint Semantics (2026-04-10)
+
+Cursor incremental ingest uses `rowid` checkpoints because Cursor tables do not provide `added_date` columns:
+- `cursorDiskKV`: `key`, `value` only
+- `ItemTable`: `key`, `value` only
+
+Persisted state lives in `{storage}/.settings/global-settings.json`:
+- `cursor.cursorDiskKVRowId`
+- `cursor.itemTableRowId`
+- `cursor.lastQueriedAt`
+
+Logging behavior:
+- Startup full Cursor ingest logs: `[Cursor][Checkpoint] Startup full refresh: before -> after`
+- Watcher Cursor ingest logs:
+  - `[Cursor][Checkpoint] Watcher start: ...`
+  - `[Cursor][Checkpoint] Watcher end: before -> after`
 
 ---
 
@@ -440,7 +478,7 @@ flowchart LR
 
 ## 7. Integration with the Database
 
-The FileWatcher does **not** interact with the database directly. It delegates all writes to `IncrementalPipeline`, which holds references to `IMessageStore`, `StorageWriter`, `TopicSummarizer`, and `VectorPipeline`.
+The FileWatcher does **not** interact with the database directly. It delegates all writes to `IncrementalPipeline`, which holds references to `IMessageStore`, `StorageWriter`, `TopicSummarizer`, `VectorPipeline`, and `GlobalSettingsStore` (for Cursor rowid checkpoints).
 
 ```mermaid
 flowchart LR
@@ -448,12 +486,14 @@ flowchart LR
     IP["IncrementalPipeline<br/>(orchestration)"]
     SW["StorageWriter<br/>(JSON tier 1)"]
     DB["IMessageStore<br/>(SQLite tier 2)"]
+    GS["GlobalSettingsStore<br/>(Cursor checkpoints)"]
     TS["TopicSummarizer<br/>(AI summaries)"]
     VP["VectorPipeline<br/>(Qdrant embeddings)"]
 
     FW -->|"ingest() or<br/>ingestFromStorage()"| IP
     IP --> SW
     IP --> DB
+    IP --> GS
     IP -.->|"if enabled"| TS
     IP -.->|"if enabled"| VP
 ```
@@ -464,6 +504,7 @@ Both ingest paths rely on `IMessageStore.addMessages()`, which uses `INSERT OR I
 
 - Re-syncing the same file from a remote machine produces zero duplicates.
 - Re-reading a harness path with unchanged sessions inserts zero new rows.
+- Cursor watcher runs can no-op before parsing payloads when checkpoint rowids did not advance.
 - The `addMessages()` return value (count of actually-inserted rows) is the signal for whether downstream work (summarization, embedding) is needed.
 
 ### 7.2 Write Concurrency Model
@@ -498,6 +539,7 @@ sequenceDiagram
     participant FW as FileWatcher
 
     Note over CC: Full batch pipeline completes
+    Note over CC: Cursor checkpoint seeded/updated in GlobalSettingsStore
     Note over CC: Servers started (Express, MCP)
 
     CC->>IP: new IncrementalPipeline(messageDB, storageWriter, ...)

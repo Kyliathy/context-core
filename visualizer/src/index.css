@@ -175,6 +175,18 @@ g.chat .chat-html {
   letter-spacing: 0.5px;
 }
 
+.platform-badge {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 4px;
+  border-radius: 3px;
+  color: #fff;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  margin-left: 2px;
+}
+
 .card-envelope-btn {
   cursor: pointer;
   user-select: none;

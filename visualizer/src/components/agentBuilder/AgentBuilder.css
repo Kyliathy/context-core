@@ -153,6 +153,15 @@
 	flex-shrink: 0;
 }
 
+.agent-basket-banner-warning {
+	padding: 6px 12px;
+	font-size: 12px;
+	background: #78350f;
+	color: #fde68a;
+	border-bottom: 1px solid #92400e;
+	flex-shrink: 0;
+}
+
 .agent-basket-banner-dismiss {
 	background: none;
 	border: none;

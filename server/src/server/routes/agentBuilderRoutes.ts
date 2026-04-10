@@ -35,13 +35,19 @@ export function register(app: Express, ctx: RouteContext): void
 		const description = typeof body.description === "string" ? body.description.trim() : "";
 		const argumentHint = typeof body["argument-hint"] === "string" ? body["argument-hint"].trim() : "";
 		const platform = typeof body.platform === "string" ? body.platform.trim() : "";
+		const codexDirectory = typeof body.codexDirectory === "string" ? body.codexDirectory.trim() : "";
+		const codexEntryId = typeof body.codexEntryId === "string" ? body.codexEntryId.trim() : "";
 
 		if (!projectName) { res.status(400).json({ error: "projectName is required" }); return; }
 		if (!agentName) { res.status(400).json({ error: "agentName is required" }); return; }
 		if (!description) { res.status(400).json({ error: "description is required" }); return; }
 		if (!argumentHint) { res.status(400).json({ error: "argument-hint is required" }); return; }
 		if (!platform) { res.status(400).json({ error: "platform is required" }); return; }
-		if (platform !== "github" && platform !== "claude") { res.status(400).json({ error: "platform must be \"github\" or \"claude\"" }); return; }
+		if (platform !== "github" && platform !== "claude" && platform !== "codex")
+		{
+			res.status(400).json({ error: "platform must be \"github\", \"claude\", or \"codex\"" });
+			return;
+		}
 
 		const rawTools = Array.isArray(body.tools) ? body.tools : [];
 		const tools: string[] = rawTools.filter((t): t is string => typeof t === "string" && t.trim() !== "").map((t) => t.trim());
@@ -58,6 +64,8 @@ export function register(app: Express, ctx: RouteContext): void
 				"argument-hint": argumentHint,
 				tools,
 				agentKnowledge,
+				codexDirectory: codexDirectory || undefined,
+				codexEntryId: codexEntryId || undefined,
 				platform,
 			});
 			res.status(201).json(result);
@@ -88,6 +96,7 @@ export function register(app: Express, ctx: RouteContext): void
 		}
 
 		const agentPath = typeof req.query.path === "string" ? req.query.path.trim() : "";
+		const codexEntryId = typeof req.query.codexEntryId === "string" ? req.query.codexEntryId.trim() : "";
 		if (!agentPath)
 		{
 			res.status(400).json({ error: "path query parameter is required" });
@@ -96,7 +105,7 @@ export function register(app: Express, ctx: RouteContext): void
 
 		try
 		{
-			res.json(ctx.agentBuilder.getAgent(agentPath));
+			res.json(ctx.agentBuilder.getAgent(agentPath, codexEntryId || undefined));
 		} catch (error)
 		{
 			const status = (error as { status?: number }).status ?? 500;

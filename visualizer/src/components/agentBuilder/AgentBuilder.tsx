@@ -22,8 +22,8 @@ type Props = {
 	onAddCustomEntry: (text: string) => void;
 	onUpdateEntry: (id: string, newValue: string) => void;
 	onClear: () => void;
-	onCreateAgent: (input: Omit<CreateAgentInput, "platform">, platforms: ("github" | "claude")[]) => void;
-	sources: { name: string; fileCount: number }[];
+	onCreateAgent: (input: Omit<CreateAgentInput, "platform">, platforms: ("github" | "claude" | "codex")[]) => void;
+	sources: { name: string; fileCount: number; codexDirectories?: string[]; codexDefaultDirectory?: string }[];
 	isCreating: boolean;
 	createError: string | null;
 	createSuccess: string | null;
@@ -35,7 +35,10 @@ type Props = {
 		description: string;
 		hint: string;
 		tools: string;
-		platform?: "github" | "claude";
+		codexDirectory?: string;
+		platform?: "github" | "claude" | "codex";
+		platforms?: import("../../types").AgentListPlatformEntry[];
+		contentDiverged?: boolean;
 	} | null;
 	onCancelEdit?: () => void;
 	mode?: "agent" | "template" | "agent-from-template";
@@ -49,6 +52,30 @@ type Props = {
 
 const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const PLATFORMS_KEY = "cxc-agent-platforms";
+const CODEX_DIRECTORY_KEY = "cxc-agent-codex-directories";
+
+function readCodexDirectoryMap(): Record<string, string>
+{
+	try
+	{
+		const raw = window.localStorage.getItem(CODEX_DIRECTORY_KEY);
+		if (!raw) return {};
+		const parsed = JSON.parse(raw) as unknown;
+		if (!parsed || typeof parsed !== "object") return {};
+		const result: Record<string, string> = {};
+		for (const [key, value] of Object.entries(parsed as Record<string, unknown>))
+		{
+			if (typeof value === "string" && value.trim() !== "")
+			{
+				result[key] = value;
+			}
+		}
+		return result;
+	} catch
+	{
+		return {};
+	}
+}
 
 function toSlug(raw: string): string {
 	return raw
@@ -87,16 +114,17 @@ export default function AgentBuilder({
 	const [description, setDescription] = useState("");
 	const [argumentHint, setArgumentHint] = useState("");
 	const [tools, setTools] = useState("");
+	const [codexDirectory, setCodexDirectory] = useState("");
 	const [customText, setCustomText] = useState("");
 	const [showSlugHint, setShowSlugHint] = useState(false);
 	const [dismissedError, setDismissedError] = useState<string | null>(null);
 	const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
-	const [platforms, setPlatforms] = useState<Set<"github" | "claude">>(() => {
+	const [platforms, setPlatforms] = useState<Set<"github" | "claude" | "codex">>(() => {
 		try {
 			const raw = window.localStorage.getItem(PLATFORMS_KEY);
 			if (raw) {
 				const arr = JSON.parse(raw) as string[];
-				const valid = arr.filter((p): p is "github" | "claude" => p === "github" || p === "claude");
+				const valid = arr.filter((p): p is "github" | "claude" | "codex" => p === "github" || p === "claude" || p === "codex");
 				if (valid.length > 0) return new Set(valid);
 			}
 		} catch {}
@@ -144,9 +172,46 @@ export default function AgentBuilder({
 			setDescription(initialValues.description);
 			setArgumentHint(initialValues.hint);
 			setTools(initialValues.tools);
-			setPlatforms(new Set([initialValues.platform ?? "github"]));
+			setCodexDirectory(initialValues.codexDirectory ?? "");
+			// Pre-check all platforms the agent currently exists on.
+			if (initialValues.platforms && initialValues.platforms.length > 0) {
+				setPlatforms(new Set(initialValues.platforms.map((p) => p.platform)));
+			} else {
+				setPlatforms(new Set([initialValues.platform ?? "github"]));
+			}
 		}
 	}, [editMode, initialValues]);
+
+	const selectedSource = sources.find((s) => s.name === projectName);
+	const availableCodexDirectories = selectedSource?.codexDirectories ?? [];
+	const codexNeedsDirectory = mode !== "template" && platforms.has("codex") && availableCodexDirectories.length > 1;
+
+	useEffect(() => {
+		if (!codexNeedsDirectory) return;
+		if (availableCodexDirectories.includes(codexDirectory)) return;
+		let fallback = "";
+		if (!editMode && projectName) {
+			const stored = readCodexDirectoryMap()[projectName];
+			if (stored && availableCodexDirectories.includes(stored)) {
+				fallback = stored;
+			}
+		}
+		if (!fallback) {
+			fallback = selectedSource?.codexDefaultDirectory ?? availableCodexDirectories[0] ?? "";
+		}
+		setCodexDirectory(fallback);
+	}, [codexNeedsDirectory, availableCodexDirectories, codexDirectory, selectedSource, editMode, projectName]);
+
+	useEffect(() => {
+		if (editMode) return;
+		if (!projectName || !codexDirectory) return;
+		if (!availableCodexDirectories.includes(codexDirectory)) return;
+		try {
+			const next = readCodexDirectoryMap();
+			next[projectName] = codexDirectory;
+			window.localStorage.setItem(CODEX_DIRECTORY_KEY, JSON.stringify(next));
+		} catch {}
+	}, [editMode, projectName, codexDirectory, availableCodexDirectories]);
 
 	// Persist platform selection to localStorage
 	useEffect(() => {
@@ -250,7 +315,13 @@ export default function AgentBuilder({
 					entries.length > 0 &&
 					entries.every((e) => e.kind !== "placeholder") &&
 					platforms.size > 0
-				: !isCreating && agentName !== "" && slugValid && projectName !== "" && entries.length > 0 && platforms.size > 0;
+				: !isCreating &&
+					agentName !== "" &&
+					slugValid &&
+					projectName !== "" &&
+					entries.length > 0 &&
+					platforms.size > 0 &&
+					(!codexNeedsDirectory || codexDirectory !== "");
 
 	const handleCreate = useCallback(() => {
 		if (!canCreate) return;
@@ -276,6 +347,7 @@ export default function AgentBuilder({
 				"argument-hint": argumentHint,
 				tools: toolList.length > 0 ? toolList : undefined,
 				agentKnowledge: entries.map((e) => e.value),
+				codexDirectory: codexNeedsDirectory ? codexDirectory : undefined,
 			},
 			Array.from(platforms),
 		);
@@ -289,6 +361,8 @@ export default function AgentBuilder({
 		tools,
 		entries,
 		platforms,
+		codexNeedsDirectory,
+		codexDirectory,
 		onCreateAgent,
 		onCreateTemplate,
 	]);
@@ -345,7 +419,7 @@ export default function AgentBuilder({
 									? "Replace all placeholders before saving"
 									: editMode
 										? "Save agent changes"
-										: "Create .agent.md file"
+										: "Create selected agent files (.agent.md / .md / AGENTS.md)"
 						}>
 						{isCreating ? "Saving…" : mode === "template" ? "📝 Save Template" : editMode ? "💾 Save" : "🏗️ Create"}
 					</button>
@@ -386,6 +460,20 @@ export default function AgentBuilder({
 						/>
 						Claude Code
 					</label>
+					<label>
+						<input
+							type="checkbox"
+							checked={platforms.has("codex")}
+							onChange={() =>
+								setPlatforms((prev) => {
+									const next = new Set(prev);
+									next.has("codex") ? next.delete("codex") : next.add("codex");
+									return next;
+								})
+							}
+						/>
+						OpenAI Codex (VS Code)
+					</label>
 				</div>
 			)}
 
@@ -402,18 +490,42 @@ export default function AgentBuilder({
 			{/* Success banner */}
 			{createSuccess && <div className="agent-basket-banner-success">✓ Created: {createSuccess}</div>}
 
+			{/* Content divergence warning (edit mode only) */}
+			{editMode && initialValues?.contentDiverged && (
+				<div className="agent-basket-banner-warning">
+					⚠ Agent data differs between platforms. Saving may overwrite a version with different content.
+				</div>
+			)}
+
 			{/* Form fields */}
 			<div className="agent-basket-form" onKeyDown={handleFormKeyDown}>
 				{mode !== "template" && (
 					<div className="agent-basket-form-row">
-						<label className="agent-basket-form-label">Project</label>
+						<label className="agent-basket-form-label">Source</label>
 						<select value={projectName} onChange={(e) => setProjectName(e.target.value)}>
 							<option value="" disabled>
-								— Select project —
+								— Select source —
 							</option>
 							{sources.map((s) => (
 								<option key={s.name} value={s.name}>
 									{s.name} ({s.fileCount} files)
+								</option>
+							))}
+						</select>
+					</div>
+				)}
+				{codexNeedsDirectory && (
+					<div className="agent-basket-form-row">
+						<label className="agent-basket-form-label">Directory</label>
+						<select
+							value={codexDirectory}
+							onChange={(e) => setCodexDirectory(e.target.value)}>
+							<option value="" disabled>
+								— Select directory —
+							</option>
+							{availableCodexDirectories.map((dir) => (
+								<option key={dir} value={dir}>
+									{dir}
 								</option>
 							))}
 						</select>

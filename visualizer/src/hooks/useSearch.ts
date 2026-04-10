@@ -116,8 +116,11 @@ function toAgentListCards(agents: AgentListEntry[]): CardData[]
 {
 	return agents.map((agent) =>
 	{
+		const cardId = agent.codexEntryId ? `${agent.path}::${agent.codexEntryId}` : agent.path;
+		const projectLabel = agent.codexDirectory ?? agent.name;
+		const platformLabels = (agent.platforms ?? []).map((p) => p.platform).join(", ");
 		const fakeSource: SerializedAgentMessage = {
-			id: agent.path,
+			id: cardId,
 			sessionId: agent.name,
 			harness: "AgentCard",
 			machine: "",
@@ -138,7 +141,7 @@ function toAgentListCards(agents: AgentListEntry[]): CardData[]
 			dateTime: new Date().toISOString(),
 		};
 		return {
-			id: agent.path,
+			id: cardId,
 			sessionId: agent.name,
 			x: 0,
 			y: 0,
@@ -146,17 +149,21 @@ function toAgentListCards(agents: AgentListEntry[]): CardData[]
 			h: 0,
 			title: agent.name,
 			harness: "AgentCard",
-			project: agent.name,
+			project: projectLabel,
 			model: null,
 			role: "system",
 			dateTime: new Date().toISOString(),
 			score: 1.0,
 			hits: 0,
 			symbols: [],
-			excerptShort: agent.description,
-			excerptMedium: agent.description + (agent.hint ? `\nhint: ${agent.hint}` : ""),
+			excerptShort: agent.description + (platformLabels ? ` [${platformLabels}]` : ""),
+			excerptMedium: agent.description + (agent.hint ? `\nhint: ${agent.hint}` : "") + (platformLabels ? `\nplatforms: ${platformLabels}` : ""),
 			excerptLong: agent.excerpt,
 			source: fakeSource,
+			agentPath: agent.path,
+			codexEntryId: agent.codexEntryId,
+			platforms: agent.platforms,
+			contentDiverged: agent.contentDiverged,
 		};
 	});
 }

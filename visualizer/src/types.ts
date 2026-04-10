@@ -83,6 +83,8 @@ export type PrepareResponse = {
 		type: string;
 		path: string;
 		agentPath?: string;
+		codexDirectories?: string[];
+		codexDefaultDirectory?: string;
 		fileCount: number;
 	}[];
 	files: IndexedFile[];
@@ -134,7 +136,9 @@ export type CreateAgentInput = {
 	"argument-hint": string;
 	tools?: string[];
 	agentKnowledge: string[];
-	platform: "github" | "claude";
+	codexEntryId?: string;
+	codexDirectory?: string;
+	platform: "github" | "claude" | "codex";
 };
 
 /** Response from POST /api/agent-builder/create. */
@@ -142,12 +146,27 @@ export type CreateAgentResponse = {
 	created: boolean;
 	path: string;
 	agentName: string;
+	codexEntryId?: string;
 };
 
-/** Summary entry for GET /api/agent-builder/list. */
+/** Per-platform location info within a consolidated agent list entry. */
+export type AgentListPlatformEntry = {
+	platform: "github" | "claude" | "codex";
+	path: string;
+	codexEntryId?: string;
+	codexDirectory?: string;
+	dataLength: number;
+};
+
+/** Summary entry for GET /api/agent-builder/list (consolidated across platforms). */
 export type AgentListEntry = {
 	name: string;
 	path: string;
+	codexEntryId?: string;
+	codexDirectory?: string;
+	platform?: "github" | "claude" | "codex";
+	platforms: AgentListPlatformEntry[];
+	contentDiverged: boolean;
 	description: string;
 	hint: string;
 	excerpt: string;
@@ -173,6 +192,7 @@ export type GetAgentResponse = {
 export type CardEditAgentEventDetail = {
 	cardId: string;
 	agentPath: string;
+	codexEntryId?: string;
 };
 
 export type CardUseTemplateEventDetail = {
@@ -256,6 +276,10 @@ export type CardData = {
 	source: SerializedAgentMessage;
 	customColor?: string;
 	customEmoji?: string;
+	agentPath?: string;
+	codexEntryId?: string;
+	platforms?: AgentListPlatformEntry[];
+	contentDiverged?: boolean;
 };
 
 export type ThreadCardData = {

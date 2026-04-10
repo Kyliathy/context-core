@@ -13,9 +13,11 @@ import type { IMessageStore } from "../db/IMessageStore.js";
 import type { StorageWriter } from "../storage/StorageWriter.js";
 import type { HarnessConfig } from "../types.js";
 import { readHarnessChats } from "../harness/index.js";
+import { getCursorRowIdCheckpoint, readCursorChatsIncremental } from "../harness/cursor.js";
 import { deriveProjectName } from "../utils/pathHelpers.js";
 import type { TopicSummarizer } from "../analysis/TopicSummarizer.js";
 import { isReadyForSummarization } from "../analysis/TopicSummarizer.js";
+import type { GlobalSettingsStore } from "../settings/GlobalSettingsStore.js";
 import type { TopicStore } from "../settings/TopicStore.js";
 import type { EmbeddingService } from "../vector/EmbeddingService.js";
 import type { SummaryEmbeddingCache } from "../vector/SummaryEmbeddingCache.js";
@@ -61,6 +63,11 @@ function groupBySession(messages: Array<AgentMessage>): Map<string, Array<AgentM
 	return sessions;
 }
 
+function formatCursorCheckpoint(checkpoint: { cursorDiskKVRowId: number; itemTableRowId: number }): string
+{
+	return `cursorDiskKV=${checkpoint.cursorDiskKVRowId}, ItemTable=${checkpoint.itemTableRowId}`;
+}
+
 /**
  * Orchestrates incremental ingestion of a single harness path.
  * Designed to run repeatedly in response to file-change events.
@@ -75,6 +82,7 @@ export class IncrementalPipeline
 		private readonly topicSummarizer: TopicSummarizer | null,
 		private readonly vectorPipeline: VectorPipeline | null,
 		private readonly topicStore: TopicStore,
+		private readonly globalSettingsStore: GlobalSettingsStore,
 		private readonly summaryEmbeddingCache: SummaryEmbeddingCache | null,
 		private readonly embeddingService: EmbeddingService | null = null
 	) {}
@@ -109,7 +117,47 @@ export class IncrementalPipeline
 		try
 		{
 			// 1. Re-read harness source — file-based harnesses skip unchanged files automatically.
-			const messages = readHarnessChats(harnessName, harnessConfig, rawBase);
+			let messages: Array<AgentMessage> = [];
+			if (harnessName === "Cursor")
+			{
+				const cursorDbPath = paths[0];
+				if (!cursorDbPath)
+				{
+					throw new Error("Cursor incremental ingest requires a database path.");
+				}
+
+				const checkpoint = this.globalSettingsStore.getCursorCheckpoint();
+				console.log(
+					chalk.blue(`[Cursor][Checkpoint] Watcher start: ${formatCursorCheckpoint(checkpoint)}`)
+				);
+				if (checkpoint.cursorDiskKVRowId <= 0 && checkpoint.itemTableRowId <= 0)
+				{
+					const seededCheckpoint = getCursorRowIdCheckpoint(cursorDbPath);
+					this.globalSettingsStore.setCursorState(seededCheckpoint);
+					console.log(
+						chalk.blue(
+							`[Cursor][Checkpoint] Watcher end: ` +
+							`${formatCursorCheckpoint(checkpoint)} -> ${formatCursorCheckpoint(seededCheckpoint)}`
+						)
+					);
+				}
+				else
+				{
+					const incremental = readCursorChatsIncremental(cursorDbPath, rawBase, checkpoint);
+					this.globalSettingsStore.setCursorState(incremental.checkpoint);
+					console.log(
+						chalk.blue(
+							`[Cursor][Checkpoint] Watcher end: ` +
+							`${formatCursorCheckpoint(checkpoint)} -> ${formatCursorCheckpoint(incremental.checkpoint)}`
+						)
+					);
+					messages = incremental.messages;
+				}
+			}
+			else
+			{
+				messages = readHarnessChats(harnessName, harnessConfig, rawBase);
+			}
 
 			// Stamp machine + harness, relativize source path (same as startup pipeline).
 			for (const message of messages)
@@ -138,7 +186,21 @@ export class IncrementalPipeline
 				}
 
 				const first = sessionMessages[0];
-				const project = first.project || deriveProjectName(harnessName, first.sessionId);
+				let project = first.project || deriveProjectName(harnessName, first.sessionId);
+
+				if (harnessName === "Cursor")
+				{
+					const existingSession = this.messageDB.getBySessionId(first.sessionId);
+					const existingProject = existingSession[0]?.project;
+					if (existingProject && (!first.project || first.project === "MISC"))
+					{
+						project = existingProject;
+						for (const message of sessionMessages)
+						{
+							message.project = existingProject;
+						}
+					}
+				}
 
 				try
 				{

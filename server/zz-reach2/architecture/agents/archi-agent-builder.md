@@ -1,6 +1,6 @@
 # AgentBuilder – Architectural Review
 
-**Date**: 2026-03-18
+**Date**: 2026-04-09
 **Scope**: Full architectural review of the AgentBuilder subsystem — config, indexing, API endpoints, file persistence, and UI integration
 **Runtime**: Bun (TypeScript, ESNext modules)
 **Entry point**: `src/agentBuilder/AgentBuilder.ts`
@@ -10,7 +10,7 @@
 
 ## 1. System Overview
 
-The AgentBuilder is a subsystem of ContextCore that **indexes external file directories** (declared as `dataSources` in `cc.json`), serves the file listing through an API, and provides a complete agent lifecycle: **create**, **list**, **retrieve**, and **edit** agents. Each agent is a `.agent.md` file conforming to the GitHub Copilot / VS Code agent format, optionally paired with a `.agent.json` companion that preserves the structured definition for lossless round-trip editing.
+The AgentBuilder is a subsystem of ContextCore that **indexes external file directories** (declared as `dataSources` in `cc.json`), serves the file listing through an API, and provides a complete agent lifecycle: **create**, **list**, **retrieve**, and **edit** agents. The system supports three output platforms: GitHub (`.agent.md` + `.agent.json`), Claude (`.md` + `.json` under `.claude/agents`), and Codex (`AGENTS.md` + `AGENTS.json`), each with a structured JSON companion for round-trip editing.
 
 The system operates entirely in-memory (no database involvement) and is feature-gated by the presence of `dataSources` entries with `purpose: "AgentBuilder"` in the machine's `cc.json` config. When no such entries exist, the AgentBuilder is not instantiated and all endpoints return 404.
 
@@ -37,7 +37,7 @@ flowchart LR
 
     subgraph Disk["Filesystem"]
         CONTENT["Content files<br/>(zz-reach2/**/*.md)"]
-        AGENTS[".agent.md + .agent.json<br/>(.github/agents/)"]
+        AGENTS["GitHub: .agent.md/.agent.json<br/>Claude: .md/.json<br/>Codex: AGENTS.md/AGENTS.json"]
     end
 
     subgraph UI["Visualizer (React)"]
@@ -64,6 +64,20 @@ flowchart LR
     E4 --> AB
 ```
 
+Codex-specific creation path:
+
+- If `codexAgentPath` is set, write `AGENTS.md` there.
+- Else if `agentPath` matches `.github/agents`, infer repo root by going two levels up and write `AGENTS.md` there.
+- Else fallback to `path`.
+
+Implemented in 2026-04 for Codex support:
+
+- Added `platform: "codex"` support across create, list, get-agent, and indexing flows.
+- Added Codex file generation (`AGENTS.md` + `AGENTS.json`) with a CXC generation marker in markdown output.
+- Added Codex path inference from `agentPath` when `agentPath` points to `.github/agents`.
+- Added overwrite safety: unmanaged existing `AGENTS.md` files are backed up before replacement.
+- Added Codex-aware retrieval and reconstruction when companion JSON is missing.
+
 ---
 
 ## 2. Configuration
@@ -81,6 +95,7 @@ AgentBuilder sources are declared per-machine in `cc.json` under the `dataSource
       {
         "path": "D:\\...\\server\\zz-reach2",
         "agentPath": "D:\\...\\.github\\agents",
+        "codexAgentPath": "D:\\...\\server\\zz-reach2",
         "name": "Context Core Server",
         "type": "Reach2 Architectural Repo",
         "purpose": "AgentBuilder"
@@ -114,6 +129,9 @@ classDiagram
     class DataSourceEntry {
         +String path
         +String? agentPath
+        +String? claudeAgentPath
+        +String? codexAgentPath
+        +String[]? codexAgentPaths
         +String name
         +String type
         +String purpose
@@ -126,7 +144,10 @@ classDiagram
 | Field       | Type     | Required | Description                                                        |
 | ----------- | -------- | -------- | ------------------------------------------------------------------ |
 | `path`      | `string` | yes      | Root directory to index for content files                          |
-| `agentPath` | `string` | no       | Directory where `.agent.md` / `.agent.json` files live             |
+| `agentPath` | `string` | no       | GitHub output directory (`.agent.md` / `.agent.json`)               |
+| `claudeAgentPath` | `string` | no | Claude output directory (`.md` / `.json`). Falls back to `{dirname(dirname(agentPath))}/.claude/agents` when absent |
+| `codexAgentPath` | `string` | no | Legacy single Codex output directory (`AGENTS.md` / `AGENTS.json`). Still supported as fallback. |
+| `codexAgentPaths` | `string[]` | no | Preferred Codex output directory list. Enables explicit directory targeting in the UI and API. |
 | `name`      | `string` | yes      | Human-readable label — acts as a filter key and project identifier |
 | `type`      | `string` | yes      | Informational tag (e.g. `"Reach2 Architectural Repo"`)             |
 | `purpose`   | `string` | yes      | Must be `"AgentBuilder"` to be indexed                             |
@@ -224,13 +245,26 @@ classDiagram
         +Boolean fromJson
     }
 
+    class AgentListPlatformEntry {
+        +String platform ["github"|"claude"|"codex"]
+        +String path
+        +String? codexEntryId
+        +String? codexDirectory
+        +Number dataLength
+    }
+
     class AgentListEntry {
         +String name
         +String path
+        +String? platform
+        +AgentListPlatformEntry[] platforms
+        +Boolean contentDiverged
         +String description
         +String hint
         +String excerpt
     }
+
+    AgentListEntry "1" --> "*" AgentListPlatformEntry : platforms
 
     AgentDefinition --|> CreateAgentInput : extends
 
@@ -282,7 +316,7 @@ sequenceDiagram
         CC->>AB: await index()
         AB->>AB: extractAgentBuilderSources()
         AB->>AB: collectFiles(path) per source
-        AB->>AB: collectFiles(agentPath) per source
+        AB->>AB: collectFiles(agentPath / claudeAgentPath / codex path) per source
         AB->>AB: Deduplicate by absolute path
         AB-->>CC: Indexed N files across M sources
     else No AgentBuilder sources
@@ -316,14 +350,14 @@ flowchart TD
     STAT1 --> READ1["readExcerpt() → first 1000 chars"]
     READ1 --> PUSH1["Push IndexedFile<br/>(origin: content)"]
 
-    LOOP --> AGENT{"agentPath<br/>exists?"}
-    AGENT -->|yes| AGENTFILES["collectFiles(source.agentPath)"]
+    LOOP --> AGENT{"agent output dirs<br/>resolvable?"}
+    AGENT -->|yes| AGENTFILES["collectFiles(agentPath, claudeAgentPath,<br/>codexAgentPath/source.path)"]
     AGENTFILES --> DEDUP2{"Already<br/>seen?"}
     DEDUP2 -->|yes| SKIP2["Skip"]
     DEDUP2 -->|no| STAT2["statSync() → size, mtime"]
     STAT2 --> READ2["readExcerpt() → first 1000 chars"]
     READ2 --> PUSH2["Push IndexedFile<br/>(origin: agent)"]
-    AGENT -->|no| SKIP3["Skip agentPath"]
+    AGENT -->|no| SKIP3["Skip agent directories"]
 
     PUSH1 --> LOOP
     PUSH2 --> LOOP
@@ -340,7 +374,7 @@ The `collectFiles()` function recursively walks directories with these filtering
 | ------------------- | ---------------------------------------------------------- |
 | `.git/`             | Skipped (in `SKIP_DIRS` set)                               |
 | `node_modules/`     | Skipped (in `SKIP_DIRS` set)                               |
-| Hidden dirs (`.*/`) | Skipped — **except** `.github` which is explicitly allowed |
+| Hidden dirs (`.*/`) | Skipped — **except** `.github` and `.claude` which are explicitly allowed |
 | All files           | Included regardless of extension                           |
 | Errors              | Silently caught per-entry (defensive traversal)            |
 
@@ -349,7 +383,7 @@ The `collectFiles()` function recursively walks directories with these filtering
 Each indexed file records:
 - **`relativePath`**: Path relative to the data source root, forward-slash normalized
 - **`absolutePath`**: Full disk path (used as deduplication key and identity)
-- **`origin`**: `"content"` (from `path`) or `"agent"` (from `agentPath`) — this distinction drives the `list()` and `getAgent()` filtering logic
+- **`origin`**: `"content"` (from `path`) or `"agent"` (from platform agent directories) — this distinction drives the `list()` and `getAgent()` filtering logic
 - **`excerpt`**: First 1000 characters of file content — provides preview without a second round-trip
 
 ---
@@ -370,10 +404,10 @@ flowchart LR
     E1 -->|"prepare(filterName?)"| AB["AgentBuilder"]
     E2 -->|"create(input)"| AB
     E3 -->|"list()"| AB
-    E4 -->|"getAgent(path)"| AB
+    E4 -->|"getAgent(path, codexEntryId?)"| AB
 
     AB --> IDX["In-Memory Index"]
-    AB -->|"writes"| FS["Filesystem<br/>(.agent.md + .agent.json)"]
+    AB -->|"writes"| FS["Filesystem<br/>(GitHub/Claude/Codex markdown + JSON companions)"]
 ```
 
 ### 7.2 Endpoint Reference
@@ -381,9 +415,9 @@ flowchart LR
 | Endpoint                       | Method | Purpose                                                         | Request                | Response                                           |
 | ------------------------------ | ------ | --------------------------------------------------------------- | ---------------------- | -------------------------------------------------- |
 | `/api/agent-builder/prepare`   | POST   | Return indexed file listing, optionally filtered by source name | `{ name?: string }`    | `PrepareResponse` (totalFiles, sources[], files[]) |
-| `/api/agent-builder/create`    | POST   | Create a new agent (`.agent.md` + `.agent.json`)                | `CreateAgentInput`     | `CreateAgentResponse` (201)                        |
-| `/api/agent-builder/list`      | GET    | List all agents with metadata                                   | —                      | `AgentListResponse` (totalAgents, agents[])        |
-| `/api/agent-builder/get-agent` | GET    | Get full structured definition for one agent                    | `?path=<absolutePath>` | `GetAgentResponse` (agent: AgentDefinition)        |
+| `/api/agent-builder/create`    | POST   | Create or update platform-specific agent files (GitHub / Claude / Codex)   | `CreateAgentInput` + optional `codexDirectory`, `codexEntryId` | `CreateAgentResponse` (201)                        |
+| `/api/agent-builder/list`      | GET    | List agents consolidated by name across platforms, with platform metadata and content divergence detection | —                      | `AgentListResponse` (totalAgents, agents[])        |
+| `/api/agent-builder/get-agent` | GET    | Get full structured definition for one logical agent entry      | `?path=<absolutePath>&codexEntryId=<id?>` | `GetAgentResponse` (agent: AgentDefinition)        |
 
 ### 7.3 Error Handling
 
@@ -394,9 +428,13 @@ The `create()` and `getAgent()` methods throw errors with a `status` property th
 | Condition                          | HTTP | Method                                  |
 | ---------------------------------- | ---- | --------------------------------------- |
 | `projectName` not found in sources | 404  | `create()`                              |
-| Source has no `agentPath`          | 400  | `create()`                              |
+| Source has no `agentPath` (GitHub) | 400  | `create()`                              |
 | Missing required fields            | 400  | `create()` (validated in ContextServer) |
-| Path not a `.agent.md`             | 400  | `getAgent()`                            |
+| Invalid `platform` value           | 400  | `create()`                              |
+| `codexDirectory` missing when multiple `codexAgentPaths` are configured | 400 | `create()` |
+| `codexDirectory` is not in source allowed directories | 400 | `create()` |
+| Path not an agent file (`.agent.md`, `.claude/agents/*.md`, `AGENTS*.md`) | 400 | `getAgent()` |
+| Codex file has multiple entries and `codexEntryId` is omitted | 400 | `getAgent()` |
 | Path not in index                  | 404  | `getAgent()`                            |
 | File read failure                  | 500  | `getAgent()`                            |
 
@@ -406,28 +444,28 @@ The `create()` and `getAgent()` methods throw errors with a `status` property th
 
 ### 8.1 Dual-File Persistence
 
-When an agent is created via `POST /api/agent-builder/create`, **two files** are written to `agentPath`:
+When an agent is created via `POST /api/agent-builder/create`, **two files** are written for the selected platform:
 
-```
-{agentPath}/
-├── my-agent.agent.md     ← Runtime artifact (consumed by VS Code / Copilot)
-└── my-agent.agent.json   ← Structured source of truth (for lossless round-trip editing)
-```
+| Platform | Output directory resolution | Files written |
+| -------- | --------------------------- | ------------- |
+| `github` | `agentPath`                 | `{agentName}.agent.md` + `{agentName}.agent.json` |
+| `claude` | `claudeAgentPath` or inferred `{dirname(dirname(agentPath))}/.claude/agents` | `{agentName}.md` + `{agentName}.json` |
+| `codex`  | Selected `codexDirectory` -> `codexAgentPaths[]` -> `codexAgentPath` -> inferred repo root from `agentPath` (`.github/agents`) -> `path` | `AGENTS.md` + `AGENTS.json` |
 
 ```mermaid
 flowchart TD
     INPUT["CreateAgentInput<br/>(HTTP POST body)"] --> VALIDATE["Validate: projectName,<br/>agentName, description,<br/>argument-hint"]
     VALIDATE --> FIND["Find source by projectName"]
-    FIND --> MKDIR["Ensure agentPath dir exists"]
-    MKDIR --> BUILD_MD["Build .agent.md content<br/>(frontmatter + knowledge links)"]
-    BUILD_MD --> WRITE_MD["writeFileSync(.agent.md)"]
-    WRITE_MD --> BUILD_JSON["Build .agent.json payload"]
-    BUILD_JSON --> WRITE_JSON["writeFileSync(.agent.json)"]
+    FIND --> MKDIR["Resolve platform output dir<br/>and ensure it exists"]
+    MKDIR --> BUILD_MD["Build markdown content<br/>(platform-specific)"]
+    BUILD_MD --> WRITE_MD["Atomic write (temp + rename)"]
+    WRITE_MD --> BUILD_JSON["Build companion JSON payload"]
+    BUILD_JSON --> WRITE_JSON["Atomic write (temp + rename)"]
     WRITE_JSON --> UPDATE_IDX["Remove stale entries<br/>Push both files to index"]
     UPDATE_IDX --> RETURN["Return CreateAgentResponse"]
 ```
 
-### 8.2 Generated `.agent.md` Format
+### 8.2 Generated File Formats
 
 ```markdown
 ---
@@ -448,21 +486,62 @@ When `tools` is empty or omitted, the tools line is commented out:
 # tools: [] # specify the tools this agent can use. If not set, all enabled tools are allowed.
 ```
 
+Codex output uses a collection format. `AGENTS.md` can contain multiple logical entries, each wrapped with deterministic markers and frontmatter:
+
+```markdown
+<!-- Generated by ContextCore AgentBuilder (platform: codex) -->
+<!-- CXC-CODEX-FORMAT: v2 -->
+
+<!-- CXC-CODEX-ENTRY:knk-home -->
+---
+name: knk-home
+description: Handles Kin Home issues
+argument-hint: A task to implement
+tools: ['read', 'edit']
+---
+...
+<!-- /CXC-CODEX-ENTRY -->
+```
+
+Companion `AGENTS.json` v2 shape:
+
+```json
+{
+  "version": 2,
+  "platform": "codex",
+  "generatedBy": "ContextCore AgentBuilder",
+  "updatedAt": "2026-04-10T09:00:00.000Z",
+  "agents": [
+    {
+      "id": "knk-home",
+      "projectName": "Context Core Server",
+      "agentName": "knk-home",
+      "description": "Handles Kin Home issues",
+      "argument-hint": "A task to implement",
+      "tools": ["read", "edit"],
+      "agentKnowledge": ["architecture/archi-axon-level0.md"],
+      "platform": "codex",
+      "updatedAt": "2026-04-10T09:00:00.000Z"
+    }
+  ]
+}
+```
+
 ### 8.3 Agent Retrieval Strategy
 
-The `getAgent()` method uses a two-tier retrieval strategy to handle both new agents (with JSON) and legacy agents (MD only):
+The `getAgent()` method uses a two-tier retrieval strategy to handle both new agents (with JSON companion) and legacy markdown-only agents across GitHub, Claude, and Codex paths:
 
 ```mermaid
 flowchart TD
-    PATH["Input: absolute .agent.md path"] --> VALIDATE["Validate path ends with .agent.md"]
+    PATH["Input: absolute agent markdown path"] --> VALIDATE["Validate supported agent path"]
     VALIDATE --> INDEX_CHECK["Verify path exists in index<br/>(origin=agent)"]
-    INDEX_CHECK --> DERIVE_JSON["Derive .agent.json path<br/>(replace extension)"]
-    DERIVE_JSON --> JSON_EXISTS{".agent.json<br/>exists?"}
+    INDEX_CHECK --> DERIVE_JSON["Derive companion JSON path<br/>(platform-aware mapping)"]
+    DERIVE_JSON --> JSON_EXISTS{"Companion JSON<br/>exists?"}
 
-    JSON_EXISTS -->|yes| READ_JSON["Parse .agent.json<br/>Validate all fields"]
+    JSON_EXISTS -->|yes| READ_JSON["Parse companion JSON<br/>Validate all fields"]
     READ_JSON --> RETURN_JSON["Return AgentDefinition<br/>(fromJson: true)"]
 
-    JSON_EXISTS -->|no| READ_MD["Read .agent.md content"]
+    JSON_EXISTS -->|no| READ_MD["Read markdown content"]
     READ_MD --> RECONSTRUCT["reconstructAgentInput()<br/>- parseFrontmatter()<br/>- parseToolsFromFrontmatter()<br/>- parseKnowledgeLinks()"]
     RECONSTRUCT --> RETURN_MD["Return AgentDefinition<br/>(fromJson: false)"]
 ```
@@ -471,7 +550,7 @@ flowchart TD
 
 ### 8.4 Legacy Agent Reconstruction
 
-For agents without a `.agent.json` companion (e.g. manually created `cxc-ui-worker.agent.md`), the system reconstructs a `CreateAgentInput` from the markdown:
+For agents without a companion JSON file (e.g. manually created `cxc-ui-worker.agent.md` or `AGENTS.md`), the system reconstructs a `CreateAgentInput` from markdown:
 
 | Data             | Extraction Method                                                    |
 | ---------------- | -------------------------------------------------------------------- |
@@ -484,23 +563,74 @@ For agents without a `.agent.json` companion (e.g. manually created `cxc-ui-work
 
 The reconstruction is signaled via `fromJson: false` so the client knows the data is best-effort.
 
+For Codex collections, reconstruction supports selecting a single logical entry via `codexEntryId`. If an `AGENTS.md` contains multiple entries and no `codexEntryId` is provided, `getAgent()` returns HTTP 400.
+
+### 8.5 Codex File Placement and Usage
+
+Codex artifacts written by AgentBuilder:
+
+- `AGENTS.md`: runtime instruction file consumed by Codex (can hold multiple logical entries).
+- `AGENTS.json`: companion collection JSON used by AgentBuilder for structured round-trip edits.
+
+Codex output location resolution (in order):
+
+1. Explicit request `codexDirectory` from the create payload.
+2. `dataSource.codexAgentPaths[]` (first entry is default when no explicit selection is needed).
+3. `dataSource.codexAgentPath` (legacy single-directory config).
+4. Inferred repo root from `dataSource.agentPath` when `agentPath` ends in `.github/agents` (two levels up).
+5. Fallback to `dataSource.path`.
+
+When `codexAgentPaths` has more than one directory, `codexDirectory` becomes required.
+
+Typical placement examples:
+
+- If `agentPath = D:\repo\.github\agents` and no Codex-specific config, output is:
+  - `D:\repo\AGENTS.md`
+  - `D:\repo\AGENTS.json`
+- If `codexAgentPaths = [D:\repo\apps\a, D:\repo\apps\b]` and user selects `D:\repo\apps\b`, output is:
+  - `D:\repo\apps\b\AGENTS.md`
+  - `D:\repo\apps\b\AGENTS.json`
+- If `codexAgentPath = D:\repo\server\zz-reach2` (legacy), output is:
+  - `D:\repo\server\zz-reach2\AGENTS.md`
+  - `D:\repo\server\zz-reach2\AGENTS.json`
+
+How to use in VS Code + Codex:
+
+1. Configure a data source with `purpose: "AgentBuilder"` and `agentPath` (plus optional `codexAgentPaths` or `codexAgentPath`).
+2. In the Agent Builder UI, select `OpenAI Codex (VS Code)`.
+3. Pick the target `Directory` when Codex is selected.
+4. Create a new entry or edit an existing one; AgentBuilder upserts only that entry and preserves siblings in the same `AGENTS.md`.
+5. Open the target repo/folder in VS Code. Codex reads `AGENTS.md` from the project hierarchy.
+
+Operational note:
+
+- If a user-managed `AGENTS.md` already exists and was not generated by CXC, AgentBuilder creates a timestamped backup (`AGENTS.md.bak.YYYYMMDD-HHMMSS`) before writing the new file.
+
 ---
 
 ## 9. Helper Functions
 
-The `AgentBuilder.ts` module contains seven module-level helper functions that support the class methods:
+The `AgentBuilder.ts` module contains helper functions that support traversal, parsing, path resolution, and file generation:
 
 | Function                                             | Purpose                                                                                         |
 | ---------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
 | `collectFiles(dir)`                                  | Recursive directory walker with skip rules. Returns absolute paths                              |
 | `readExcerpt(filePath)`                              | Reads first 1000 characters. Returns `""` on error                                              |
 | `isAgentMdPath(filePath)`                            | Checks if a path ends with `.agent.md` (case-insensitive)                                       |
-| `toAgentJsonPath(mdPath)`                            | Converts `.agent.md` path → `.agent.json` path                                                  |
+| `toAgentJsonPath(mdPath)`                            | Converts supported markdown agent paths to companion JSON paths (`.agent.json`, `.json`, `AGENTS.json`) |
 | `getAgentNameFromPath(mdPath)`                       | Extracts filename stem (e.g. `cxc-ui-worker` from `cxc-ui-worker.agent.md`)                     |
 | `parseFrontmatter(content)`                          | Extracts key/value pairs from `---` fenced YAML frontmatter. Skips commented (`#`) lines        |
 | `parseToolsFromFrontmatter(content)`                 | Parses `tools: [...]` from frontmatter. Handles both active and commented-out tool declarations |
 | `parseKnowledgeLinks(content)`                       | Extracts link targets from markdown `[text](path)` patterns in the body section                 |
 | `reconstructAgentInput(content, sourceName, mdPath)` | Orchestrates the three parsers above to rebuild a `CreateAgentInput` from legacy `.agent.md`    |
+
+Additional platform helpers (2026-04 Codex update):
+
+- `resolveClaudeAgentPath(source)`, `resolveCodexAgentPaths(source)`, and `resolveCodexAgentPath(source, selectedDirectory?)` for platform output directory inference.
+- `isClaudeAgentMdPath()`, `isCodexAgentsMdPath()`, `isCodexOverrideMdPath()`, and `isAnyAgentDefinitionPath()` for path classification.
+- `parseCodexCollectionFromJson()`, `parseCodexCollectionFromMarkdown()`, `buildCodexCollectionMarkdown()`, and `loadCodexCollection()` for Codex collection round-tripping.
+- `makeUniqueCodexEntryId()` and `normalizeCodexEntry()` for deterministic entry identity and legacy recovery.
+- `backupUnmanagedCodexAgentsFileIfNeeded(path)` and `writeFileAtomic(path, content)` for overwrite safety and partial-write reduction.
 
 ---
 
@@ -539,7 +669,7 @@ sequenceDiagram
     User->>Basket: Click "Create"
     Basket->>API: fetchAgentBuilderCreate(input)
     API->>Server: POST /agent-builder/create
-    Server->>Server: Write .agent.md + .agent.json
+    Server->>Server: Write platform markdown + companion JSON
     Server->>Server: Update in-memory index
     Server-->>API: CreateAgentResponse (201)
     API-->>Basket: Show success banner
@@ -561,16 +691,19 @@ sequenceDiagram
     Server-->>API: AgentListResponse
     API-->>List: Render agent cards
 
-    User->>List: Click edit on agent card
-    List->>API: fetchAgentBuilderGetAgent(path)
+    User->>List: Click ✏️ on consolidated agent card
+    List->>API: Read card.platforms[] and card.contentDiverged
+    Note right of List: Primary = platform with biggest dataLength
+    List->>API: fetchAgentBuilderGetAgent(primaryPath, codexEntryId?)
     API->>Server: GET /agent-builder/get-agent?path=...
     Server-->>API: GetAgentResponse (AgentDefinition)
     API-->>Basket: Populate form in edit mode
+    Note right of Basket: All existing platforms pre-checked<br/>If contentDiverged: warning banner shown
 
     User->>Basket: Modify fields, adjust knowledge
     User->>Basket: Click "Save"
-    Basket->>API: fetchAgentBuilderCreate(input)
-    API->>Server: POST /agent-builder/create
+    Basket->>API: fetchAgentBuilderCreate(input) × N checked platforms
+    API->>Server: POST /agent-builder/create (one call per platform)
     Note right of Server: Overwrites existing files,<br/>updates index (removes stale entries first)
     Server-->>API: CreateAgentResponse (201)
     API-->>Basket: Show success banner
@@ -647,6 +780,10 @@ visualizer/
 ├── cxc-test-agent.agent.json        ← JSON companion (structured source of truth)
 ├── cxc-test-agent2222.agent.md      ← Created via /create
 └── cxc-test-agent2222.agent.json    ← JSON companion
+
+repo-root/
+├── AGENTS.md                        ← Codex runtime instruction file
+└── AGENTS.json                      ← Codex companion JSON (structured source of truth)
 ```
 
 ---
@@ -667,20 +804,24 @@ flowchart TD
         FILTER_IDX --> RESPOND_P["PrepareResponse"]
 
         CREATE["/create"] --> FIND_SRC["Find source by projectName"]
-        FIND_SRC --> GEN_MD["Generate .agent.md"]
-        GEN_MD --> GEN_JSON["Generate .agent.json"]
-        GEN_JSON --> WRITE["Write both to agentPath"]
+        FIND_SRC --> RESOLVE_DIR["Resolve platform output dir"]
+        RESOLVE_DIR --> GEN_MD["Generate platform markdown file"]
+        GEN_MD --> GEN_JSON["Generate companion JSON file"]
+        GEN_JSON --> WRITE["Write platform files"]
         WRITE --> UPDATE["Update in-memory index<br/>(remove stale + push new)"]
         UPDATE --> RESPOND_C["CreateAgentResponse"]
 
-        LIST["/list"] --> FILTER_MD["Filter index: origin=agent<br/>AND ends with .agent.md"]
-        FILTER_MD --> ENRICH["Enrich from .agent.json<br/>or frontmatter fallback"]
-        ENRICH --> RESPOND_L["AgentListResponse"]
+        LIST["/list"] --> FILTER_MD["Filter index: origin=agent<br/>AND supported agent markdown path"]
+        FILTER_MD --> ENRICH["Enrich from companion JSON<br/>or frontmatter fallback"]
+        ENRICH --> GROUP["Group by agent name<br/>across platforms"]
+        GROUP --> PRIMARY["Pick primary platform<br/>(biggest dataLength)"]
+        PRIMARY --> DIVERGE["Compare content fingerprints<br/>→ contentDiverged"]
+        DIVERGE --> RESPOND_L["AgentListResponse<br/>(one entry per logical agent)"]
 
         GET_AGENT["/get-agent"] --> VALIDATE_PATH["Validate path in index"]
         VALIDATE_PATH --> TRY_JSON{"JSON exists?"}
-        TRY_JSON -->|yes| PARSE_JSON["Parse .agent.json"]
-        TRY_JSON -->|no| RECONSTRUCT["Reconstruct from .agent.md"]
+        TRY_JSON -->|yes| PARSE_JSON["Parse companion JSON"]
+        TRY_JSON -->|no| RECONSTRUCT["Reconstruct from markdown"]
         PARSE_JSON --> RESPOND_G["GetAgentResponse<br/>(fromJson: true)"]
         RECONSTRUCT --> RESPOND_G2["GetAgentResponse<br/>(fromJson: false)"]
     end
@@ -694,7 +835,7 @@ flowchart TD
 
 2. **Deduplication by absolute path**: Multiple data sources sharing the same `agentPath` (common in the current config) don't produce duplicate index entries.
 
-3. **Dual-file persistence**: The `.agent.json` companion preserves the full structured input for lossless round-tripping, while `.agent.md` serves as the runtime artifact consumed by IDE agent frameworks.
+3. **Dual-file persistence**: The companion JSON preserves full structured input for round-tripping, while the platform markdown artifact is consumed by GitHub, Claude, or Codex.
 
 4. **Graceful legacy handling**: Agents created before Phase 2 (or manually written) are handled via frontmatter parsing and body link extraction, with `fromJson: false` signaling the reconstruction is best-effort.
 
@@ -736,12 +877,12 @@ The `create()` method accepts `agentKnowledge` entries as-is without validating 
 
 ### 14.5 List Method Re-reads Files on Every Call
 
-The `list()` method reads `.agent.json` or `.agent.md` files from disk on every invocation to extract metadata. With the current agent count (<10) this is negligible, but it could become slow with many agents.
+The `list()` method reads companion JSON or markdown files from disk on every invocation to extract metadata. With the current agent count (<10) this is negligible, but it could become slow with many agents.
 
 **Recommendation**: Cache metadata at index time or on first `list()` call, invalidating on `create()`.
 
-### 14.6 Shared agentPath Across Sources
+### 14.6 Shared Agent Directories Across Sources
 
-When multiple data sources share the same `agentPath`, the `create()` method uses the first source matching `projectName` to determine the target directory. The agent file is then attributed to that source's `sourceName`. If the user later retrieves the agent from a `/list` call, the `sourceName` may not match expectations if the same `agentPath` appears under a different source.
+When multiple data sources share the same output directory (`agentPath`, inferred Claude path, or inferred Codex path), `create()` uses the first source matching `projectName` to determine ownership metadata. The resulting files are indexed once by absolute path and attributed to that source's `sourceName`. If another source maps to the same directory, `/list` attribution may look surprising.
 
-**Recommendation**: This is a minor edge case given the current config. If it becomes problematic, consider associating agents with all sources that share the `agentPath`.
+**Recommendation**: This is a minor edge case in the current config. If it becomes problematic, associate shared-output files with all matching sources or add an explicit ownership map.

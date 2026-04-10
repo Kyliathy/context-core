@@ -1,7 +1,8 @@
 # ContextCore — Cursor Harness: Architecture & Review
 
 **Date**: 2026-03-21
-**Module**: [`src/harness/cursor.ts`](../../../src/harness/cursor.ts) (~2,430 lines, 48 functions)
+**Updated**: 2026-04-10
+**Module**: [`src/harness/cursor.ts`](../../../src/harness/cursor.ts) + [`src/harness/cursor-query.ts`](../../../src/harness/cursor-query.ts)
 **Complement to**: [`archi-harness.md`](archi-harness.md), [`r2gam-go-away-misc.md`](../../upgrades/2026-03/r2gam-go-away-misc.md)
 
 ---
@@ -15,7 +16,7 @@ The harness has grown through multiple rounds of hard-won debugging to handle:
 - Multiple data formats (bubbles, requests, message-like nodes) across two tables
 - Zero per-message timestamps in the primary (bubble) data source
 - Workspace/project paths that must be *inferred* from scattered file URIs and layout metadata
-- No caching (the entire DB is re-read every run)
+- Startup/full mode and watcher/incremental mode with persisted rowid checkpoints
 
 This document records the current architecture, the bugs discovered in the 2026-03-21 session, and the structural risks that remain.
 
@@ -84,6 +85,27 @@ This document records the current architecture, the bugs discovered in the 2026-
 
 See [r2gam-go-away-misc.md](../../upgrades/2026-03/r2gam-go-away-misc.md) Phase 4 for full details.
 
+### 2.4 Update (2026-04-10): Rowid-Based Incremental Watcher Ingest
+
+Cursor watcher-triggered ingest no longer re-reads the entire `state.vscdb` every time. The architecture now uses a **full ingest at startup** plus a **rowid-based incremental ingest** on file watcher events.
+
+Key details:
+
+1. `cursorDiskKV` and `ItemTable` do **not** expose `added_date`/`updated_date` columns; both tables are schema-minimal:
+   - `key TEXT UNIQUE ON CONFLICT REPLACE`
+   - `value BLOB`
+2. Incremental mode uses table `rowid` checkpoints:
+   - Bubble delta query: `SELECT rowid, key, value FROM cursorDiskKV WHERE key LIKE 'bubbleId:%' AND rowid > ?`
+   - ItemTable fallback delta query: `SELECT key FROM ItemTable WHERE rowid > ? AND (...)`
+3. Checkpoints are persisted in `{storage}/.settings/global-settings.json` under:
+   - `cursor.cursorDiskKVRowId`
+   - `cursor.itemTableRowId`
+   - `cursor.lastQueriedAt`
+4. `ContextCore` startup still performs full Cursor ingest, then stores the latest checkpoint.
+5. `IncrementalPipeline` Cursor branch logs explicit checkpoint transitions on watcher events:
+   - `[Cursor][Checkpoint] Watcher start: ...`
+   - `[Cursor][Checkpoint] Watcher end: before -> after`
+
 ---
 
 ## 3. Module Structure
@@ -109,6 +131,24 @@ flowchart TD
     WALK --> EMIT2
 ```
 
+### 3.1b Incremental Watcher Flow (2026-04-10)
+
+```mermaid
+flowchart TD
+    FW["FileWatcher change on state.vscdb"] --> IP["IncrementalPipeline.ingest(Cursor)"]
+    IP --> CP["Load checkpoint from GlobalSettingsStore"]
+    CP --> CHECK{"checkpoint exists?"}
+    CHECK -->|"no"| SEED["Seed checkpoint from MAX(rowid) and return 0 messages"]
+    CHECK -->|"yes"| DELTA["readCursorChatsIncremental(dbPath, rawBase, checkpoint)"]
+    DELTA --> BUB{"new bubble rows?"}
+    BUB -->|"yes"| B1["Parse bubbleId delta rows only"]
+    B1 --> B2["Infer project from bubble context + rule set"]
+    B2 --> OUT["Emit AgentMessage[]"]
+    BUB -->|"no"| I1["Parse ItemTable delta rows only"]
+    I1 --> OUT
+    OUT --> SAVE["Persist checkpoint + lastQueriedAt"]
+```
+
 ### 3.2 Data Source Priority
 
 The harness reads from two tables in `state.vscdb`, with a hard gate between them:
@@ -122,7 +162,11 @@ The harness reads from two tables in `state.vscdb`, with a hard gate between the
 
 The gating logic is at [line 2203](../../../src/harness/cursor.ts#L2203): `if (bubbleMessages.length > 0)` — when bubbles exist, the ItemTable path is never executed.
 
-### 3.3 Function Inventory (~48 functions)
+Watcher incremental mode adds a second gate:
+- If `cursorDiskKV` has any new `bubbleId:*` rows after the checkpoint (`rowid > checkpoint`), emit only bubble deltas.
+- Otherwise, parse only new ItemTable candidate rows (`rowid > checkpoint`) as fallback.
+
+### 3.3 Function Inventory (Core + Incremental)
 
 Grouped by responsibility:
 
@@ -130,6 +174,13 @@ Grouped by responsibility:
 | Function            | Line | Purpose                                       |
 | ------------------- | ---- | --------------------------------------------- |
 | `readCursorChats()` | 2177 | Exported entry point; orchestrates all stages |
+
+#### Incremental Entry Points (Watcher Path)
+| Function | Line | Purpose |
+| -------- | ---- | ------- |
+| `getCursorRowIdCheckpoint()` | varies | Reads `MAX(rowid)` for `cursorDiskKV` and `ItemTable` |
+| `readCursorChatsIncremental()` | varies | Reads only rows newer than persisted rowid checkpoint |
+| `extractCursorBubbleMessagesSinceRowId()` | varies | Parses bubble delta rows (`rowid > checkpoint`) |
 
 #### Timestamp Resolution
 | Function                           | Line | Purpose                                                  |
@@ -225,6 +276,9 @@ Grouped by responsibility:
 | `CursorGenericProjectMappingRule` | Path + rule (e.g. `byFirstDir`)                                                |
 | `CursorProjectRuleSet`            | Aggregated rule set from cc.json                                               |
 | `CursorProjectResolution`         | `{ project, mode }` from workspace resolution                                  |
+| `CursorRowIdCheckpoint`           | Persisted rowid checkpoint for `cursorDiskKV` + `ItemTable`                   |
+| `CursorIncrementalResult`         | `{ messages, checkpoint }` returned by incremental watcher ingest              |
+| `CursorKVRowWithRowId`            | Delta row shape (`rowid`, `key`, `value`) used in rowid-filtered queries      |
 
 ### 3.5 Module-Scoped State
 
@@ -376,13 +430,15 @@ The module is the largest in the codebase by a significant margin.  It combines:
 - `cursor/itemTable.ts` — legacy ItemTable fallback
 - `cursor/index.ts` — orchestrator (`readCursorChats`)
 
-### 7.2 No Caching / Full Re-Read
+### 7.2 Full Re-Read Cost (Partially Addressed)
 
-Unlike the file-based harnesses (Claude Code, Kiro, VS Code, Codex) which use `isSourceFileCached()` to skip unchanged files, the Cursor harness re-reads the entire `state.vscdb` on every run.  The database contains 46K+ rows.
+The startup path still performs a full Cursor read (intended), but watcher-triggered updates are now rowid-incremental:
+- Startup: full `readCursorChats()`
+- Watcher: `readCursorChatsIncremental()` using persisted rowid checkpoints
 
-**Impact**: Slow ingest (~seconds), plus the *amplification effect* — any timestamp/ID instability produces duplicate output files on every run.  The new StorageWriter dedup mitigates the symptom, but the root inefficiency remains.
+**Current impact**: Runtime watcher cost is dramatically reduced on active Cursor sessions, but startup cost still scales with DB size.
 
-**Mitigation candidate**: Track a `lastProcessedRowCount` or hash of watched key prefixes so unchanged databases can be skipped entirely. Or adopt a snapshot approach similar to how the OpenCode harness handles its SQLite source.
+**Remaining gap**: Incremental project inference in watcher mode is intentionally lightweight (bubble-context based) and may still fall back to `MISC` for some sparse deltas, relying on prior DB session project continuity when available.
 
 ### 7.3 `parseCursorDateTime()` Still Falls Back to `DateTime.now()`
 
@@ -502,16 +558,18 @@ Minor hygiene issue — the first block is a stale remnant.
 ```mermaid
 flowchart LR
     CURSOR["cursor.ts"] -->|"AgentMessage[]"| CC["ContextCore.ts"]
+    CURSOR -->|"rowid checkpoint helpers"| GS["GlobalSettingsStore.ts"]
     CURSOR -->|"writeRawSourceData()"| RAW["rawCopier.ts"]
     CURSOR -->|"generateMessageId()"| HASH["hashId.ts"]
     CURSOR -->|"sanitizeFilename()"| PATH["pathHelpers.ts"]
     CURSOR -->|"CCSettings"| SETTINGS["CCSettings.ts"]
     CURSOR -->|"getHostname()"| CONFIG["config.ts"]
     CC -->|"StorageWriter"| SW["StorageWriter.ts"]
+    CC -->|"seed/update checkpoint"| GS
     SW -->|"session dedup"| DISK["Output JSON files"]
 ```
 
-The harness is invoked by `ContextCore.ts` (full ingest) and `IncrementalPipeline.ts` (watcher-triggered incremental ingest).  Both pass the results through `StorageWriter.writeSession()`.
+The harness is invoked by `ContextCore.ts` (full ingest) and `IncrementalPipeline.ts` (watcher-triggered incremental ingest). Both pass results through `StorageWriter.writeSession()`. The watcher path additionally reads/writes Cursor rowid checkpoints through `GlobalSettingsStore`.
 
 ---
 
@@ -521,5 +579,7 @@ The harness is invoked by `ContextCore.ts` (full ingest) and `IncrementalPipelin
 - **Extension filter**: `[".vscdb"]`
 - **Debounce**: 5000ms
 - **Watch mode**: Single-file watch (not recursive directory)
+- **Startup behavior**: Full Cursor ingest, then checkpoint persisted to `.settings/global-settings.json`
+- **Watcher behavior**: Incremental Cursor ingest via rowid (`before -> after` checkpoint logs each run)
 
-The 5-second debounce is critical: Cursor writes to `state.vscdb` frequently during active sessions.  Without it, the harness would re-ingest on every keystroke.
+The 5-second debounce is critical: Cursor writes to `state.vscdb` frequently during active sessions. Without debounce + rowid checkpoints, the system would repeatedly perform high-cost full re-reads.

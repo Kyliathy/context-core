@@ -45,6 +45,10 @@ export type DataSourceEntry = {
 	agentPath?: string;
 	/** Directory where Claude Code .md sub-agent files are written. Falls back to {dirname(dirname(agentPath))}/.claude/agents when absent. */
 	claudeAgentPath?: string;
+	/** Directory where Codex project instruction files are written. Falls back to inferred repo root from `agentPath` (`.github/agents` → project root), then `path` when inference is unavailable. */
+	codexAgentPath?: string;
+	/** Optional ordered list of Codex output directories. First item is default when codexDirectory is not explicitly provided. */
+	codexAgentPaths?: string[];
 	name: string;
 	type: string;
 	purpose: string;

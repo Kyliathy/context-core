@@ -259,7 +259,17 @@ function renderCardHtml(card: CardData, lod: LOD, starredIds: Set<string>, mode:
 	const harnessBadge = `<span class="harness-badge" style="background-color:${badgeColor}">${escapeHtml(harnessDisplay)}</span>`;
 	const projectLabel = card.project || "MISC";
 	const projectBadge = `<span class="project-badge" style="background-color:${getProjectColor(projectLabel)};color:${getProjectTextColor(projectLabel)}">${escapeHtml(projectLabel)}</span>`;
-	const badges = `<div class="card-badges">${harnessBadge}${projectBadge}</div>`;
+	// Platform badges for agent-list cards (e.g. "GH", "CL", "CX").
+	let platformBadges = "";
+	if (mode === "agent-list" && card.platforms && card.platforms.length > 0)
+	{
+		const labels: Record<string, string> = { github: "GH", claude: "CL", codex: "CX" };
+		const colors: Record<string, string> = { github: "#1f6feb", claude: "#d97706", codex: "#059669" };
+		platformBadges = card.platforms
+			.map((p) => `<span class="platform-badge" style="background:${colors[p.platform] ?? "#555"}">${labels[p.platform] ?? p.platform}</span>`)
+			.join("");
+	}
+	const badges = `<div class="card-badges">${harnessBadge}${projectBadge}${platformBadges}</div>`;
 	// List card modes use header actions instead of envelope.
 	const customEditBtn = card.harness === "custom" ? `<span class="card-edit-btn" title="Edit custom text">✏️</span>` : "";
 	const headerBtn = mode === "agent-list"
@@ -633,7 +643,7 @@ export function createChatMapEngine(
 				if (target.classList.contains("card-edit-btn"))
 				{
 					event.stopPropagation();
-					emit("card-edit-agent", { cardId: card.id, agentPath: card.id });
+					emit("card-edit-agent", { cardId: card.id, agentPath: card.agentPath ?? card.id, codexEntryId: card.codexEntryId });
 					return;
 				}
 				if (target.classList.contains("card-envelope-btn"))

@@ -1,6 +1,6 @@
 # Agent Builder UI — Architectural Review
 
-**Date**: 2026-03-20
+**Date**: 2026-04-09
 **Status**: Current (reflects r2uab Phase 1–4 — all fully implemented, including post-launch UI/Layout polish)
 **Scope**: End-to-end architecture of the Agent Builder feature: server indexing, REST API, visualizer data flow, UI components, card rendering, edit flow.
 
@@ -8,13 +8,13 @@
 
 ## 1. Purpose & Context
 
-The Agent Builder is a full-stack feature that lets a user **curate knowledge files into an AI agent definition** directly from the visualizer UI. The goal is to compose `.agent.md` files (consumed by tools like GitHub Copilot, Kiro, Cursor) from first-class UI within the Context Core visualizer.
+The Agent Builder is a full-stack feature that lets a user **curate knowledge files into an AI agent definition** directly from the visualizer UI. The goal is to compose platform-specific agent files (GitHub `.agent.md`, Claude `.md`, Codex `AGENTS.md`) from first-class UI within the Context Core visualizer.
 
 The system spans two tiers:
 
 | Tier                                                                          | Role                                                                                                                        |
 | ----------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| **Server** (`AgentBuilder.ts` + REST endpoints)                               | Scans configured directories, maintains an in-memory file index, writes `.agent.md` / `.agent.json`, lists/retrieves agents |
+| **Server** (`AgentBuilder.ts` + REST endpoints)                               | Scans configured directories, maintains an in-memory file index, writes GitHub/Claude/Codex agent artifacts + JSON companions, lists/retrieves agents |
 | **Visualizer** (`App.tsx`, `useSearch`, `useViews`, `AgentBasket`, D3 engine) | Presents indexed files as D3 cards, lets the user drag knowledge into a basket, fills a form, submits to the server         |
 
 ---
@@ -88,7 +88,10 @@ Key fields on `DataSourceEntry`:
 | Field       | Purpose                                                                                            |
 | ----------- | -------------------------------------------------------------------------------------------------- |
 | `path`      | Root of **content** files to index (recursively scanned)                                           |
-| `agentPath` | Root of **agent** files (`.agent.md`, `.agent.json`) — also where newly created agents are written |
+| `agentPath` | GitHub output directory (`.agent.md`, `.agent.json`)                                               |
+| `claudeAgentPath` | Claude output directory (`.md`, `.json` under `.claude/agents`)                             |
+| `codexAgentPath` | Legacy single Codex output directory (`AGENTS.md`, `AGENTS.json`)                           |
+| `codexAgentPaths` | Preferred Codex directory list used by UI directory picker and API validation               |
 | `name`      | Label used as `sourceName` on every `IndexedFile` and as the `projectName` in `CreateAgentInput`   |
 | `type`      | Informational string (e.g. `"architecture"`) surfaced in card metadata                             |
 | `purpose`   | Must be `"AgentBuilder"` to be included; other purposes are ignored                                |
@@ -105,7 +108,7 @@ sequenceDiagram
     Note over AB: Extracts DataSourceEntry[]<br/>with purpose === "AgentBuilder"
     CC->>AB: await agentBuilder.index()
     AB->>FS: collectFiles(source.path) × N sources
-    AB->>FS: collectFiles(source.agentPath) × N sources
+    AB->>FS: collectFiles(source.agentPath / resolved Claude / resolved Codex) x N sources
     FS-->>AB: absolute file paths
     AB->>FS: readExcerpt(filePath) per file
     FS-->>AB: first 1000 chars
@@ -129,19 +132,19 @@ graph LR
     end
 
     subgraph "POST /api/agent-builder/create"
-        C1[CreateAgentInput\nprojectName agentName\ndescription hint\ntools[] agentKnowledge[]] --> C2[agentBuilder.create]
-        C2 --> C3[writes .agent.md\n+ .agent.json to agentPath]
+        C1[CreateAgentInput\nprojectName agentName\ndescription hint\ntools[] agentKnowledge[]\n+ codexDirectory? codexEntryId?] --> C2[agentBuilder.create]
+        C2 --> C3[writes platform markdown\n+ companion JSON]
         C3 --> C4[updates in-memory index]
         C4 --> C5[CreateAgentResponse\ncreated · path · agentName]
     end
 
     subgraph "GET /api/agent-builder/list"
-        L1[no params] --> L2[agentBuilder.list\nreads .agent.md entries]
+        L1[no params] --> L2[agentBuilder.list\nreads GitHub/Claude/Codex agent entries]
         L2 --> L3[AgentListResponse\ntotalAgents · agents[]]
     end
 
     subgraph "GET /api/agent-builder/get-agent"
-        G1[?path=absPath] --> G2[agentBuilder.getAgent\nreads .agent.json or parses .agent.md]
+        G1[?path=absPath&codexEntryId?] --> G2[agentBuilder.getAgent\nreads companion JSON or parses markdown]
         G2 --> G3[GetAgentResponse\nagent: AgentDefinition]
     end
 ```
@@ -150,9 +153,9 @@ graph LR
 
 | Code | Trigger                                                         |
 | ---- | --------------------------------------------------------------- |
-| 400  | Validation failure or missing `agentPath` on source             |
+| 400  | Validation failure / invalid platform / missing required output path (including Codex directory or entry id requirements) |
 | 404  | No `dataSources` configured / `projectName` not found           |
-| 409  | Agent already exists at that path (if duplicate check is added) |
+| 500  | Unexpected server-side file I/O or parse errors                 |
 
 ### 3.4 `AgentBuilder` Internal Methods
 
@@ -160,11 +163,11 @@ graph LR
 | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
 | `index()`        | Async; full recursive scan of all sources; deduplicates by abs path; reads excerpts                                                 |
 | `prepare(name?)` | Returns `PrepareResponse`; optional `name` filter restricts to one source                                                           |
-| `create(input)`  | Writes `.agent.md` (frontmatter + knowledge links) and `.agent.json` (raw input); immediately updates `indexedFiles[]`              |
-| `list()`         | Returns all `.agent.md` files from the index; reads description/hint from companion `.agent.json` if present, else from frontmatter |
-| `getAgent(path)` | Reads and parses a single agent; prefers `.agent.json` (structured), falls back to frontmatter reconstruction                       |
+| `create(input)`  | Writes platform markdown (GitHub/Claude/Codex) and companion JSON; immediately updates `indexedFiles[]`                             |
+| `list()`         | Groups all agent entries by name across platforms (GitHub/Claude/Codex); picks the richest as primary; detects content divergence; returns one consolidated `AgentListEntry` per logical agent |
+| `getAgent(path, codexEntryId?)` | Reads one logical agent; Codex collections require `codexEntryId` when multiple entries share one AGENTS file |
 
-**`.agent.md` file format written by `create()`:**
+**Example GitHub markdown format written by `create()`:**
 
 ```markdown
 ---
@@ -191,6 +194,8 @@ classDiagram
     class DataSourceEntry {
         +path: string
         +agentPath?: string
+        +codexAgentPath?: string
+        +codexAgentPaths?: string[]
         +name: string
         +type: string
         +purpose: string
@@ -220,20 +225,35 @@ classDiagram
         +argument-hint: string
         +tools?: string[]
         +agentKnowledge: string[]
-        +platform: "github" | "claude"
+        +codexDirectory?: string
+        +codexEntryId?: string
+        +platform: "github" | "claude" | "codex"
     }
 
     class AgentDefinition {
         +fromJson: boolean
     }
 
+    class AgentListPlatformEntry {
+        +platform: "github" | "claude" | "codex"
+        +path: string
+        +codexEntryId?: string
+        +codexDirectory?: string
+        +dataLength: number
+    }
+
     class AgentListEntry {
         +name: string
         +path: string
+        +platform?: "github" | "claude" | "codex"
+        +platforms: AgentListPlatformEntry[]
+        +contentDiverged: boolean
         +description: string
         +hint: string
         +excerpt: string
     }
+
+    AgentListEntry "1" *-- "N" AgentListPlatformEntry
 
     class AgentKnowledgeEntry {
         +id: string
@@ -294,14 +314,15 @@ graph TD
 
 | State                         | Type                     | Purpose                                                     |
 | ----------------------------- | ------------------------ | ----------------------------------------------------------- |
-| `agentBuilderSources`         | `{ name; fileCount }[]`  | Populated on mount from `/prepare`; passed to `AgentBasket` |
+| `agentBuilderSources`         | `{ name; fileCount; codexDirectories?; codexDefaultDirectory? }[]`  | Populated on mount from `/prepare`; drives Source + Codex Directory pickers |
 | `agentBuilderSelectedSources` | `Set<string>`            | Which sources are active in the filter dropdown; persisted to localStorage `"cxc-agent-sources"`; empty = **none selected** |
 | `agentKnowledgeEntries`       | `AgentKnowledgeEntry[]`  | Files/text added to basket                                  |
 | `isCreatingAgent`             | `boolean`                | Submission in-flight flag                                   |
 | `agentCreateError/Success`    | `string \| null`         | Status feedback from last create                            |
 | `agentFlashId`                | `string \| null`         | Card ID to flash briefly after add-to-basket                |
 | `editingAgentPath`            | `string \| null`         | null = create mode; a path = edit mode                      |
-| `agentEditInitial`            | `{projectName…} \| null` | Pre-fill values when editing an existing agent              |
+| `editingCodexEntryId`         | `string \| null`         | Tracks which logical Codex entry is being edited within one AGENTS file |
+| `agentEditInitial`            | `{projectName, agentName, description, hint, tools, codexDirectory?, platform?, platforms?, contentDiverged?} \| null` | Pre-fill values when editing an existing agent; `platforms[]` carries all platform variants for the consolidated agent; `contentDiverged` triggers the warning banner |
 
 ### 5.3 Data Flow — Agent Builder View
 
@@ -347,11 +368,14 @@ sequenceDiagram
     APP->>US: search("")
     US->>API: fetchAgentBuilderList()
     API->>SRV: GET /api/agent-builder/list
-    SRV-->>API: AgentListResponse {agents[]}
+    SRV->>SRV: Build flat list, group by name,\nconsolidate platforms, detect divergence
+    SRV-->>API: AgentListResponse {agents[]} (one entry per logical agent)
     API-->>US: AgentListResponse
     US->>US: toAgentListCards(agents)
+    Note over US: Cards carry platforms[] and contentDiverged
     US-->>APP: cards[]
     APP->>CM: filteredCards (text search only)
+    Note over CM: Platform badges (GH/CL/CX) shown on cards
 ```
 
 ### 5.5 Data Flow — Agent Edit
@@ -365,22 +389,26 @@ sequenceDiagram
     participant SRV as Server
     participant BASK as AgentBasket
 
-    U->>CM: Click ✏️ on agent card
-    CM->>APP: onCardEditAgent({cardId, agentPath})
-    APP->>API: fetchAgentBuilderGetAgent(agentPath)
-    API->>SRV: GET /api/agent-builder/get-agent?path=...
+    U->>CM: Click ✏️ on consolidated agent card
+    CM->>APP: onCardEditAgent({cardId, agentPath, codexEntryId?})
+    APP->>APP: Read card.platforms and card.contentDiverged
+    APP->>API: fetchAgentBuilderGetAgent(primaryPath, codexEntryId?)
+    Note over APP: Primary path = platform with biggest dataLength
+    API->>SRV: GET /api/agent-builder/get-agent?path=...&codexEntryId=...
     SRV-->>API: GetAgentResponse {agent: AgentDefinition}
     API-->>APP: AgentDefinition
-    APP->>APP: Build agentEditInitial from AgentDefinition
+    APP->>APP: Build agentEditInitial with platforms[] + contentDiverged
     APP->>APP: Build agentKnowledgeEntries from agent.agentKnowledge
-    APP->>APP: setEditingAgentPath(agentPath)
+    APP->>APP: setEditingAgentPath(primaryPath)
     APP->>APP: switchView("built-in-agent-builder")
-    APP->>BASK: editMode=true, initialValues={...}
+    APP->>BASK: editMode=true, initialValues={..., platforms, contentDiverged}
+    Note over BASK: All existing platforms pre-checked\nIf contentDiverged: warning banner shown
     Note over BASK: Form pre-populated\nButton label: "💾 Save"
     U->>BASK: Edits form / adds/removes files
     U->>BASK: Click "💾 Save"
-    BASK->>APP: onCreateAgent(CreateAgentInput)
-    APP->>API: fetchAgentBuilderCreate(input)
+    BASK->>APP: onCreateAgent(CreateAgentInput, checkedPlatforms[])
+    APP->>APP: Loop: one server call per checked platform
+    APP->>API: fetchAgentBuilderCreate(input) × N platforms
     API->>SRV: POST /api/agent-builder/create
     SRV-->>API: CreateAgentResponse
     APP->>APP: clearEditingAgentPath
@@ -454,7 +482,7 @@ CSS: `.view-menu` uses `display: grid; grid-template-columns: 1fr 1fr`. Max-widt
 
 | Harness label | Color            | Used for                                                          |
 | ------------- | ---------------- | ----------------------------------------------------------------- |
-| `AgentFile`   | `#f97316` orange | Files from `origin: "agent"` sources (`.agent.md`, `.agent.json`) |
+| `AgentFile`   | `#f97316` orange | Files from `origin: "agent"` sources (GitHub/Claude/Codex markdown + JSON companions) |
 | `ContentFile` | `#06b6d4` cyan   | Files from `origin: "content"` sources (docs, markdown, code)     |
 | `AgentCard`   | `#f97316` orange | Agent cards in agent-list view                                    |
 
@@ -576,7 +604,7 @@ graph LR
 - Slug-normalises `agentName` (lowercase, hyphens only).
 - In edit mode (`editMode === true`): "Create" button becomes "💾 Save"; a "Cancel Edit" button appears.
 - `initialValues` are applied via a `useEffect` that fires when `editMode` transitions `false → true`.
-- **Platform checkboxes** (GitHub Copilot / Claude Code) appear below the header buttons when `mode !== "template"`. State persisted to localStorage `"cxc-agent-platforms"`. At least one must be checked for Create to be enabled. `onCreateAgent` signature: `(input: Omit<CreateAgentInput, "platform">, platforms: ("github" | "claude")[]) => void` — App.tsx loops and fires one server call per platform. Edit mode pre-populates from `initialValues.platform`.
+- **Platform checkboxes** (GitHub Copilot / Claude Code / OpenAI Codex) appear below the header buttons when `mode !== "template"`. State persisted to localStorage `"cxc-agent-platforms"`. At least one must be checked for Create to be enabled. `onCreateAgent` signature: `(input: Omit<CreateAgentInput, "platform">, platforms: ("github" | "claude" | "codex")[]) => void` — App.tsx loops and fires one server call per platform. In edit mode, all platforms the agent already exists on are pre-checked from `initialValues.platforms[]` (the consolidated list). If `initialValues.contentDiverged` is true, an amber warning banner is shown: *"Agent data differs between platforms. Saving may overwrite a version with different content."*
 - **Inline entry editing**: each knowledge entry has an edit (✎) icon. Clicking it loads the entry's text into the textarea, highlights the entry row dark green, and `onUpdateEntry(id, newValue)` replaces it on Ctrl+Enter.
 
 ---
@@ -614,22 +642,53 @@ Agent Builder files and agent cards reuse the existing `CardData` type by mappin
 
 ### 11.3 In-Memory Index Stays Fresh
 
-When `create()` is called, `AgentBuilder` immediately pushes the new `.agent.md` and `.agent.json` entries into `this.indexedFiles[]`. This means a subsequent `/prepare` or `/list` call will include the newly created agent without a server restart or re-index.
+When `create()` is called, `AgentBuilder` immediately pushes the new platform markdown and companion JSON entries into `this.indexedFiles[]`. This means a subsequent `/prepare` or `/list` call will include the newly created agent without a server restart or re-index.
 
-### 11.4 Dual File Format: `.agent.md` + `.agent.json`
+### 11.4 Dual File Format (Platform Markdown + JSON)
 
-Every `create()` call produces two files:
+Every `create()` call produces a platform markdown artifact + structured JSON companion:
 
-- **`.agent.md`** — human-readable frontmatter + knowledge link list; consumed by AI agents (Copilot, Kiro, Cursor).
-- **`.agent.json`** — structured JSON copy of `CreateAgentInput`; consumed by `getAgent()` to avoid re-parsing markdown.
+- **GitHub**: `{agentName}.agent.md` + `{agentName}.agent.json`
+- **Claude**: `{agentName}.md` + `{agentName}.json`
+- **Codex**: `AGENTS.md` + `AGENTS.json` (collection format with `agents[]`)
 
-When `getAgent()` runs, it prefers `.agent.json` (structured, authoritative). If only `.agent.md` exists (legacy), it reconstructs `CreateAgentInput` by parsing frontmatter + extracting markdown link targets. The `fromJson: boolean` field on `AgentDefinition` signals which path was taken.
+Codex-specific UI semantics:
 
-### 11.5 Search is Client-Side in Agent-Builder Views
+- One AGENTS file can represent multiple logical agents, each shown as its own card.
+- Edit events carry both `agentPath` and `codexEntryId` so the correct logical entry is loaded.
+- Saves upsert only the selected Codex entry and keep sibling entries intact.
+- Directory selection is explicit in the Agent Builder form when Codex is selected.
+
+When `getAgent()` runs, it prefers companion JSON (structured, authoritative). If only markdown exists (legacy), it reconstructs `CreateAgentInput` by parsing frontmatter + extracting markdown link targets. The `fromJson: boolean` field on `AgentDefinition` signals which path was taken.
+
+### 11.5 Consolidated Agent List (Cross-Platform Deduplication)
+
+The `list()` endpoint consolidates agents that share the same `agentName` across platforms (GitHub, Claude, Codex) into a single `AgentListEntry`. This prevents showing 3 cards for the same logical agent.
+
+**Consolidation algorithm**:
+1. Build a flat intermediate list of all agent entries with platform metadata and a content fingerprint (from companion JSON: description, hint, knowledge, tools).
+2. Group by agent `name`.
+3. For each group, pick the **primary** platform variant (the one with the biggest `dataLength` — i.e., the richest definition file).
+4. Compare content fingerprints across the group to set `contentDiverged: boolean`.
+5. Return one consolidated `AgentListEntry` per group with a `platforms: AgentListPlatformEntry[]` array.
+
+**Edit flow implications**:
+- When editing, the primary platform version (biggest data) is loaded via `getAgent()`.
+- All platforms the agent exists on are pre-checked in the AgentBasket platform checkboxes.
+- If `contentDiverged` is true, a warning banner is shown: *"Agent data differs between platforms. Saving may overwrite a version with different content."*
+- On save, the agent is written to all checked platforms (one `create()` call per platform), potentially overwriting divergent versions with the edited definition.
+
+**Card rendering**: Agent-list cards show small platform badges (GH, CL, CX) in the card header to indicate which platforms the agent exists on.
+
+### 11.6 Search is Client-Side in Agent-Builder Views
 
 `handleSearch` in `App.tsx` special-cases `agent-builder` and `agent-list` view types — it sets `searchInputValue` only, triggering the `agentBuilderFilteredCards` useMemo rather than calling `useSearch.search()`. This prevents accidental server calls and keeps the UX snappy.
 
-### 11.6 UI Conventions & Polish
+### 11.6.1 Codex Directory Selection Persistence
+
+The Codex directory picker stores the last selected directory per source in localStorage (`cxc-agent-codex-directories`). On subsequent create sessions, the picker restores the previously used directory when it is still allowed for that source.
+
+### 11.7 UI Conventions & Polish
 
 Several UI conventions were refined post-launch to reduce friction and noise:
 - **No auto-focus on load:** The `SearchBar` does not implicitly request focus to avoid the search history drop-down covering the screen when navigating.

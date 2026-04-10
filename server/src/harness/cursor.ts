@@ -17,6 +17,7 @@ import {
 	buildCursorSessionModelMap,
 	buildCursorSessionTimestampMap,
 	extractCursorBubbleMessages,
+	extractCursorBubbleMessagesSinceRowId,
 	extractFromRequestLikeSessions,
 	extractContextPaths,
 	isCursorChatKeyCandidate,
@@ -34,7 +35,66 @@ import {
 	loadCursorProjectRuleSet,
 	inferCursorWorkspaceBySession,
 	buildCursorGenericRuleSuggestions,
+	chooseBestWorkspacePath,
+	normalizePathCandidate,
+	resolveCursorProjectFromWorkspacePath,
 } from "./cursor-matcher.js";
+
+export type CursorRowIdCheckpoint = {
+	cursorDiskKVRowId: number;
+	itemTableRowId: number;
+};
+
+export type CursorIncrementalResult = {
+	messages: Array<AgentMessage>;
+	checkpoint: CursorRowIdCheckpoint;
+};
+
+function getMaxTableRowId(db: Database, tableName: "cursorDiskKV" | "ItemTable"): number
+{
+	const row = db.query<{ maxRowId: number | null }, []>(`SELECT MAX(rowid) AS maxRowId FROM ${tableName}`).get();
+	return Number(row?.maxRowId ?? 0);
+}
+
+function inferProjectsFromBubbleContext(
+	bubbleMessages: Array<CursorBubbleRecord>,
+	defaultProject: string
+): Map<string, string>
+{
+	const projectsBySession = new Map<string, string>();
+	const hintsBySession = new Map<string, Map<string, number>>();
+	const ruleSet = loadCursorProjectRuleSet();
+
+	for (const bubble of bubbleMessages)
+	{
+		const hintCounter = hintsBySession.get(bubble.sessionId) ?? new Map<string, number>();
+		for (const contextPath of bubble.context)
+		{
+			const normalized = normalizePathCandidate(contextPath);
+			if (!normalized)
+			{
+				continue;
+			}
+			hintCounter.set(normalized, (hintCounter.get(normalized) ?? 0) + 1);
+		}
+		hintsBySession.set(bubble.sessionId, hintCounter);
+	}
+
+	for (const [sessionId, hintCounter] of hintsBySession.entries())
+	{
+		const workspacePath = chooseBestWorkspacePath(hintCounter);
+		if (!workspacePath)
+		{
+			projectsBySession.set(sessionId, defaultProject);
+			continue;
+		}
+
+		const resolution = resolveCursorProjectFromWorkspacePath(workspacePath, ruleSet);
+		projectsBySession.set(sessionId, resolution.project);
+	}
+
+	return projectsBySession;
+}
 
 /**
  * Entry point for Cursor chat history ingestion.
@@ -319,4 +379,271 @@ export function readCursorChats(dbPath: string, rawBase: string): Array<AgentMes
 	console.log(`${CUR} Total ingest time=${chalk.green((Date.now() - startMs) + "ms")}`);
 
 	return results;
+}
+
+/**
+ * Reads the latest rowid checkpoint for Cursor tables.
+ * Used to persist/restore incremental watcher state.
+ */
+export function getCursorRowIdCheckpoint(dbPath: string): CursorRowIdCheckpoint
+{
+	if (!existsSync(dbPath))
+	{
+		return { cursorDiskKVRowId: 0, itemTableRowId: 0 };
+	}
+
+	const db = new Database(dbPath, { readonly: true });
+	try
+	{
+		return {
+			cursorDiskKVRowId: getMaxTableRowId(db, "cursorDiskKV"),
+			itemTableRowId: getMaxTableRowId(db, "ItemTable"),
+		};
+	}
+	finally
+	{
+		db.close();
+	}
+}
+
+/**
+ * Incremental Cursor ingest for watcher events.
+ * Reads only rows whose rowid is newer than the stored checkpoint.
+ */
+export function readCursorChatsIncremental(
+	dbPath: string,
+	rawBase: string,
+	sinceCheckpoint: CursorRowIdCheckpoint
+): CursorIncrementalResult
+{
+	if (!existsSync(dbPath))
+	{
+		return {
+			messages: [],
+			checkpoint: sinceCheckpoint,
+		};
+	}
+
+	const db = new Database(dbPath, { readonly: true });
+	const results: Array<AgentMessage> = [];
+	const defaultProject = MISC_CURSOR_PROJECT;
+	const startMs = Date.now();
+
+	try
+	{
+		const nextCheckpoint: CursorRowIdCheckpoint = {
+			cursorDiskKVRowId: getMaxTableRowId(db, "cursorDiskKV"),
+			itemTableRowId: getMaxTableRowId(db, "ItemTable"),
+		};
+
+		// No DB movement since last checkpoint -> fast no-op.
+		if (
+			nextCheckpoint.cursorDiskKVRowId <= sinceCheckpoint.cursorDiskKVRowId &&
+			nextCheckpoint.itemTableRowId <= sinceCheckpoint.itemTableRowId
+		)
+		{
+			return { messages: [], checkpoint: nextCheckpoint };
+		}
+
+		const changedBubbleRow = db
+			.query<{ count: number }, [number]>(
+				"SELECT COUNT(*) AS count FROM cursorDiskKV WHERE key LIKE 'bubbleId:%' AND rowid > ?"
+			)
+			.get(sinceCheckpoint.cursorDiskKVRowId);
+		const changedBubbleCount = Number(changedBubbleRow?.count ?? 0);
+
+		let bubbleMessages: Array<CursorBubbleRecord> = [];
+		if (changedBubbleCount > 0)
+		{
+			const sessionModelMap = buildCursorSessionModelMap(db);
+			const sessionTimestampMap = buildCursorSessionTimestampMap(db);
+			bubbleMessages = extractCursorBubbleMessagesSinceRowId(
+				db,
+				sessionModelMap,
+				sessionTimestampMap,
+				sinceCheckpoint.cursorDiskKVRowId
+			);
+		}
+
+		if (bubbleMessages.length > 0)
+		{
+			const projectBySession = inferProjectsFromBubbleContext(bubbleMessages, defaultProject);
+			const previousBySession = new Map<string, string | null>();
+
+			const sessionBubbles = new Map<string, Array<CursorBubbleRecord>>();
+			for (const bubbleMessage of bubbleMessages)
+			{
+				const sid = bubbleMessage.sessionId;
+				if (!sessionBubbles.has(sid))
+				{
+					sessionBubbles.set(sid, []);
+				}
+				sessionBubbles.get(sid)!.push(bubbleMessage);
+			}
+
+			const rawDestBySession = new Map<string, string>();
+			for (const [sid, bubbles] of sessionBubbles.entries())
+			{
+				const project = projectBySession.get(sid) ?? defaultProject;
+				const rawDest = writeRawSourceData(rawBase, project, `${sid}.json`, bubbles.map((b) => ({
+					sessionId: b.sessionId,
+					bubbleId: b.bubbleId,
+					role: b.role,
+					message: b.message,
+					model: b.model,
+					dateTime: b.dateTime.toISO(),
+					context: b.context,
+				})));
+				rawDestBySession.set(sid, rawDest);
+			}
+
+			for (const bubbleMessage of bubbleMessages)
+			{
+				const parentId = previousBySession.get(bubbleMessage.sessionId) ?? null;
+				const id = generateMessageId(
+					bubbleMessage.sessionId,
+					bubbleMessage.role,
+					bubbleMessage.bubbleId,
+					bubbleMessage.message.slice(0, 120)
+				);
+
+				results.push(
+					new AgentMessage({
+						id,
+						sessionId: bubbleMessage.sessionId,
+						harness: "Cursor",
+						machine: "",
+						role: bubbleMessage.role,
+						model: bubbleMessage.role === "assistant" ? bubbleMessage.model : null,
+						message: bubbleMessage.message,
+						subject: "",
+						context: bubbleMessage.context,
+						symbols: [],
+						history: [],
+						tags: [],
+						project: projectBySession.get(bubbleMessage.sessionId) ?? defaultProject,
+						parentId,
+						tokenUsage: null,
+						toolCalls: [],
+						rationale: [],
+						source: rawDestBySession.get(bubbleMessage.sessionId) ?? "",
+						dateTime: bubbleMessage.dateTime,
+						length: bubbleMessage.message.length,
+					})
+				);
+
+				previousBySession.set(bubbleMessage.sessionId, id);
+			}
+		}
+		else
+		{
+			const keyRows = db
+				.query<{ key: string }, [number]>(
+					"SELECT key FROM ItemTable WHERE rowid > ? AND (key LIKE '%chat%' OR key LIKE '%ai%' OR key LIKE '%composer%' OR key LIKE '%conversation%')"
+				)
+				.all(sinceCheckpoint.itemTableRowId);
+
+			const discoveredKeys = keyRows
+				.map((row) => row.key)
+				.filter((key) => isCursorChatKeyCandidate(key));
+
+			for (const key of discoveredKeys)
+			{
+				try
+				{
+					const row = db
+						.query<{ value: unknown }, [string]>("SELECT value FROM ItemTable WHERE key = ?")
+						.get(key);
+					const rawValue = toDatabaseText(row?.value);
+					if (!rawValue)
+					{
+						continue;
+					}
+
+					const parsed = JSON.parse(rawValue) as unknown;
+					const safeKey = key.replace(/[^a-zA-Z0-9_\-\.]/g, "_").slice(0, 120);
+					const rawDest = writeRawSourceData(rawBase, defaultProject, `${safeKey}.json`, parsed);
+
+					const requestLikeMessages = extractFromRequestLikeSessions(
+						key,
+						parsed,
+						defaultProject,
+						new Map<string, string>()
+					);
+					if (requestLikeMessages.length > 0)
+					{
+						for (const msg of requestLikeMessages)
+						{
+							msg.source = rawDest;
+						}
+						results.push(...requestLikeMessages);
+						continue;
+					}
+
+					const messageLike: Array<CursorMessageLike> = [];
+					walkMessageLikeNodes(parsed, { sessionHint: key, modelHint: pickModel(parsed) }, messageLike);
+					let previousId: string | null = null;
+
+					for (let i = 0; i < messageLike.length; i += 1)
+					{
+						const messageNode = messageLike[i];
+						const role = mapCursorRole(messageNode.role);
+						const message = normalizeMessageText(messageNode.content);
+						if (!message.trim())
+						{
+							continue;
+						}
+
+						const dateTime = parseCursorDateTime(messageNode.timestamp);
+						const sessionId = messageNode.sessionHint || key || basename(dbPath);
+						const id = generateMessageId(sessionId, role, `${key}-${i}`, message.slice(0, 120));
+
+						results.push(
+							new AgentMessage({
+								id,
+								sessionId,
+								harness: "Cursor",
+								machine: "",
+								role,
+								model: role === "assistant" ? messageNode.model : null,
+								message,
+								subject: "",
+								context: extractContextPaths(message),
+								symbols: [],
+								history: [],
+								tags: [],
+								project: defaultProject,
+								parentId: previousId,
+								tokenUsage: null,
+								toolCalls: [],
+								rationale: [],
+								source: rawDest,
+								dateTime,
+								length: message.length,
+							})
+						);
+						previousId = id;
+					}
+				}
+				catch
+				{
+					// Skip malformed ItemTable payloads during incremental pass.
+				}
+			}
+		}
+
+		console.log(
+			`${CUR} Incremental ingest: +${chalk.green(results.length + "")} messages in ${chalk.green((Date.now() - startMs) + "ms")} ` +
+			`(rowid ${sinceCheckpoint.cursorDiskKVRowId}->${nextCheckpoint.cursorDiskKVRowId})`
+		);
+
+		return {
+			messages: results,
+			checkpoint: nextCheckpoint,
+		};
+	}
+	finally
+	{
+		db.close();
+	}
 }

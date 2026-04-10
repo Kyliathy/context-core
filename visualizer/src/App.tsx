@@ -334,20 +334,24 @@ export default function App() {
 	const [viewport, setViewport] = useState<ViewportChangeDetail>({ x: 0, y: 0, k: 1 });
 	const [basketLines, setBasketLines] = useState<BasketLine[]>([]);
 	const [isFilterDialogOpen, setIsFilterDialogOpen] = useState(false);
-	const [agentBuilderSources, setAgentBuilderSources] = useState<{ name: string; fileCount: number }[]>([]);
+	const [agentBuilderSources, setAgentBuilderSources] = useState<{ name: string; fileCount: number; codexDirectories?: string[]; codexDefaultDirectory?: string }[]>([]);
 	const [agentKnowledgeEntries, setAgentKnowledgeEntries] = useState<AgentKnowledgeEntry[]>([]);
 	const [isCreatingAgent, setIsCreatingAgent] = useState(false);
 	const [agentCreateError, setAgentCreateError] = useState<string | null>(null);
 	const [agentCreateSuccess, setAgentCreateSuccess] = useState<string | null>(null);
 	const [agentFlashId, setAgentFlashId] = useState<string | null>(null);
 	const [editingAgentPath, setEditingAgentPath] = useState<string | null>(null);
+	const [editingCodexEntryId, setEditingCodexEntryId] = useState<string | null>(null);
 	const [agentEditInitial, setAgentEditInitial] = useState<{
 		projectName: string;
 		agentName: string;
 		description: string;
 		hint: string;
 		tools: string;
-		platform?: "github" | "claude";
+		codexDirectory?: string;
+		platform?: "github" | "claude" | "codex";
+		platforms?: import("./types").AgentListPlatformEntry[];
+		contentDiverged?: boolean;
 	} | null>(null);
 	const [isFromTemplate, setIsFromTemplate] = useState(false);
 	const [activePlaceholderId, setActivePlaceholderId] = useState<string | null>(null);
@@ -394,6 +398,7 @@ export default function App() {
 		setAgentCreateError(null);
 		setAgentCreateSuccess(null);
 		setEditingAgentPath(null);
+		setEditingCodexEntryId(null);
 		setAgentEditInitial(null);
 		setIsFromTemplate(false);
 		setActivePlaceholderId(null);
@@ -636,7 +641,14 @@ export default function App() {
 	useEffect(() => {
 		fetchAgentBuilderPrepare()
 			.then((prepared) => {
-				setAgentBuilderSources(prepared.sources.map((s) => ({ name: s.name, fileCount: s.fileCount })));
+				setAgentBuilderSources(
+					prepared.sources.map((s) => ({
+						name: s.name,
+						fileCount: s.fileCount,
+						codexDirectories: s.codexDirectories,
+						codexDefaultDirectory: s.codexDefaultDirectory,
+					}))
+				);
 			})
 			.catch(() => {
 				// Server not yet updated or no sources — leave empty, dropdown shows "No data sources configured"
@@ -869,6 +881,7 @@ export default function App() {
 		setAgentCreateError(null);
 		setAgentCreateSuccess(null);
 		setEditingAgentPath(null);
+		setEditingCodexEntryId(null);
 		setAgentEditInitial(null);
 		setIsFromTemplate(false);
 		setActivePlaceholderId(null);
@@ -876,6 +889,7 @@ export default function App() {
 
 	const handleCancelEdit = useCallback(() => {
 		setEditingAgentPath(null);
+		setEditingCodexEntryId(null);
 		setAgentEditInitial(null);
 		setAgentKnowledgeEntries([]);
 		setIsFromTemplate(false);
@@ -883,14 +897,24 @@ export default function App() {
 	}, []);
 
 	const handleCreateAgent = useCallback(
-		async (input: Omit<CreateAgentInput, "platform">, platforms: ("github" | "claude")[]) => {
+		async (input: Omit<CreateAgentInput, "platform">, platforms: ("github" | "claude" | "codex")[]) => {
 			setIsCreatingAgent(true);
 			setAgentCreateError(null);
 			setAgentCreateSuccess(null);
 			const successPaths: string[] = [];
 			try {
 				for (const platform of platforms) {
-					const result = await fetchAgentBuilderCreate({ ...input, platform });
+					const payload: CreateAgentInput = { ...input, platform };
+					if (platform === "codex") {
+						if (!payload.codexEntryId && editingCodexEntryId) {
+							payload.codexEntryId = editingCodexEntryId;
+						}
+					} else {
+						delete payload.codexEntryId;
+						delete payload.codexDirectory;
+					}
+
+					const result = await fetchAgentBuilderCreate(payload);
 					successPaths.push(result.path);
 				}
 				setAgentCreateSuccess(successPaths.join(" · "));
@@ -909,7 +933,7 @@ export default function App() {
 				setIsCreatingAgent(false);
 			}
 		},
-		[isFromTemplate, switchView],
+		[editingCodexEntryId, isFromTemplate, switchView],
 	);
 
 	// Auto-dismiss agent success banner after 5s
@@ -1097,6 +1121,7 @@ export default function App() {
 						tools: template.tools?.join(", ") ?? "",
 					});
 					setEditingAgentPath(null);
+					setEditingCodexEntryId(null);
 					setIsFromTemplate(false);
 					setActivePlaceholderId(null);
 					switchView("built-in-template-create");
@@ -1107,7 +1132,11 @@ export default function App() {
 			}
 			// Standard agent edit flow
 			try {
-				const response = await fetchAgentBuilderGetAgent(detail.agentPath);
+				// Read platforms and divergence info from the consolidated card.
+				const cardPlatforms = card?.platforms;
+				const cardDiverged = card?.contentDiverged ?? false;
+
+				const response = await fetchAgentBuilderGetAgent(detail.agentPath, detail.codexEntryId);
 				const agent = response.agent;
 				// Populate knowledge entries from agent definition
 				setAgentKnowledgeEntries(
@@ -1125,9 +1154,13 @@ export default function App() {
 					description: agent.description,
 					hint: agent["argument-hint"],
 					tools: agent.tools?.join(", ") ?? "",
+					codexDirectory: agent.codexDirectory,
 					platform: agent.platform,
+					platforms: cardPlatforms,
+					contentDiverged: cardDiverged,
 				});
 				setEditingAgentPath(detail.agentPath);
+				setEditingCodexEntryId(agent.codexEntryId ?? detail.codexEntryId ?? null);
 				setIsFromTemplate(false);
 				setActivePlaceholderId(null);
 				// Switch to agent-builder view so user can modify knowledge files
@@ -1162,6 +1195,7 @@ export default function App() {
 					tools: template.tools?.join(", ") ?? "",
 				});
 				setEditingAgentPath(null);
+				setEditingCodexEntryId(null);
 				setIsFromTemplate(true);
 				const firstPlaceholder = entries.find((e) => e.kind === "placeholder");
 				setActivePlaceholderId(firstPlaceholder?.id ?? null);
@@ -1509,3 +1543,4 @@ export default function App() {
 		</div>
 	);
 }
+
