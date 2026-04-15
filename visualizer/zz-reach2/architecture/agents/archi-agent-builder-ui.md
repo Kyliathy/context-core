@@ -1,7 +1,7 @@
 # Agent Builder UI — Architectural Review
 
-**Date**: 2026-04-09
-**Status**: Current (reflects r2uab Phase 1–4 — all fully implemented, including post-launch UI/Layout polish)
+**Date**: 2026-04-10
+**Status**: Current (reflects r2uab Phase 1–4 — all fully implemented, including post-launch UI/Layout polish + knowledge entry UX improvements)
 **Scope**: End-to-end architecture of the Agent Builder feature: server indexing, REST API, visualizer data flow, UI components, card rendering, edit flow.
 
 ---
@@ -258,9 +258,11 @@ classDiagram
     class AgentKnowledgeEntry {
         +id: string
         +value: string
-        +kind: "file" | "custom"
+        +kind: "file" | "custom" | "placeholder"
         +sourceName?: string
         +addedAt: number
+        +placeholderIndex?: number
+        +fileSizeBytes?: number
     }
 
     AgentDefinition --|> CreateAgentInput : extends
@@ -426,11 +428,11 @@ sequenceDiagram
 
     Note over CM: User is in agent-builder view\nCards render 💾 save button only
     U->>CM: Click 💾 on a file card line
-    CM->>APP: onCardAddKnowledge({cardId, lineText, sourceName})
-    APP->>APP: Append AgentKnowledgeEntry\n{id, value: lineText, kind:"file", sourceName}
+    CM->>APP: onCardAddKnowledge({cardId, relativePath, sourceName, harness, fileSizeBytes})
+    APP->>APP: Append AgentKnowledgeEntry\n{id, value: relativePath, kind:"file", sourceName, fileSizeBytes}
     APP->>BASK: agentKnowledgeEntries (updated)
     APP->>APP: setAgentFlashId(cardId) — card flashes briefly
-    Note over BASK: New item appears in list\nUser fills project/name/desc
+    Note over BASK: New item appears in list\nMD files show [X.X KiB] badge in bright blue\nUser fills project/name/desc
     U->>BASK: Click "🏗️ Create"
     BASK->>APP: onCreateAgent(CreateAgentInput)
     APP->>API: fetchAgentBuilderCreate(input)
@@ -606,6 +608,8 @@ graph LR
 - `initialValues` are applied via a `useEffect` that fires when `editMode` transitions `false → true`.
 - **Platform checkboxes** (GitHub Copilot / Claude Code / OpenAI Codex) appear below the header buttons when `mode !== "template"`. State persisted to localStorage `"cxc-agent-platforms"`. At least one must be checked for Create to be enabled. `onCreateAgent` signature: `(input: Omit<CreateAgentInput, "platform">, platforms: ("github" | "claude" | "codex")[]) => void` — App.tsx loops and fires one server call per platform. In edit mode, all platforms the agent already exists on are pre-checked from `initialValues.platforms[]` (the consolidated list). If `initialValues.contentDiverged` is true, an amber warning banner is shown: *"Agent data differs between platforms. Saving may overwrite a version with different content."*
 - **Inline entry editing**: each knowledge entry has an edit (✎) icon. Clicking it loads the entry's text into the textarea, highlights the entry row dark green, and `onUpdateEntry(id, newValue)` replaces it on Ctrl+Enter.
+- **File size badge for MD files**: When a knowledge entry is `kind: "file"` and its `value` ends with `.md`, a bright-blue `[X.X KiB]` badge (`.agent-basket-entry-size`, color `#38bdf8`) is rendered inline after the path. The size is threaded from `IndexedFile.size` → `CardData.fileSize` → `CardAddKnowledgeEventDetail.fileSizeBytes` → `AgentKnowledgeEntry.fileSizeBytes`. `ContentFileDialog` also passes `data.size` through the same path.
+- **Removal confirmation**: Clicking the ✕ remove button on a knowledge entry triggers a `window.confirm("Remove this knowledge entry?")` dialog before invoking `onRemoveEntry`. This also applies to `ClipboardBasket` / `ClipboardMessage` entries (`window.confirm("Remove this snippet?")`).
 
 ---
 
@@ -638,7 +642,7 @@ Rather than adding query parameters to `/api/search`, the Agent Builder uses a d
 
 ### 11.2 `CardData` Shape Reuse
 
-Agent Builder files and agent cards reuse the existing `CardData` type by mapping file metadata into the message-centric fields. The `source` field is filled with a `SerializedAgentMessage` "stub" — this means the entire D3 rendering pipeline, hover panel, and chat view dialog work without modification. Only the action buttons (§7.2) and card render mode need view-aware logic.
+Agent Builder files and agent cards reuse the existing `CardData` type by mapping file metadata into the message-centric fields. The `source` field is filled with a `SerializedAgentMessage` "stub" — this means the entire D3 rendering pipeline, hover panel, and chat view dialog work without modification. Only the action buttons (§7.2) and card render mode need view-aware logic. The optional `fileSize?: number` field on `CardData` is populated from `IndexedFile.size` in `toAgentBuilderCards()` and threaded through the `card-add-knowledge` event into `AgentKnowledgeEntry.fileSizeBytes`.
 
 ### 11.3 In-Memory Index Stays Fresh
 
@@ -694,6 +698,8 @@ Several UI conventions were refined post-launch to reduce friction and noise:
 - **No auto-focus on load:** The `SearchBar` does not implicitly request focus to avoid the search history drop-down covering the screen when navigating.
 - **Consistent Disabling Cursors:** Unavailable states (e.g. disabled search buttons in specific modes) use `not-allowed` instead of the system `wait` cursor.
 - **Icon Integrity:** Agent knowledge empty states strictly use system emojis (💾) rather than character-set dependent glyphs.
+- **MD File Size Visibility:** Markdown knowledge entries display their file size in KiB (`[X.X KiB]`, bright blue `#38bdf8`) so the user can gauge knowledge bulk at a glance.
+- **Destructive Action Confirmation:** Per-entry removal in both AgentBasket and ClipboardBasket requires a `window.confirm()` dialog to prevent accidental deletions.
 
 ---
 

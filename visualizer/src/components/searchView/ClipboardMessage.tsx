@@ -33,7 +33,9 @@ export default function ClipboardMessage({ line, onMoveUp, onMoveDown, onRemove,
 				<button
 					type="button"
 					className="basket-control-btn basket-control-remove"
-					onClick={() => onRemove(line.id)}
+					onClick={() => {
+						if (window.confirm("Remove this snippet?")) onRemove(line.id);
+					}}
 					title="Remove">
 					×
 				</button>

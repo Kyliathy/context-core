@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { join } from "path";
 import {
 	applyAddCandidates,
+	buildAddCandidateRows,
 	buildCandidateRows,
 	parseSelectionSpec,
 } from "../../cxccli.js";
@@ -50,15 +51,6 @@ describe("cxccli add integration", () =>
 		];
 
 		const candidates = scanHarnessCandidates(mockContext, scanners);
-		const rows = buildCandidateRows(candidates, scanners);
-		expect(rows.map((row) => `${row.harness}:${row.candidatePath}`)).toEqual([
-			"ClaudeCode:C:\\mock\\claude\\proj-a\\",
-			"ClaudeCode:C:\\mock\\claude\\proj-b\\",
-			"VSCode:C:\\mock\\vscode\\hash-1\\",
-			"VSCode:C:\\mock\\vscode\\hash-1\\",
-			"Codex:C:\\mock\\codex\\sessions\\",
-		]);
-
 		const machine = {
 			machine: "HOST",
 			harnesses: {
@@ -67,9 +59,19 @@ describe("cxccli add integration", () =>
 			},
 		};
 
-		const applied = applyAddCandidates(machine, rows);
+		const candidateBuild = buildAddCandidateRows(machine as never, candidates, scanners);
+		expect(candidateBuild.rows.map((row) => `${row.harness}:${row.candidatePath}`)).toEqual([
+			"ClaudeCode:C:\\mock\\claude\\proj-b\\",
+			"VSCode:C:\\mock\\vscode\\hash-1\\",
+			"Codex:C:\\mock\\codex\\sessions\\",
+		]);
+		expect(candidateBuild.rows.map((row) => row.row)).toEqual([1, 2, 3]);
+		expect(candidateBuild.skippedAlreadyConfigured).toBe(1);
+		expect(candidateBuild.skippedScannerDuplicates).toBe(1);
+
+		const applied = applyAddCandidates(machine, candidateBuild.rows);
 		expect(applied.added).toBe(3);
-		expect(applied.skippedDuplicates).toBe(2);
+		expect(applied.skippedDuplicates).toBe(0);
 		expect((applied.machine.harnesses.ClaudeCode as { paths: string[] }).paths).toEqual([
 			"C:\\mock\\claude\\proj-a\\",
 			"C:\\mock\\claude\\proj-b\\",

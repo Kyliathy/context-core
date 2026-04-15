@@ -367,8 +367,9 @@ ContextCore is just getting started. The current system establishes the foundati
 cd server && bun install
 cd ../visualizer && bun install
 
-# Configure your machine's harness paths
-# Edit server/cc.json — see the main README for configuration details
+# Configure your machine's harness paths (recommended interactive editor for cc.json)
+cd server && bun run cceditor
+# Alternatively, edit server/cc.json directly if you prefer manual edits
 
 # Start the server (ingestion + API + MCP)
 cd server && bun run dev
@@ -378,6 +379,8 @@ cd visualizer && bun run dev
 ```
 
 The server starts on `localhost:3210`. The visualizer is available at `localhost:5173` (dev mode) or `localhost:3210` (production — served directly by Express from `visualizer/dist/`).
+
+For CLI details, commands, and architecture, see [server/zz-reach2/architecture/cli/archi-cli.md](server/zz-reach2/architecture/cli/archi-cli.md).
 
 **Install as a standalone app (PWA)** — build the visualizer first (`cd visualizer && npm run build`), then navigate to `localhost:3210` in Chrome or Edge. Click the install icon in the address bar (or browser menu → "Install ContextCore Visualizer…"). The app opens as a standalone window with its own taskbar entry.
 

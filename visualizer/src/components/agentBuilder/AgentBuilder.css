@@ -249,6 +249,13 @@
 	font-weight: 400;
 }
 
+.agent-basket-knowledge-totals {
+	color: #38bdf8;
+	font-weight: 400;
+	font-size: 10px;
+	font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
 /* Knowledge list */
 .agent-basket-knowledge-list {
 	flex: 1;
@@ -325,6 +332,14 @@
 	flex: 1;
 	word-break: break-word;
 	min-width: 0;
+}
+
+.agent-basket-entry-size {
+	margin-left: 5px;
+	color: #38bdf8;
+	font-size: 10px;
+	font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+	white-space: nowrap;
 }
 
 .agent-basket-entry-file .agent-basket-entry-value {

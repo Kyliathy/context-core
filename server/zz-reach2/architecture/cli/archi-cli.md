@@ -15,6 +15,8 @@
 - `delete|remove <row>`: path deletion by stable row number
 - `interactive|i`: persistent menu-driven workflow for add/edit/remove/list
 
+Recommended interactive entrypoint: `bun run cceditor` from `server/`.
+
 It uses:
 
 - `commander` for command/flag parsing, aliases, and help UX
@@ -26,6 +28,9 @@ It uses:
 ## 2. Quick Start
 
 ```bash
+# recommended: launch the interactive cc.json editor
+bun run cceditor --machine KYLIATHY3
+
 # default command in a TTY opens interactive mode
 bun run cxccli --machine KYLIATHY3
 
@@ -51,6 +56,7 @@ bun run cxccli remove 7 --machine KYLIATHY3 --yes --backup
 
 ### 3.1 When It Starts
 
+- `bun run cceditor` always starts interactive mode and is the recommended way to explore CLI capabilities.
 - `bun run cxccli` in a TTY session enters interactive mode by default.
 - `bun run cxccli interactive` always requests interactive mode.
 - At interactive startup, machine is selected first (unless `--machine` is provided).
@@ -69,7 +75,7 @@ bun run cxccli remove 7 --machine KYLIATHY3 --yes --backup
 
 ### 3.3 Typical Session
 
-1. Run `bun run cxccli` from `server/`.
+1. Run `bun run cceditor` from `server/`.
 2. Pick machine for this interactive session (or pass `--machine` to skip picker).
 3. Choose action with hotkey or arrow menu.
 4. `List`: renders current table for selected machine.
@@ -81,6 +87,7 @@ bun run cxccli remove 7 --machine KYLIATHY3 --yes --backup
 
 `Add` candidate rendering uses the same table columns as `list` (`Configured Path`, `Computed Project`, `Workspace Location`, `Exists`), so VSCode candidates show decoded workspace location when available.
 In add selection mode, you can use `Space` to toggle rows, `A` to select all/none, and `Enter` to confirm.
+The add table is pre-filtered to only show addable paths for the selected machine: scanner duplicates and already-configured machine paths are excluded before row selection.
 
 ### 3.4 Practical Notes
 

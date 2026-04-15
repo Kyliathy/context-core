@@ -570,6 +570,18 @@ export default function AgentBuilder({
 			{/* Knowledge header */}
 			<div className="agent-basket-knowledge-header">
 				Knowledge <span className="agent-basket-knowledge-count">({entries.length} entries)</span>
+				{(() => {
+					const totalBytes = entries.reduce((sum, e) => sum + (e.fileSizeBytes ?? 0), 0);
+					if (totalBytes === 0) return null;
+					const kib = totalBytes / 1024;
+					const approxTokens = Math.round(totalBytes / 4);
+					const tokensLabel = approxTokens >= 1000 ? `${(approxTokens / 1000).toFixed(1)}k` : String(approxTokens);
+					return (
+						<span className="agent-basket-knowledge-totals">
+							{" "}— {kib.toFixed(1)} KiB ~= {tokensLabel} tokens
+						</span>
+					);
+				})()}
 			</div>
 
 			{/* Knowledge list */}
@@ -598,7 +610,13 @@ export default function AgentBuilder({
 								<button type="button" disabled={index === 0} onClick={() => onMoveUp(entry.id)} title="Move up">
 									⬆
 								</button>
-								<button type="button" className="remove-btn" onClick={() => onRemoveEntry(entry.id)} title="Remove">
+								<button
+									type="button"
+									className="remove-btn"
+									onClick={() => {
+										if (window.confirm("Remove this knowledge entry?")) onRemoveEntry(entry.id);
+									}}
+									title="Remove">
 									✕
 								</button>
 								<button
@@ -631,6 +649,13 @@ export default function AgentBuilder({
 											: "◻ PLACEHOLDER (click to select)"
 										: "PLACEHOLDER"
 									: entry.value}
+								{entry.kind === "file" &&
+									entry.fileSizeBytes !== undefined &&
+									entry.value.toLowerCase().endsWith(".md") && (
+										<span className="agent-basket-entry-size">
+											[{(entry.fileSizeBytes / 1024).toFixed(1)} KiB]
+										</span>
+									)}
 							</span>
 						</div>
 					))

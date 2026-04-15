@@ -10,6 +10,7 @@
 		"mcp": "bun run src/mcp/serve.ts",
 		"setup": "bun run src/setup.ts",
 		"cxccli": "bun run src/cxccli.ts",
+		"cceditor": "bun run src/cxccli.ts interactive",
 		"test": "bun test ./src/mcp/tests/*.test.ts ./src/mcp/tests/test_*.ts",
 		"typecheck": "tsc --noEmit",
 		"build:viz": "cd visualizer && npm run build"

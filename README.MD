@@ -269,6 +269,27 @@ Both sources appear in the visualizer. Files from each are labeled by their `nam
 
 `bun run setup` launches an interactive CLI that discovers IDE chat sources (Windows, Linux, Darwin), proposes storage, supports harness-by-harness confirmation, and writes/merges `cc.json` safely.
 
+## CLI (`cc.json` Editor)
+
+ContextCore also ships with a dedicated CLI for managing machine-scoped `cc.json` harness paths.
+
+```bash
+cd server
+
+# recommended interactive editor mode
+bun run cceditor
+```
+
+`cceditor` opens the persistent interactive menu (`list`, `add`, `edit`, `remove`) and is the recommended way to explore the CLI capabilities.
+
+You can still run direct commands when needed, for example:
+
+```bash
+bun run cxccli list --json
+```
+
+> Read more: [CLI architecture](server/zz-reach2/architecture/cli/archi-cli.md)
+
 ## Architecture
 
 ### Ingestion Pipeline

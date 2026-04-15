@@ -108,6 +108,7 @@ function toAgentBuilderCards(files: IndexedFile[]): CardData[]
 			excerptMedium: meta,
 			excerptLong: file.excerpt ?? `${file.relativePath}\n${meta}`,
 			source: fakeSource,
+			fileSize: file.size,
 		};
 	});
 }

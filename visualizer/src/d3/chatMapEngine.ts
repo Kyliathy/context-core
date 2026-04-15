@@ -675,6 +675,7 @@ export function createChatMapEngine(
 							relativePath: card.excerptShort,
 							sourceName: card.project,
 							harness: card.harness,
+							fileSizeBytes: card.fileSize,
 						});
 					}
 					else

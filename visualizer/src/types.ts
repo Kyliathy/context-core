@@ -104,6 +104,8 @@ export type AgentKnowledgeEntry = {
 	addedAt: number;
 	/** Index in original template agentKnowledge (for placeholder restore). */
 	placeholderIndex?: number;
+	/** File size in bytes (only for kind="file" entries sourced from agent-builder cards). */
+	fileSizeBytes?: number;
 };
 
 /** Mirrors server's CreateTemplateInput. */
@@ -280,6 +282,8 @@ export type CardData = {
 	codexEntryId?: string;
 	platforms?: AgentListPlatformEntry[];
 	contentDiverged?: boolean;
+	/** File size in bytes (agent-builder file cards only). */
+	fileSize?: number;
 };
 
 export type ThreadCardData = {
@@ -367,6 +371,8 @@ export type CardAddKnowledgeEventDetail = {
 	sourceName: string;
 	/** Harness value of the card (e.g. "AgentFile" | "ContentFile"). Present in agent-builder mode. */
 	harness?: string;
+	/** File size in bytes (present for agent-builder file cards). */
+	fileSizeBytes?: number;
 };
 
 export type TitleClickEventDetail = {

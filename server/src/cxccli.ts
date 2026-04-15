@@ -117,6 +117,12 @@ type CandidateRenderOptions = {
 	showSelectionColumn?: boolean;
 };
 
+type AddCandidateRowsResult = {
+	rows: CliCandidateRow[];
+	skippedScannerDuplicates: number;
+	skippedAlreadyConfigured: number;
+};
+
 const EXIT_SUCCESS = 0;
 const EXIT_FAILURE = 1;
 const EXIT_VALIDATION = 2;
@@ -674,6 +680,68 @@ function buildCandidateRows(
 			evidence: candidate.evidence,
 		};
 	});
+}
+
+function collectConfiguredPathKeys(machine: CcMachine): Set<string>
+{
+	const configured = new Set<string>();
+	for (const [harness, harnessConfig] of Object.entries(machine.harnesses))
+	{
+		if (RESERVED_HARNESS_KEYS.has(harness))
+		{
+			continue;
+		}
+		const paths = readHarnessPaths(harnessConfig);
+		for (const path of paths)
+		{
+			configured.add(`${harness}::${canonicalizePath(path)}`);
+		}
+	}
+	return configured;
+}
+
+function buildAddCandidateRows(
+	machine: CcMachine,
+	candidates: HarnessScannerCandidate[],
+	scanners: HarnessScanner[] = DEFAULT_HARNESS_SCANNERS
+): AddCandidateRowsResult
+{
+	const rawRows = buildCandidateRows(candidates, scanners);
+	const existingKeys = collectConfiguredPathKeys(machine);
+	const uniqueCandidates = new Map<string, CliCandidateRow>();
+
+	let skippedScannerDuplicates = 0;
+	for (const row of rawRows)
+	{
+		const key = `${row.harness}::${canonicalizePath(row.candidatePath)}`;
+		if (uniqueCandidates.has(key))
+		{
+			skippedScannerDuplicates += 1;
+			continue;
+		}
+		uniqueCandidates.set(key, row);
+	}
+
+	let skippedAlreadyConfigured = 0;
+	const filteredRows: CliCandidateRow[] = [];
+	for (const [key, row] of uniqueCandidates.entries())
+	{
+		if (existingKeys.has(key))
+		{
+			skippedAlreadyConfigured += 1;
+			continue;
+		}
+		filteredRows.push(row);
+	}
+
+	return {
+		rows: filteredRows.map((row, idx) => ({
+			...row,
+			row: idx + 1,
+		})),
+		skippedScannerDuplicates,
+		skippedAlreadyConfigured,
+	};
 }
 
 function renderCandidateRows(rows: CliCandidateRow[], options?: CandidateRenderOptions): void
@@ -1499,11 +1567,20 @@ async function runAdd(flags: CliFlags, selectionSpec?: string, options?: RunAddO
 			username: detectUsername(),
 		};
 		const candidates = scanHarnessCandidates(context, DEFAULT_HARNESS_SCANNERS);
-		const candidateRows = buildCandidateRows(candidates, DEFAULT_HARNESS_SCANNERS);
+		const candidateBuild = buildAddCandidateRows(machine, candidates, DEFAULT_HARNESS_SCANNERS);
+		const candidateRows = candidateBuild.rows;
 
 		if (candidateRows.length === 0)
 		{
-			console.log(chalk.yellow("No new candidates discovered on disk."));
+			console.log(chalk.yellow("No new paths to add for the selected machine."));
+			if (candidateBuild.skippedAlreadyConfigured > 0 || candidateBuild.skippedScannerDuplicates > 0)
+			{
+				console.log(
+					chalk.dim(
+						`Filtered out ${candidateBuild.skippedAlreadyConfigured} already-configured and ${candidateBuild.skippedScannerDuplicates} duplicate scanned path(s).`
+					)
+				);
+			}
 			return EXIT_SUCCESS;
 		}
 
@@ -1530,21 +1607,15 @@ async function runAdd(flags: CliFlags, selectionSpec?: string, options?: RunAddO
 		}
 
 		const selectedRows = candidateRows.filter((row) => selectedRowNumbers!.includes(row.row));
-		const uniqueByPath = new Map<string, CliCandidateRow>();
-		for (const row of selectedRows)
-		{
-			const key = `${row.harness}::${canonicalizePath(row.candidatePath)}`;
-			if (!uniqueByPath.has(key))
-			{
-				uniqueByPath.set(key, row);
-			}
-		}
-		const uniqueSelected = [...uniqueByPath.values()];
 
-		const applied = applyAddCandidates(machine, uniqueSelected);
+		const applied = applyAddCandidates(machine, selectedRows);
 		if (applied.added === 0)
 		{
-			console.log(chalk.dim(`No new paths to add (${applied.skippedDuplicates} duplicate candidate(s) skipped).`));
+			console.log(chalk.dim("No new paths to add."));
+			if (applied.skippedDuplicates > 0)
+			{
+				console.log(chalk.dim(`Skipped ${applied.skippedDuplicates} duplicate path(s) during write.`));
+			}
 			return EXIT_SUCCESS;
 		}
 
@@ -1572,10 +1643,10 @@ async function runAdd(flags: CliFlags, selectionSpec?: string, options?: RunAddO
 		const nextConfig = updateMachineConfig(config, machine.machine, () => applied.machine);
 		writeCcConfig(ccJsonPath, nextConfig, { backup: flags.backup });
 
-		console.log(
-			chalk.green(`Added ${applied.added} path(s).`) +
-			chalk.dim(` (${applied.skippedDuplicates} duplicate candidate(s) skipped)`)
-		);
+		const duplicateSuffix = applied.skippedDuplicates > 0
+			? chalk.dim(` (${applied.skippedDuplicates} duplicate path(s) skipped during write)`)
+			: "";
+		console.log(chalk.green(`Added ${applied.added} path(s).`) + duplicateSuffix);
 		if (options?.renderUpdatedList !== false)
 		{
 			console.log();
@@ -1818,6 +1889,7 @@ export {
 	type CliCandidateRow,
 	type CliListRow,
 	applyAddCandidates,
+	buildAddCandidateRows,
 	applyDeletePathByRow,
 	applyEditPathByRow,
 	buildCandidateRows,

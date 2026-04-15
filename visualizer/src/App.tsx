@@ -771,6 +771,7 @@ export default function App() {
 							value: detail.relativePath,
 							kind: "file",
 							sourceName: detail.sourceName,
+							fileSizeBytes: detail.fileSizeBytes,
 						};
 						const nextId = findNextPlaceholderId(updated, idx);
 						setActivePlaceholderId(nextId);
@@ -792,6 +793,7 @@ export default function App() {
 						kind: "file",
 						sourceName: detail.sourceName,
 						addedAt: Date.now(),
+						fileSizeBytes: detail.fileSizeBytes,
 					},
 				];
 			});

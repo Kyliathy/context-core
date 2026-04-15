@@ -65,6 +65,7 @@ export default function ContentFileDialog({
 			relativePath,
 			sourceName,
 			harness: data?.sourceType ?? "ContentFile",
+			fileSizeBytes: data?.size,
 		});
 	};
 
