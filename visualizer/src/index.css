@@ -245,6 +245,10 @@ g.chat .chat-html {
   width: 30px;
 }
 
+.line-actions:not(.spacer) {
+  min-height: 86px;
+}
+
 .line-actions.spacer {
   /* empty spacer */
 }

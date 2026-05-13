@@ -1,7 +1,13 @@
 import type { CardData, ThreadCardData, MasterCardData } from "../types";
 
-const CARD_WIDTH = 320;
+/** Card width in world units (shared with chatMapEngine favorites custom drag). */
+export const LAYOUT_CARD_WIDTH = 320;
+
+const CARD_WIDTH = LAYOUT_CARD_WIDTH;
 const CARD_MIN_HEIGHT = 120;
+/** Taller floor for Favorites default cards so excerpt action column is not clipped at high zoom. */
+const FAVORITE_MESSAGE_MIN_HEIGHT = 192;
+const FAVORITE_THREAD_MIN_HEIGHT = 152;
 const CARD_MAX_HEIGHT = 280;
 const GAP_X = 24;
 const GAP_Y = 20;
@@ -16,7 +22,8 @@ function estimateHeight(card: CardData): number
 	const base = 120;
 	const symbolLines = Math.ceil(card.symbols.length / 6) * 16;
 	const textLines = Math.ceil(card.excerptMedium.length / 56) * 14;
-	return clamp(CARD_MIN_HEIGHT, base + symbolLines + textLines, CARD_MAX_HEIGHT);
+	const floor = card.favoriteSource ? FAVORITE_MESSAGE_MIN_HEIGHT : CARD_MIN_HEIGHT;
+	return clamp(floor, base + symbolLines + textLines, CARD_MAX_HEIGHT);
 }
 
 function estimateThreadHeight(thread: ThreadCardData): number
@@ -26,7 +33,8 @@ function estimateThreadHeight(thread: ThreadCardData): number
 	const newlinesCount = (firstMessage.match(/\n/g) || []).length;
 	// Estimate lines based on typical character width (56 chars/line) + explicit newlines
 	const textLines = Math.ceil((firstMessage.length / 56) + newlinesCount) * 14;
-	return clamp(CARD_MIN_HEIGHT, base + textLines, CARD_MAX_HEIGHT);
+	const floor = thread.favoriteSource ? FAVORITE_THREAD_MIN_HEIGHT : CARD_MIN_HEIGHT;
+	return clamp(floor, base + textLines, CARD_MAX_HEIGHT);
 }
 
 export function computeGridLayout(cards: CardData[], containerWidth: number, forceSquare = false): CardData[]
@@ -246,4 +254,59 @@ export function computeMixedWorldBounds(cards: CardData[], threads: ThreadCardDa
 		width: maxX + 200,
 		height: maxY + 200,
 	};
+}
+
+/**
+ * Mixed favorites layout: rows with layoutPosition keep world x/y; others get masonry slots
+ * from an auto mixed grid computed on stripped geometry (same bucket as mixed favorites).
+ */
+export function computeCustomFavoritesLayout(
+	cards: CardData[],
+	threads: ThreadCardData[],
+	containerWidth: number,
+): { cards: CardData[]; threads: ThreadCardData[] }
+{
+	const stripCard = (c: CardData): CardData => ({ ...c, x: 0, y: 0, w: CARD_WIDTH, h: estimateHeight(c) });
+	const stripThread = (t: ThreadCardData): ThreadCardData => ({ ...t, x: 0, y: 0, w: CARD_WIDTH, h: estimateThreadHeight(t) });
+	const auto = computeMixedGridLayout(
+		cards.map(stripCard),
+		threads.map(stripThread),
+		containerWidth,
+	);
+	const autoCardById = new Map(auto.cards.map((c) => [c.id, c]));
+	const autoThreadById = new Map(auto.threads.map((t) => [t.id, t]));
+
+	const outCards = cards.map((c) =>
+	{
+		const h = estimateHeight(c);
+		const w = CARD_WIDTH;
+		const lp = c.layoutPosition;
+		if (lp && Number.isFinite(lp.x) && Number.isFinite(lp.y))
+		{
+			return { ...c, x: lp.x, y: lp.y, w, h };
+		}
+		const fb = autoCardById.get(c.id);
+		if (fb)
+		{
+			return { ...c, x: fb.x, y: fb.y, w: fb.w, h: fb.h };
+		}
+		return { ...c, x: 0, y: 0, w, h };
+	});
+	const outThreads = threads.map((t) =>
+	{
+		const h = estimateThreadHeight(t);
+		const w = CARD_WIDTH;
+		const lp = t.layoutPosition;
+		if (lp && Number.isFinite(lp.x) && Number.isFinite(lp.y))
+		{
+			return { ...t, x: lp.x, y: lp.y, w, h };
+		}
+		const fb = autoThreadById.get(t.id);
+		if (fb)
+		{
+			return { ...t, x: fb.x, y: fb.y, w: fb.w, h: fb.h };
+		}
+		return { ...t, x: 0, y: 0, w, h };
+	});
+	return { cards: outCards, threads: outThreads };
 }

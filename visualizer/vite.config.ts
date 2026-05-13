@@ -75,10 +75,22 @@ export default defineConfig({
 							expiration: { maxEntries: 30, maxAgeSeconds: 3600 },
 						},
 					},
+					{
+						urlPattern: /\/api\/favorites/,
+						handler: "NetworkFirst",
+						options: {
+							cacheName: "api-favorites-cache",
+							networkTimeoutSeconds: 5,
+							expiration: { maxEntries: 20, maxAgeSeconds: 3600 },
+						},
+					},
 				],
 			},
 		}),
 	],
+	resolve: {
+		dedupe: ["react", "react-dom"],
+	},
 	server: {
 		port: 5173,
 		proxy: {

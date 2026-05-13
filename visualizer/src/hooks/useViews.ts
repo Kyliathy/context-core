@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
-import type { ViewDefinition, ViewType } from "../types";
+import type { FavoriteViewSnapshot, ViewDefinition, ViewType } from "../types";
 
 const VIEWS_STORAGE_KEY = "ccv:views";
 const ACTIVE_VIEW_STORAGE_KEY = "ccv:activeViewId";
@@ -50,6 +50,7 @@ const DEFAULT_FAVORITES_VIEW: ViewDefinition = {
 	autoQuery: false,
 	autoRefreshSeconds: 0,
 	createdAt: 2,
+	cardPositioningMode: "CustomCardPositioning",
 };
 
 const AGENT_BUILDER_VIEW: ViewDefinition = {
@@ -121,6 +122,8 @@ type UseViewsResult = {
 	createView: (def: Omit<ViewDefinition, "id" | "createdAt">) => string;
 	updateView: (id: string, patch: Partial<ViewDefinition>) => void;
 	deleteView: (id: string) => void;
+	/** Upserts favorites-type tabs from server snapshots so imported UUID views appear locally. */
+	mergeFavoriteViewsFromSnapshots: (snapshots: FavoriteViewSnapshot[]) => void;
 };
 
 function clampRefreshSeconds(value: number): number
@@ -152,7 +155,7 @@ function normalizeView(view: ViewDefinition): ViewDefinition
 	const type = view.type;
 	const fallback = VIEW_TYPE_DEFAULTS[type] ?? VIEW_TYPE_DEFAULTS.search;
 	const normalizedColor = typeof view.color === "string" && isValidHexColor(view.color) ? view.color.toLowerCase() : fallback.color;
-	return {
+	const base: ViewDefinition = {
 		...view,
 		name: view.name.trim().slice(0, 60),
 		emoji: normalizeEmoji(view.emoji ?? fallback.emoji, type),
@@ -162,6 +165,13 @@ function normalizeView(view: ViewDefinition): ViewDefinition
 		autoRefreshSeconds: clampRefreshSeconds(Number(view.autoRefreshSeconds ?? 0)),
 		projects: Array.isArray(view.projects) ? view.projects : [],
 	};
+	if (type === "favorites")
+	{
+		//Favorites map always uses persisted world positions (CustomCardPositioning); ignore legacy Auto rows in storage.
+		return { ...base, cardPositioningMode: "CustomCardPositioning" };
+	}
+	const { cardPositioningMode: _omit, ...rest } = base;
+	return rest;
 }
 
 function seedViews(): ViewDefinition[]
@@ -213,6 +223,9 @@ function safeReadViews(): ViewDefinition[]
 				autoRefreshSeconds: Number(view.autoRefreshSeconds ?? 0),
 				createdAt: Number(view.createdAt ?? Date.now()),
 				projects: Array.isArray(view.projects) ? view.projects : [],
+				...(view.type === "favorites"
+					? { cardPositioningMode: (view as Partial<ViewDefinition>).cardPositioningMode }
+					: {}),
 			}));
 		return [LATEST_CHATS_VIEW, normalizeView(DEFAULT_SEARCH_VIEW), normalizeView(DEFAULT_SEARCH_THREADS_VIEW), normalizeView(DEFAULT_FAVORITES_VIEW), AGENT_BUILDER_VIEW, AGENT_LIST_VIEW, TEMPLATE_CREATE_VIEW, TEMPLATE_LIST_VIEW, ...userViews].sort((left, right) => left.createdAt - right.createdAt);
 	}
@@ -328,30 +341,92 @@ export function useViews(): UseViewsResult
 		});
 	}, [persistViews]);
 
-	const deleteView = useCallback((id: string) =>
-	{
-		if (id === LATEST_CHATS_VIEW.id || id === DEFAULT_SEARCH_VIEW.id || id === DEFAULT_SEARCH_THREADS_VIEW.id || id === DEFAULT_FAVORITES_VIEW.id || id === AGENT_BUILDER_VIEW.id || id === AGENT_LIST_VIEW.id || id === TEMPLATE_CREATE_VIEW.id || id === TEMPLATE_LIST_VIEW.id)
+	const deleteView = useCallback(
+		(id: string) =>
 		{
-			return;
-		}
-
-		setViews((prev) =>
-		{
-			const nextViews = prev.filter((view) => view.id !== id);
-			persistViews(nextViews);
-			return nextViews;
-		});
-
-		setActiveViewId((prev) =>
-		{
-			if (prev !== id)
+			if (id === LATEST_CHATS_VIEW.id || id === DEFAULT_SEARCH_VIEW.id || id === DEFAULT_SEARCH_THREADS_VIEW.id || id === DEFAULT_FAVORITES_VIEW.id || id === AGENT_BUILDER_VIEW.id || id === AGENT_LIST_VIEW.id || id === TEMPLATE_CREATE_VIEW.id || id === TEMPLATE_LIST_VIEW.id)
 			{
-				return prev;
+				return;
 			}
-			persistActiveView(LATEST_CHATS_VIEW.id);
-			return LATEST_CHATS_VIEW.id;
-		});
-	}, [persistActiveView, persistViews]);
+
+			setViews((prev) =>
+			{
+				const nextViews = prev.filter((view) => view.id !== id);
+				persistViews(nextViews);
+				return nextViews;
+			});
+
+			setActiveViewId((prev) =>
+			{
+				if (prev !== id)
+				{
+					return prev;
+				}
+				persistActiveView(LATEST_CHATS_VIEW.id);
+				return LATEST_CHATS_VIEW.id;
+			});
+		},
+		[persistActiveView, persistViews],
+	);
+
+	/**
+	 * Merges server-provided favorites view metadata into local tabs (creates missing UUID tabs, patches labels).
+	 * @param snapshots - Rows from GET /api/favorites when the user accepted the server bundle.
+	 */
+	const mergeFavoriteViewsFromSnapshots = useCallback(
+		(snapshots: FavoriteViewSnapshot[]) =>
+		{
+			setViews((prev) =>
+			{
+				let next = [...prev];
+				for (const snap of snapshots)
+				{
+					if (snap.id === DEFAULT_FAVORITES_VIEW.id)
+					{
+						continue;
+					}
+					const index = next.findIndex((view) => view.id === snap.id);
+					if (index >= 0)
+					{
+						const existing = next[index]!;
+						if (existing.type !== "favorites")
+						{
+							continue;
+						}
+						next[index] = normalizeView({
+							...existing,
+							name: snap.name,
+							emoji: snap.emoji,
+							color: snap.color,
+							cardPositioningMode: snap.cardPositioningMode ?? existing.cardPositioningMode,
+						});
+					}
+					else
+					{
+						next.push(
+							normalizeView({
+								id: snap.id,
+								name: snap.name,
+								type: "favorites",
+								emoji: snap.emoji,
+								color: snap.color,
+								query: "",
+								autoQuery: false,
+								autoRefreshSeconds: 0,
+								createdAt: Date.now(),
+								projects: [],
+								cardPositioningMode: snap.cardPositioningMode ?? "CustomCardPositioning",
+							}),
+						);
+					}
+				}
+				const sorted = next.sort((left, right) => left.createdAt - right.createdAt);
+				persistViews(sorted);
+				return sorted;
+			});
+		},
+		[persistViews],
+	);
 
 	const activeView = useMemo(() => views.find((view) => view.id === activeViewId) ?? LATEST_CHATS_VIEW, [activeViewId, views]);
 
@@ -367,6 +442,7 @@ export function useViews(): UseViewsResult
 		createView,
 		updateView,
 		deleteView,
+		mergeFavoriteViewsFromSnapshots,
 	};
 }
 

@@ -30,3 +30,14 @@
   border-radius: 4px;
   cursor: pointer;
 }
+
+.error-retry {
+  margin-right: auto;
+  border: 1px solid #fca5a5;
+  background: transparent;
+  color: #fee2e2;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 4px 8px;
+}

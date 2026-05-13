@@ -20,7 +20,7 @@
  * Docs: zz-reach2/architecture/ui/archi-context-core-visualizer-ui.md section 4.2
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { ViewDefinition, ViewType, SelectedProject, ProjectGroup, Scope } from "../../types";
+import type { ViewDefinition, ViewType, SelectedProject, ProjectGroup, Scope, CardPositioningMode } from "../../types";
 import { fetchProjects } from "../../api/search";
 import { VIEW_TYPE_DEFAULTS } from "../../hooks/useViews";
 import { getHarnessColor } from "../../d3/colors";
@@ -41,6 +41,7 @@ type SavePayload = {
 	autoQuery: boolean;
 	autoRefreshSeconds: number;
 	projects: SelectedProject[];
+	cardPositioningMode?: CardPositioningMode;
 };
 
 type EditResultsViewProps = {
@@ -508,6 +509,7 @@ export default function EditResultsView({
 								autoQuery,
 								autoRefreshSeconds,
 								projects,
+								cardPositioningMode: type === "favorites" ? "CustomCardPositioning" : undefined,
 							})
 						}>
 						Save

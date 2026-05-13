@@ -62,6 +62,15 @@ export type ThreadSearchResponse = {
 
 export type ViewType = "search" | "search-threads" | "latest" | "favorites" | "agent-builder" | "agent-list" | "template-create" | "template-list";
 
+/** How Favorites-type views place cards on the map. */
+export type CardPositioningMode = "Auto" | "CustomCardPositioning";
+
+/** Persisted world-space origin for a favorite row (CustomCardPositioning). */
+export type FavoriteEntryPosition = {
+	x: number;
+	y: number;
+};
+
 /** A single file indexed by the server's AgentBuilder. */
 export type IndexedFile = {
 	relativePath: string;
@@ -215,6 +224,8 @@ export type ViewDefinition = {
 	projects?: SelectedProject[];
 	symbols?: string;
 	subject?: string;
+	/** Favorites views only: Auto masonry vs drag-placed custom coordinates. */
+	cardPositioningMode?: CardPositioningMode;
 };
 
 export type ProjectGroup = {
@@ -244,6 +255,17 @@ export type FavoriteEntry = {
 	viewId: string;
 	source: FavoriteSource;
 	addedAt: number;
+	/** World-space position when the owning view uses CustomCardPositioning. */
+	position?: FavoriteEntryPosition;
+};
+
+/** Compact favorites-type view row stored next to FavoriteEntry rows for server JSON and sync UI. */
+export type FavoriteViewSnapshot = {
+	id: string;
+	name: string;
+	emoji: string;
+	color: string;
+	cardPositioningMode?: CardPositioningMode;
 };
 
 export type FilterState = {
@@ -284,6 +306,10 @@ export type CardData = {
 	contentDiverged?: boolean;
 	/** File size in bytes (agent-builder file cards only). */
 	fileSize?: number;
+	/** When built from Favorites: use taller min height so vertical action buttons are not clipped at high zoom. */
+	favoriteSource?: boolean;
+	/** Persisted favorite position (CustomCardPositioning); layout engine merges with auto fallback for missing rows. */
+	layoutPosition?: FavoriteEntryPosition;
 };
 
 export type ThreadCardData = {
@@ -305,6 +331,17 @@ export type ThreadCardData = {
 	score: number;
 	hits: number;
 	source: SerializedAgentThread;
+	favoriteSource?: boolean;
+	layoutPosition?: FavoriteEntryPosition;
+};
+
+/** Emitted when a favorite card is drag-repositioned (CustomCardPositioning). */
+export type CardPositionChangeEventDetail = {
+	viewId: string;
+	cardId: string;
+	kind: "message" | "thread";
+	x: number;
+	y: number;
 };
 
 export type MasterCardData = {

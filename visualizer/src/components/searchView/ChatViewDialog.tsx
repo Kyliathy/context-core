@@ -3,9 +3,14 @@
  * scrollable message thread.
  *
  * Opened when the user clicks a card title in the D3 map ("title-click" event).
- * Fetches all messages for the session via fetchSessionMessages(sessionId) and
- * renders them in chronological order. The target message (messageId) is
+ * Normally fetches all messages for the session via fetchSessionMessages(sessionId)
+ * and renders them in chronological order. The target message (messageId) is
  * scrolled into view and briefly highlighted with a blink animation on mount.
+ *
+ * Favorites views: when `favoriteSource` is passed (snapshot from the card),
+ * skips the API and renders a read-only breakdown of all stored text fields
+ * (subject, body, context/history/tags, thread summary, etc.) so custom or
+ * offline snapshots never show an empty "Chat session" shell.
  *
  * Sub-components:
  *   - MessageBubble: one message row — role label, timestamp, body text, and
@@ -24,20 +29,20 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { fetchSessionMessages } from "../../api/search";
-import type { SerializedAgentMessage, ToolCall } from "../../types";
+import type { FavoriteSource, SerializedAgentMessage, SerializedAgentThread, ToolCall } from "../../types";
 import { GREEN_FLASH_BOX_SHADOW, GREEN_FLASH_COLOR, GREEN_FLASH_FILTER, runGreenFlash } from "../../shared/greenFlash";
 import "./ChatViewDialog.css";
 
 type ChatViewDialogProps = {
 	sessionId: string;
 	messageId: string;
+	/** When set (favorites title click), render stored snapshot instead of fetching the session. */
+	favoriteSource?: FavoriteSource;
 	onClose: () => void;
 	onAddToBasket?: (text: string, cardId: string) => void;
 };
-
 function ToolCallBlock({ tool }: { tool: ToolCall }) {
 	const [expanded, setExpanded] = useState(false);
-
 	return (
 		<div className="cv-toolcall">
 			<button type="button" className="cv-toolcall-toggle" onClick={() => setExpanded((prev) => !prev)} aria-expanded={expanded}>
@@ -63,7 +68,117 @@ function ToolCallBlock({ tool }: { tool: ToolCall }) {
 		</div>
 	);
 }
-
+function filterRenderableToolCalls(message: SerializedAgentMessage): ToolCall[] {
+	return (message.toolCalls || []).filter(
+		(tool) =>
+			!(
+				tool.name === "unknownTool" &&
+				(!tool.context || tool.context.length === 0) &&
+				(!tool.results || tool.results.length === 0)
+			),
+	);
+}
+/** One labeled block of plain text (favorite snapshot). */
+function FavoriteTextSection({ label, value }: { label: string; value: string | null | undefined }) {
+	const trimmed = value?.trim();
+	if (!trimmed) {
+		return null;
+	}
+	return (
+		<section className="cv-fav-section">
+			<h3 className="cv-fav-section-title">{label}</h3>
+			<div className="cv-fav-text">{trimmed}</div>
+		</section>
+	);
+}
+/** Labeled <pre> for non-empty string lines (favorite snapshot). */
+function FavoriteLinesSection({ label, lines }: { label: string; lines: string[] }) {
+	const nonEmpty = lines.filter((l) => l.trim().length > 0);
+	if (nonEmpty.length === 0) {
+		return null;
+	}
+	return (
+		<section className="cv-fav-section">
+			<h3 className="cv-fav-section-title">{label}</h3>
+			<pre className="cv-fav-pre">{nonEmpty.join("\n")}</pre>
+		</section>
+	);
+}
+/** Read-only body when the dialog is driven by a FavoriteEntry snapshot (no session API). */
+function FavoriteSnapshotBody({ source, basketRootId }: { source: FavoriteSource; basketRootId: string }) {
+	if (source.type === "message") {
+		const m = source.data;
+		const tools = filterRenderableToolCalls(m);
+		return (
+			<div className="cv-fav-root" data-message-id={basketRootId}>
+				<p className="cv-fav-hint">Favorite snapshot — text stored with the card (no live session load).</p>
+				<div className="cv-fav-meta">
+					{m.harness && <span className="cv-fav-meta-chip">{m.harness}</span>}
+					{m.project && <span className="cv-fav-meta-chip">{m.project}</span>}
+					{m.role && <span className="cv-fav-meta-chip">{m.role}</span>}
+					{m.model && <span className="cv-fav-meta-chip">{m.model}</span>}
+					{m.dateTime && <span className="cv-fav-meta-chip">{new Date(m.dateTime).toLocaleString()}</span>}
+					<span className="cv-fav-meta-chip" title="Message id">
+						id {m.id}
+					</span>
+				</div>
+				<FavoriteTextSection label="Subject" value={m.subject} />
+				<FavoriteTextSection label="Message" value={m.message} />
+				<FavoriteLinesSection label="Context" lines={m.context ?? []} />
+				<FavoriteLinesSection label="History" lines={m.history ?? []} />
+				<FavoriteLinesSection label="Tags" lines={m.tags ?? []} />
+				<FavoriteLinesSection label="Symbols" lines={m.symbols ?? []} />
+				<FavoriteLinesSection label="Rationale" lines={m.rationale ?? []} />
+				<FavoriteTextSection label="Source path / origin" value={m.source} />
+				{m.tokenUsage && (m.tokenUsage.input != null || m.tokenUsage.output != null) && (
+					<section className="cv-fav-section">
+						<h3 className="cv-fav-section-title">Token usage</h3>
+						<div className="cv-fav-text">
+							in {m.tokenUsage.input ?? "—"} · out {m.tokenUsage.output ?? "—"}
+						</div>
+					</section>
+				)}
+				{tools.length > 0 && (
+					<section className="cv-fav-section">
+						<h3 className="cv-fav-section-title">Tool calls</h3>
+						<div className="cv-toolcalls">
+							{tools.map((tool, index) => (
+								<ToolCallBlock key={`fav-tool-${m.id}-${index}`} tool={tool} />
+							))}
+						</div>
+					</section>
+				)}
+			</div>
+		);
+	}
+	const t: SerializedAgentThread = source.data;
+	return (
+		<div className="cv-fav-root" data-message-id={basketRootId}>
+			<p className="cv-fav-hint">Favorite thread snapshot — summarized fields stored with the card.</p>
+			<div className="cv-fav-meta">
+				{t.harness && <span className="cv-fav-meta-chip">{t.harness}</span>}
+				{t.project && <span className="cv-fav-meta-chip">{t.project}</span>}
+				<span className="cv-fav-meta-chip">{t.messageCount} messages</span>
+				<span className="cv-fav-meta-chip">{t.totalLength} chars</span>
+				<span className="cv-fav-meta-chip" title="Session id">
+					session {t.sessionId}
+				</span>
+			</div>
+			<FavoriteTextSection label="Subject" value={t.subject} />
+			<FavoriteTextSection label="First message (excerpt)" value={t.firstMessage} />
+			{(t.firstDateTime || t.lastDateTime) && (
+				<FavoriteTextSection label="Date range" value={`${t.firstDateTime || "—"} → ${t.lastDateTime || "—"}`} />
+			)}
+			<FavoriteLinesSection label="Matching message ids" lines={t.matchingMessageIds ?? []} />
+			<section className="cv-fav-section">
+				<h3 className="cv-fav-section-title">Scores</h3>
+				<div className="cv-fav-text">
+					best match {t.bestMatchScore.toFixed(4)} · hits {t.hits}
+				</div>
+			</section>
+		</div>
+	);
+}
 function MessageBubble({ message, isTarget }: { message: SerializedAgentMessage; isTarget: boolean }) {
 	const bubbleRef = useRef<HTMLDivElement>(null);
 	const flashCleanupRef = useRef<(() => void) | null>(null);
@@ -71,7 +186,6 @@ function MessageBubble({ message, isTarget }: { message: SerializedAgentMessage;
 		const baseBorderLeftColor = getComputedStyle(element).borderLeftColor;
 		const baseFilter = "none";
 		const baseBoxShadow = "none";
-
 		return runGreenFlash((step) => {
 			element.style.transition = `border-left-color ${step.durationMs}ms ease-in-out, filter ${step.durationMs}ms ease-in-out, box-shadow ${step.durationMs}ms ease-in-out`;
 			if (step.phase === "glow") {
@@ -80,7 +194,6 @@ function MessageBubble({ message, isTarget }: { message: SerializedAgentMessage;
 				element.style.boxShadow = GREEN_FLASH_BOX_SHADOW;
 				return;
 			}
-
 			element.style.borderLeftColor = baseBorderLeftColor;
 			element.style.filter = baseFilter;
 			element.style.boxShadow = baseBoxShadow;
@@ -92,7 +205,6 @@ function MessageBubble({ message, isTarget }: { message: SerializedAgentMessage;
 			: message.role && message.role.length > 0
 				? message.role.charAt(0).toUpperCase() + message.role.slice(1)
 				: "Unknown";
-
 	useEffect(() => {
 		if (isTarget && bubbleRef.current) {
 			bubbleRef.current.scrollIntoView({ behavior: "instant", block: "center" });
@@ -104,16 +216,7 @@ function MessageBubble({ message, isTarget }: { message: SerializedAgentMessage;
 			};
 		}
 	}, [isTarget]);
-
-	const validToolCalls = (message.toolCalls || []).filter(
-		(tool) =>
-			!(
-				tool.name === "unknownTool" &&
-				(!tool.context || tool.context.length === 0) &&
-				(!tool.results || tool.results.length === 0)
-			),
-	);
-
+	const validToolCalls = filterRenderableToolCalls(message);
 	return (
 		<div ref={bubbleRef} className={`cv-message cv-message-${message.role}`} data-message-id={message.id}>
 			<div className="cv-message-header">
@@ -131,23 +234,45 @@ function MessageBubble({ message, isTarget }: { message: SerializedAgentMessage;
 		</div>
 	);
 }
-
-export default function ChatViewDialog({ sessionId, messageId, onClose, onAddToBasket }: ChatViewDialogProps) {
+export default function ChatViewDialog({
+	sessionId,
+	messageId,
+	favoriteSource,
+	onClose,
+	onAddToBasket,
+}: ChatViewDialogProps) {
 	const [messages, setMessages] = useState<SerializedAgentMessage[]>([]);
-	const [loading, setLoading] = useState(true);
+	const [loading, setLoading] = useState(() => !favoriteSource);
 	const [error, setError] = useState<string | null>(null);
 	const dialogRef = useRef<HTMLDivElement>(null);
 	const [selectionState, setSelectionState] = useState<{ text: string; top: number; left: number; cardId: string } | null>(null);
-
+	const readOnlyTopic = Boolean(favoriteSource);
+	const favoriteBasketCardId =
+		favoriteSource?.type === "message"
+			? favoriteSource.data.id
+			: favoriteSource?.type === "thread"
+				? favoriteSource.data.sessionId
+				: "";
+	const snapshotTitle =
+		favoriteSource?.type === "message"
+			? (favoriteSource.data.subject?.trim() || "Favorite message")
+			: favoriteSource?.type === "thread"
+				? (favoriteSource.data.subject?.trim() || "Favorite thread")
+				: "Chat Session";
 	const [isEditingTopic, setIsEditingTopic] = useState(false);
 	const [editedTopic, setEditedTopic] = useState("");
-	const currentTopic = messages.length > 0 ? messages.find((m) => m.subject)?.subject || "Chat Session" : "Chat Session";
-
+	const currentTopic = readOnlyTopic
+		? snapshotTitle
+		: messages.length > 0
+			? messages.find((m) => m.subject)?.subject || "Chat Session"
+			: "Chat Session";
 	const handleTopicClick = () => {
+		if (readOnlyTopic) {
+			return;
+		}
 		setEditedTopic(currentTopic);
 		setIsEditingTopic(true);
 	};
-
 	const saveTopic = async () => {
 		try {
 			await fetch("http://localhost:3210/api/topics", {
@@ -171,12 +296,15 @@ export default function ChatViewDialog({ sessionId, messageId, onClose, onAddToB
 			setIsEditingTopic(false);
 		}
 	};
-
 	useEffect(() => {
+		if (favoriteSource) {
+			setLoading(false);
+			setError(null);
+			return undefined;
+		}
 		let cancelled = false;
 		setLoading(true);
 		setError(null);
-
 		fetchSessionMessages(sessionId)
 			.then((data) => {
 				if (!cancelled) {
@@ -190,12 +318,10 @@ export default function ChatViewDialog({ sessionId, messageId, onClose, onAddToB
 					setLoading(false);
 				}
 			});
-
 		return () => {
 			cancelled = true;
 		};
-	}, [sessionId]);
-
+	}, [sessionId, favoriteSource]);
 	useEffect(() => {
 		const onKeyDown = (event: KeyboardEvent) => {
 			if (event.key === "Escape") {
@@ -205,7 +331,6 @@ export default function ChatViewDialog({ sessionId, messageId, onClose, onAddToB
 		document.addEventListener("keydown", onKeyDown);
 		return () => document.removeEventListener("keydown", onKeyDown);
 	}, [onClose]);
-
 	useEffect(() => {
 		const handleSelectionChange = () => {
 			const sel = window.getSelection();
@@ -213,26 +338,22 @@ export default function ChatViewDialog({ sessionId, messageId, onClose, onAddToB
 				setSelectionState(null);
 				return;
 			}
-
 			if (!dialogRef.current?.contains(sel.anchorNode)) {
 				setSelectionState(null);
 				return;
 			}
-
 			const text = sel.toString().trim();
 			if (!text) {
 				setSelectionState(null);
 				return;
 			}
-
 			try {
 				const range = sel.getRangeAt(0);
 				const rect = range.getBoundingClientRect();
 				const dialogRect = dialogRef.current.getBoundingClientRect();
-
-				// Find message ID
+				//Find message ID (live session bubbles) or keep favorite root id for snapshot body.
 				let node = sel.anchorNode;
-				let cardId = sessionId;
+				let cardId = favoriteBasketCardId || sessionId;
 				while (node && node !== dialogRef.current) {
 					if (node instanceof HTMLElement && node.dataset.messageId) {
 						cardId = node.dataset.messageId;
@@ -240,7 +361,6 @@ export default function ChatViewDialog({ sessionId, messageId, onClose, onAddToB
 					}
 					node = node.parentNode;
 				}
-
 				setSelectionState({
 					text,
 					top: rect.top + rect.height / 2,
@@ -251,11 +371,16 @@ export default function ChatViewDialog({ sessionId, messageId, onClose, onAddToB
 				setSelectionState(null);
 			}
 		};
-
 		document.addEventListener("selectionchange", handleSelectionChange);
 		return () => document.removeEventListener("selectionchange", handleSelectionChange);
-	}, [sessionId]);
-
+	}, [sessionId, favoriteBasketCardId]);
+	const copyHeaderPayload = () => {
+		if (favoriteSource) {
+			void navigator.clipboard.writeText(JSON.stringify(favoriteSource, null, 2));
+		} else {
+			void navigator.clipboard.writeText(JSON.stringify(messages, null, 2));
+		}
+	};
 	return (
 		<div className="cv-overlay" role="presentation" onClick={onClose}>
 			{selectionState && onAddToBasket && (
@@ -302,15 +427,15 @@ export default function ChatViewDialog({ sessionId, messageId, onClose, onAddToB
 							/>
 						</div>
 					) : (
-						<h2 className="cv-title" onClick={handleTopicClick} title="Click to edit topic">
+						<h2
+							className={`cv-title${readOnlyTopic ? " cv-title--readonly" : ""}`}
+							onClick={handleTopicClick}
+							title={readOnlyTopic ? "Favorite snapshot" : "Click to edit topic"}>
 							{currentTopic}
 						</h2>
 					)}
 					<div className="cv-header-actions">
-						<span
-							className="cv-envelope-btn"
-							title="Copy thread JSON"
-							onClick={() => navigator.clipboard.writeText(JSON.stringify(messages, null, 2))}>
+						<span className="cv-envelope-btn" title="Copy JSON" onClick={() => void copyHeaderPayload()}>
 							📧
 						</span>
 						<button type="button" className="cv-close-btn" onClick={onClose} aria-label="Close">
@@ -319,14 +444,20 @@ export default function ChatViewDialog({ sessionId, messageId, onClose, onAddToB
 					</div>
 				</div>
 				<div className="cv-body" onScroll={() => setSelectionState(null)}>
-					{loading && <div className="cv-loading">Loading session...</div>}
-					{error && <div className="cv-error">{error}</div>}
-					{!loading && !error && messages.length === 0 && <div className="cv-empty">No messages in this session.</div>}
-					{!loading &&
-						!error &&
-						messages.map((msg, idx) => (
-							<MessageBubble key={msg.id || `msg-${idx}`} message={msg} isTarget={msg.id === messageId} />
-						))}
+					{favoriteSource ? (
+						<FavoriteSnapshotBody source={favoriteSource} basketRootId={favoriteBasketCardId} />
+					) : (
+						<>
+							{loading && <div className="cv-loading">Loading session...</div>}
+							{error && <div className="cv-error">{error}</div>}
+							{!loading && !error && messages.length === 0 && <div className="cv-empty">No messages in this session.</div>}
+							{!loading &&
+								!error &&
+								messages.map((msg, idx) => (
+									<MessageBubble key={msg.id || `msg-${idx}`} message={msg} isTarget={msg.id === messageId} />
+								))}
+						</>
+					)}
 				</div>
 			</div>
 		</div>

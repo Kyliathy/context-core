@@ -499,6 +499,8 @@ flowchart LR
 | `/api/topics`              | GET    | List topic entries (AI summaries + custom topics)            | —                                                                                                                           |
 | `/api/topics/:sessionId`   | GET    | Topic entry for one session                                  | —                                                                                                                           |
 | `/api/topics`              | POST   | Set or clear custom topic override                           | `{ sessionId, customTopic }`                                                                                                |
+| `/api/favorites`           | GET    | List persisted visualizer favorite snapshots (`FavoriteEntry[]`) | —                                                                                                                        |
+| `/api/favorites`           | POST   | Replace full favorites list                                  | `{ favorites: FavoriteEntry[] }`                                                                                            |
 
 **`/api/projects` response shape:**
 ```json

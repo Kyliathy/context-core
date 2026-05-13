@@ -30,6 +30,7 @@ import AgentBasket from "./components/agentBuilder/AgentBuilder";
 import EditResultsView from "./components/searchView/EditResultsView";
 import AddFavoriteMessage, { type CustomTextInitial } from "./components/favorites/AddFavoriteMessage";
 import FavoritesPickerDialog from "./components/favorites/FavoritesPickerDialog";
+import FavoritesSyncConflictDialog from "./components/favorites/FavoritesSyncConflictDialog";
 import ChatViewDialog from "./components/searchView/ChatViewDialog";
 import ContentFileDialog from "./components/agentBuilder/ContentFileDialog";
 import FilterDialog from "./components/searchTools/FilterDialog";
@@ -56,6 +57,8 @@ import type {
 	CardAddKnowledgeEventDetail,
 	CardEditAgentEventDetail,
 	CardUseTemplateEventDetail,
+	CardPositionChangeEventDetail,
+	FavoriteSource,
 } from "./types";
 import "./App.css";
 
@@ -185,19 +188,35 @@ export default function App() {
 		createView,
 		updateView,
 		deleteView,
+		mergeFavoriteViewsFromSnapshots,
 	} = useViews();
+	const favoriteViews = useMemo(
+		() => views.filter((view) => view.type === "favorites").sort((left, right) => left.createdAt - right.createdAt),
+		[views],
+	);
 	const {
 		favorites,
 		storageError: favoritesStorageError,
+		syncError: favoritesSyncError,
+		pendingConflict: favoritesPendingConflict,
+		isSavingConflictChoice: favoritesSavingConflictChoice,
 		clearStorageError: clearFavoritesStorageError,
 		getFavoritesForView,
 		addFavorite,
 		updateFavorite,
+		updateFavoritePosition,
 		removeFavorite,
 		removeFavoritesForView,
 		isFavorited,
 		getFavoriteViewIds,
-	} = useFavorites();
+		acceptServerFavorites,
+		keepLocalFavorites,
+		dismissSyncConflict,
+		retryFavoriteSync,
+	} = useFavorites({
+		favoriteViewsForSync: favoriteViews,
+		onMergeServerFavoriteViews: mergeFavoriteViewsFromSnapshots,
+	});
 	const favoritesForActiveView = useMemo(() => getFavoritesForView(activeViewId), [activeViewId, getFavoritesForView]);
 	const [searchInputValue, setSearchInputValue] = useState(activeView.type === "search-threads" ? "" : activeView.query);
 	const [dateRangePreset, setDateRangePreset] = useState<DateRangePreset>(() => {
@@ -327,7 +346,11 @@ export default function App() {
 	const [isAddFavoriteMessageOpen, setIsAddFavoriteMessageOpen] = useState(false);
 	const [editingCustomCardId, setEditingCustomCardId] = useState<string | null>(null);
 	const [isFavoritesPickerOpen, setIsFavoritesPickerOpen] = useState(false);
-	const [chatViewTarget, setChatViewTarget] = useState<{ sessionId: string; messageId: string } | null>(null);
+	const [chatViewTarget, setChatViewTarget] = useState<{
+		sessionId: string;
+		messageId: string;
+		favoriteSource?: FavoriteSource;
+	} | null>(null);
 	const [pendingStarDetail, setPendingStarDetail] = useState<CardStarEventDetail | null>(null);
 	const [editingView, setEditingView] = useState<ViewDefinition | undefined>(undefined);
 	const [hoverDetail, setHoverDetail] = useState<HoverEventDetail | null>(null);
@@ -425,11 +448,6 @@ export default function App() {
 		});
 	}, []);
 
-	const favoriteViews = useMemo(
-		() => views.filter((view) => view.type === "favorites").sort((left, right) => left.createdAt - right.createdAt),
-		[views],
-	);
-
 	const starredCardIds = useMemo(() => {
 		if (activeView.type === "favorites") {
 			return new Set(favoritesForActiveView.map((entry) => entry.cardId));
@@ -506,10 +524,14 @@ export default function App() {
 		};
 	}, [activeView.id, activeView.type, activeView.query, activeView.autoRefreshSeconds, search]);
 
-	const favoritesSignature = useMemo(
-		() => favoritesForActiveView.map((entry) => `${entry.cardId}:${entry.addedAt}`).join("|"),
-		[favoritesForActiveView],
-	);
+	const favoritesSignature = useMemo(() => {
+		if (activeView.type !== "favorites") {
+			return "";
+		}
+		return favoritesForActiveView
+			.map((e) => `${e.cardId}:${e.addedAt}:${e.position ? `${e.position.x},${e.position.y}` : ""}`)
+			.join("|");
+	}, [activeView.type, favoritesForActiveView]);
 
 	useEffect(() => {
 		if (activeView.type === "favorites") {
@@ -594,6 +616,7 @@ export default function App() {
 			autoQuery: boolean;
 			autoRefreshSeconds: number;
 			projects: import("./types").SelectedProject[];
+			cardPositioningMode?: import("./types").CardPositioningMode;
 		}) => {
 			if (dialogMode === "add") {
 				createView({
@@ -605,6 +628,7 @@ export default function App() {
 					autoQuery: payload.type === "search" ? payload.autoQuery : false,
 					autoRefreshSeconds: payload.type === "search" ? payload.autoRefreshSeconds : 0,
 					projects: payload.projects,
+					...(payload.type === "favorites" ? { cardPositioningMode: payload.cardPositioningMode ?? "CustomCardPositioning" } : {}),
 				});
 			} else if (editingView) {
 				updateView(editingView.id, {
@@ -616,6 +640,7 @@ export default function App() {
 					autoQuery: payload.type === "search" ? payload.autoQuery : false,
 					autoRefreshSeconds: payload.type === "search" ? payload.autoRefreshSeconds : 0,
 					projects: payload.projects,
+					...(payload.type === "favorites" ? { cardPositioningMode: payload.cardPositioningMode ?? "CustomCardPositioning" } : {}),
 				});
 			}
 			if (payload.type === "search") {
@@ -636,6 +661,16 @@ export default function App() {
 		deleteView(editingView.id);
 		closeEditResultsView();
 	}, [closeEditResultsView, deleteView, editingView, removeFavoritesForView]);
+
+	const handleCardPositionChange = useCallback(
+		(detail: CardPositionChangeEventDetail) => {
+			if (activeView.type !== "favorites" || activeView.id !== detail.viewId) {
+				return;
+			}
+			updateFavoritePosition(detail.cardId, detail.viewId, { x: detail.x, y: detail.y });
+		},
+		[activeView.type, activeView.id, updateFavoritePosition],
+	);
 
 	// Fetch agent builder sources once on mount for the dropdown preview
 	useEffect(() => {
@@ -1076,7 +1111,34 @@ export default function App() {
 
 	const handleTitleClick = useCallback(
 		(detail: TitleClickEventDetail) => {
-			if (!detail.sessionId) return;
+			if (activeView.type === "favorites") {
+				const msgCard = locallyFilteredCards.find((c) => c.id === detail.messageId);
+				if (msgCard) {
+					setChatViewTarget({
+						sessionId: detail.sessionId || msgCard.sessionId,
+						messageId: detail.messageId,
+						favoriteSource: { type: "message", data: msgCard.source },
+					});
+					return;
+				}
+				const threadCard = locallyFilteredThreadCards.find(
+					(t) =>
+						t.sessionId === detail.sessionId
+						|| (detail.messageId.length > 0 && t.matchingMessageIds.includes(detail.messageId)),
+				);
+				if (threadCard) {
+					setChatViewTarget({
+						sessionId: detail.sessionId || threadCard.sessionId,
+						messageId: detail.messageId,
+						favoriteSource: { type: "thread", data: threadCard.source },
+					});
+					return;
+				}
+			}
+
+			if (!detail.sessionId) {
+				return;
+			}
 			if (activeView.type === "agent-builder") {
 				// In agent-builder mode, open Content File viewer instead of Chat Session
 				const card = cards.find((c) => c.id === detail.messageId);
@@ -1090,7 +1152,7 @@ export default function App() {
 				setChatViewTarget({ sessionId: detail.sessionId, messageId: detail.messageId });
 			}
 		},
-		[activeView.type, cards],
+		[activeView.type, cards, locallyFilteredCards, locallyFilteredThreadCards],
 	);
 
 	const handleCardEditAgent = useCallback(
@@ -1232,7 +1294,9 @@ export default function App() {
 	const hoverVisible = useMemo(() => {
 		return viewport.k < HOVER_PANEL_MAX_ZOOM && hoverDetail?.phase !== "leave" && Boolean(hoverDetail?.data);
 	}, [hoverDetail, viewport.k]);
-	const storageError = viewStorageError ?? favoritesStorageError;
+	const favoritesBannerError =
+		favoritesPendingConflict === null ? (favoritesStorageError ?? favoritesSyncError) : null;
+	const storageError = viewStorageError ?? favoritesBannerError;
 	const clearStorageError = useCallback(() => {
 		clearViewStorageError();
 		clearFavoritesStorageError();
@@ -1302,6 +1366,11 @@ export default function App() {
 			{storageError && (
 				<div className="error-banner">
 					<span>{storageError}</span>
+					{favoritesSyncError && !favoritesStorageError && !viewStorageError && (
+						<button type="button" className="error-retry" onClick={retryFavoriteSync}>
+							Retry sync
+						</button>
+					)}
 					<button type="button" className="error-dismiss" onClick={clearStorageError}>
 						×
 					</button>
@@ -1369,6 +1438,7 @@ export default function App() {
 					query={activeView.type === "search" || activeView.type === "search-threads" ? query : activeView.name}
 					isLoading={isLoading}
 					viewType={activeView.type}
+					favoriteMapViewId={activeView.type === "favorites" ? activeView.id : undefined}
 					onHover={handleHover}
 					onViewportChange={handleViewportChange}
 					onLineClick={handleLineClick}
@@ -1377,6 +1447,7 @@ export default function App() {
 					onCardAddKnowledge={handleAddKnowledgeFromCard}
 					onCardEditAgent={handleCardEditAgent}
 					onCardUseTemplate={handleCardUseTemplate}
+					onCardPositionChange={handleCardPositionChange}
 					starredCardIds={starredCardIds}
 				/>
 			</div>
@@ -1514,10 +1585,20 @@ export default function App() {
 				onSave={handleSaveFavorites}
 				onCreate={handleCreateFavoriteView}
 			/>
+			<FavoritesSyncConflictDialog
+				open={favoritesPendingConflict !== null}
+				conflict={favoritesPendingConflict}
+				isSaving={favoritesSavingConflictChoice}
+				error={favoritesSyncError}
+				onAcceptServer={acceptServerFavorites}
+				onKeepLocal={() => void keepLocalFavorites()}
+				onClose={dismissSyncConflict}
+			/>
 			{chatViewTarget && (
 				<ChatViewDialog
 					sessionId={chatViewTarget.sessionId}
 					messageId={chatViewTarget.messageId}
+					favoriteSource={chatViewTarget.favoriteSource}
 					onClose={closeChatView}
 					onAddToBasket={(text, messageId) => {
 						const id = `${messageId}-sel-${Date.now()}`;

@@ -4,6 +4,7 @@ import type { QdrantService } from "../vector/QdrantService.js";
 import type { TopicStore } from "../settings/TopicStore.js";
 import type { AgentBuilder } from "../agentBuilder/AgentBuilder.js";
 import type { ScopeStore } from "../settings/ScopeStore.js";
+import type { FavoriteStore } from "../settings/FavoriteStore.js";
 import type { SummaryEmbeddingCache } from "../vector/SummaryEmbeddingCache.js";
 
 export interface RouteContext
@@ -11,6 +12,7 @@ export interface RouteContext
 	messageDB: IMessageStore;
 	topicStore?: TopicStore;
 	scopeStore?: ScopeStore;
+	favoriteStore?: FavoriteStore;
 	agentBuilder?: AgentBuilder;
 	summaryEmbeddingCache?: SummaryEmbeddingCache;
 	vectorServices?: {

@@ -1,6 +1,6 @@
 import { useEffect, useRef, type RefObject } from "react";
 import { createChatMapEngine, type ChatMapEngine } from "../d3/chatMapEngine";
-import type { CardData, ThreadCardData, MasterCardData, HoverEventDetail, ViewportChangeDetail, LineClickEventDetail, CardStarEventDetail, TitleClickEventDetail, CardAddKnowledgeEventDetail, CardEditAgentEventDetail, CardUseTemplateEventDetail, ViewType } from "../types";
+import type { CardData, ThreadCardData, MasterCardData, HoverEventDetail, ViewportChangeDetail, LineClickEventDetail, CardStarEventDetail, TitleClickEventDetail, CardAddKnowledgeEventDetail, CardEditAgentEventDetail, CardUseTemplateEventDetail, ViewType, CardPositionChangeEventDetail } from "../types";
 
 type UseChatMapParams = {
 	containerRef: RefObject<HTMLDivElement | null>;
@@ -10,6 +10,8 @@ type UseChatMapParams = {
 	resetViewportToken?: number;
 	starredCardIds?: Set<string>;
 	viewType?: ViewType;
+	/** Active favorites tab id when viewType is favorites (custom positioning drag payloads). */
+	favoriteMapViewId?: string;
 	onHover?: (detail: HoverEventDetail) => void;
 	onViewportChange?: (detail: ViewportChangeDetail) => void;
 	onLineClick?: (detail: LineClickEventDetail) => void;
@@ -18,11 +20,31 @@ type UseChatMapParams = {
 	onCardAddKnowledge?: (detail: CardAddKnowledgeEventDetail) => void;
 	onCardEditAgent?: (detail: CardEditAgentEventDetail) => void;
 	onCardUseTemplate?: (detail: CardUseTemplateEventDetail) => void;
+	onCardPositionChange?: (detail: CardPositionChangeEventDetail) => void;
 };
 
-export function useChatMap({ containerRef, cards, threadCards = [], masterCards = [], resetViewportToken, starredCardIds, viewType, onHover, onViewportChange, onLineClick, onCardStar, onTitleClick, onCardAddKnowledge, onCardEditAgent, onCardUseTemplate }: UseChatMapParams)
+export function useChatMap({
+	containerRef,
+	cards,
+	threadCards = [],
+	masterCards = [],
+	resetViewportToken,
+	starredCardIds,
+	viewType,
+	favoriteMapViewId,
+	onHover,
+	onViewportChange,
+	onLineClick,
+	onCardStar,
+	onTitleClick,
+	onCardAddKnowledge,
+	onCardEditAgent,
+	onCardUseTemplate,
+	onCardPositionChange,
+}: UseChatMapParams)
 {
 	const engineRef = useRef<ChatMapEngine | null>(null);
+	const favoritesFitKeyRef = useRef("");
 	const latestCardsRef = useRef<CardData[]>(cards);
 	const latestThreadCardsRef = useRef<ThreadCardData[]>(threadCards);
 	const latestMasterCardsRef = useRef<MasterCardData[]>(masterCards);
@@ -34,6 +56,7 @@ export function useChatMap({ containerRef, cards, threadCards = [], masterCards 
 	const onCardAddKnowledgeRef = useRef<typeof onCardAddKnowledge>(onCardAddKnowledge);
 	const onCardEditAgentRef = useRef<typeof onCardEditAgent>(onCardEditAgent);
 	const onCardUseTemplateRef = useRef<typeof onCardUseTemplate>(onCardUseTemplate);
+	const onCardPositionChangeRef = useRef<typeof onCardPositionChange>(onCardPositionChange);
 
 	useEffect(() =>
 	{
@@ -89,6 +112,11 @@ export function useChatMap({ containerRef, cards, threadCards = [], masterCards 
 	{
 		onCardUseTemplateRef.current = onCardUseTemplate;
 	}, [onCardUseTemplate]);
+
+	useEffect(() =>
+	{
+		onCardPositionChangeRef.current = onCardPositionChange;
+	}, [onCardPositionChange]);
 
 	useEffect(() =>
 	{
@@ -154,6 +182,10 @@ export function useChatMap({ containerRef, cards, threadCards = [], masterCards 
 				{
 					onCardUseTemplateRef.current(detail as CardUseTemplateEventDetail);
 				}
+				if (type === "card-position-change" && onCardPositionChangeRef.current)
+				{
+					onCardPositionChangeRef.current(detail as CardPositionChangeEventDetail);
+				}
 			},
 		});
 
@@ -188,11 +220,46 @@ export function useChatMap({ containerRef, cards, threadCards = [], masterCards 
 		{
 			return;
 		}
+		if (viewType === "favorites")
+		{
+			return;
+		}
 		requestAnimationFrame(() =>
 		{
 			engineRef.current?.resetViewportToTop(1, 24, 24);
 		});
-	}, [resetViewportToken]);
+	}, [resetViewportToken, viewType]);
+
+	//Fit favorites when switching tabs or when cards first populate (not on position-only updates — same count + id).
+	useEffect(() =>
+	{
+		if (viewType !== "favorites")
+		{
+			favoritesFitKeyRef.current = "";
+			return;
+		}
+		if (!engineRef.current)
+		{
+			return;
+		}
+		const len = cards.length + threadCards.length;
+		const key = `${favoriteMapViewId ?? ""}:${len}`;
+		if (len === 0)
+		{
+			favoritesFitKeyRef.current = key;
+			return;
+		}
+		if (favoritesFitKeyRef.current === key)
+		{
+			return;
+		}
+		favoritesFitKeyRef.current = key;
+		const id = requestAnimationFrame(() =>
+		{
+			engineRef.current?.zoomToFit(80);
+		});
+		return () => cancelAnimationFrame(id);
+	}, [viewType, favoriteMapViewId, cards.length, threadCards.length]);
 
 	useEffect(() =>
 	{
@@ -205,16 +272,25 @@ export function useChatMap({ containerRef, cards, threadCards = [], masterCards 
 
 	useEffect(() =>
 	{
-		if (!engineRef.current) return;
-		const mode = viewType === "agent-builder"
-			? "agent-builder"
-			: viewType === "agent-list"
-				? "agent-list"
-				: viewType === "template-list"
-					? "template-list"
-					: "default";
-		engineRef.current.setConfig({ cardRenderMode: mode });
-	}, [viewType]);
+		if (!engineRef.current)
+		{
+			return;
+		}
+		const mode =
+			viewType === "agent-builder"
+				? "agent-builder"
+				: viewType === "agent-list"
+					? "agent-list"
+					: viewType === "template-list"
+						? "template-list"
+						: "default";
+		const favMode = viewType === "favorites" ? "CustomCardPositioning" : "Auto";
+		engineRef.current.setConfig({
+			cardRenderMode: mode,
+			favoritesCardPositioning: favMode,
+			favoriteMapViewId: viewType === "favorites" ? (favoriteMapViewId ?? "") : "",
+		});
+	}, [viewType, favoriteMapViewId]);
 
 	return engineRef;
 }

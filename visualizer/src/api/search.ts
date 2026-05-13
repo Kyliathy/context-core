@@ -1,4 +1,4 @@
-import type { SearchHit, SerializedAgentMessage, SerializedAgentThread, ThreadSearchResponse, ProjectGroup, SelectedProject, PrepareResponse, CreateAgentInput, CreateAgentResponse, AgentListResponse, GetAgentResponse, CreateTemplateInput, CreateTemplateResponse, TemplateListResponse, FileContentResponse, Scope } from "../types";
+import type { SearchHit, SerializedAgentMessage, SerializedAgentThread, ThreadSearchResponse, ProjectGroup, SelectedProject, PrepareResponse, CreateAgentInput, CreateAgentResponse, AgentListResponse, GetAgentResponse, CreateTemplateInput, CreateTemplateResponse, TemplateListResponse, FileContentResponse, Scope, FavoriteEntry, FavoriteViewSnapshot } from "../types";
 
 // Empty string = relative URL. In production, the visualizer is served from the same Express
 // origin so /api/* resolves correctly. In dev, Vite's proxy (vite.config.ts) forwards to the server.
@@ -38,6 +38,50 @@ export async function saveScopes(scopes: Scope[]): Promise<{ saved: number }>
 		throw new Error(`Save scopes failed: ${response.status} ${response.statusText}`);
 	}
 	return response.json() as Promise<{ saved: number }>;
+}
+
+export type FavoritesServerBundle = {
+	favorites: FavoriteEntry[];
+	favoriteViews: FavoriteViewSnapshot[];
+};
+
+export async function fetchFavorites(): Promise<FavoritesServerBundle>
+{
+	const response = await fetch(`${API_BASE}/api/favorites`);
+	if (!response.ok)
+	{
+		throw new Error(`Fetch favorites failed: ${response.status} ${response.statusText}`);
+	}
+	const data = (await response.json()) as unknown;
+	if (Array.isArray(data))
+	{
+		return { favorites: data as FavoriteEntry[], favoriteViews: [] };
+	}
+	if (!data || typeof data !== "object")
+	{
+		return { favorites: [], favoriteViews: [] };
+	}
+	const record = data as Record<string, unknown>;
+	const favorites = Array.isArray(record.favorites) ? (record.favorites as FavoriteEntry[]) : [];
+	const favoriteViews = Array.isArray(record.favoriteViews) ? (record.favoriteViews as FavoriteViewSnapshot[]) : [];
+	return { favorites, favoriteViews };
+}
+
+export async function saveFavorites(
+	favorites: FavoriteEntry[],
+	favoriteViews: FavoriteViewSnapshot[],
+): Promise<{ saved: number; savedViews?: number }>
+{
+	const response = await fetch(`${API_BASE}/api/favorites`, {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ favorites, favoriteViews }),
+	});
+	if (!response.ok)
+	{
+		throw new Error(`Save favorites failed: ${response.status} ${response.statusText}`);
+	}
+	return response.json() as Promise<{ saved: number; savedViews?: number }>;
 }
 
 /** Shape returned by the server's /api/search endpoint. */

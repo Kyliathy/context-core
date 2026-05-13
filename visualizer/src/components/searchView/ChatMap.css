@@ -13,6 +13,12 @@
   background: var(--bg-primary);
 }
 
+.chat-map-container--favorites .chat-html,
+.chat-map-container--favorites .thread-html {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
 .map-overlay {
   position: absolute;
   left: 50%;

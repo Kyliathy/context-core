@@ -1,8 +1,8 @@
 # ContextCore Visualizer — UI & Hooks Deep Dive
 
-**Date**: 2026-03-20 (updated)
-**Relates to**: [`archi-context-core-visualizer.md`](../archi-context-core-visualizer.md)
-**Scope**: React component design, hook internals, localStorage contracts, modal flows, Agent Builder system, template system, and project-scoped search.
+**Date**: 2026-03-20 (updated 2026-05-13)  
+**Relates to**: [`archi-context-core-visualizer.md`](../archi-context-core-visualizer.md) · **[Favorites UI & map behavior → `archi-favorites-ui.md`](./archi-favorites-ui.md)**  
+**Scope**: React component design, hook internals, localStorage contracts, modal flows, Agent Builder system, template system, project-scoped search, **favorites custom map (drag, pan rules, persistence)**.
 
 ---
 
@@ -10,10 +10,20 @@
 
 The UI layer is a Vite + React SPA. All business logic lives in custom hooks. Components are thin: they receive props, render JSX, and delegate user interactions back to callbacks. The only exception is `SearchBar`, which owns its own input state and history panel open/close logic.
 
+### 1.1 Favorites map (synopsis)
+
+**Full detail:** [`archi-favorites-ui.md`](./archi-favorites-ui.md).
+
+- **Data**: `FavoriteEntry` rows in **`ccv:favorites`**; optional **`position: { x, y }`** per row; server bundle adds **`favoriteViews`** metadata (`GET`/`POST` **`/api/favorites`**).
+- **Views**: Favorites-type tabs in **`ccv:views`** are normalized to **`cardPositioningMode: "CustomCardPositioning"`** (`useViews.normalizeView`). There is **no** in-app toggle for Auto vs Custom on the SearchBar; **EditResultsView** still saves **`CustomCardPositioning`** for favorites tabs so the server bundle stays aligned.
+- **Pipeline**: On a favorites tab, **`useSearch`** builds **`cards` / `threadCards`** from local rows, copies **`position` → `layoutPosition`** when present, and does **not** bump **`searchResetToken`** on that path (avoids unwanted viewport resets). **`App.favoritesSignature`** (positions + ids) retriggers **`search`** when rows or coordinates change.
+- **Map**: **`useChatMap`** always passes **`CustomCardPositioning`** + **`favoriteMapViewId`** into **`chatMapEngine`**. **Pan** is blocked when the pointer starts on card content (including **`foreignObject` HTML**); **drag** moves cards in world space and emits **`card-position-change`** on release → **`updateFavoritePosition`**. **`ChatMap`** adds **`chat-map-container--favorites`** for drag-friendly CSS.
+- **PWA**: **`vite.config.ts`** Workbox **`runtimeCaching`** includes **`/api/favorites`** so the service worker does not error when intercepting sync requests.
+
 ```
 App.tsx
  ├─ useViews          — view definitions + active selection (persisted)
- ├─ useFavorites      — per-view starred card snapshots (persisted)
+ ├─ useFavorites      — per-view starred card snapshots (persisted) + server sync / conflict flow
  ├─ useSearch         — view-aware card + thread sourcing (API or localStorage)
  ├─ useSearchHistory  — 100-entry FIFO query history (persisted)
  ├─ useOnlineStatus   — navigator.onLine watcher
@@ -29,8 +39,9 @@ App.tsx
  ├─ <EditResultsView>         — add/edit view modal (with scopes + project scope checkboxes)
  │   └─ <EditScope>           — inline scope metadata editor (name/emoji/color)
  ├─ <AddFavoriteMessage>      — custom text entry for favorites view
- ├─ <FavoritesPickerDialog>   — star target picker modal
- ├─ <ChatViewDialog>          — full session thread viewer + custom topic editor
+├─ <FavoritesPickerDialog>   — star target picker modal
+├─ <FavoritesSyncConflictDialog> — server vs local favorites bundle (wired from `useFavorites`)
+├─ <ChatViewDialog>          — full session thread viewer + custom topic editor
  └─ <FilterDialog>            — role + min-score filter panel
 ```
 
@@ -44,7 +55,7 @@ App.tsx
 
 1. **Mount all hooks** and wire their outputs to components.
 2. **Control modal visibility** via local boolean state (`isEditResultsViewOpen`, `editingView`, `isFavoritesPickerOpen`, `pendingStarDetail`, `chatViewTarget`, `isFilterDialogOpen`, `isAddFavoriteMessageOpen`).
-3. **Dispatch D3 engine events** received from `useChatMap` (`onHover`, `onViewportChange`, `onLineClick`, `onCardStar`, `onTitleClick`, `onCardAddKnowledge`, `onCardEditAgent`, `onCardUseTemplate`) into the relevant UI state or hook calls.
+3. **Dispatch D3 engine events** received from `useChatMap` (`onHover`, `onViewportChange`, `onLineClick`, `onCardStar`, `onTitleClick`, `onCardAddKnowledge`, `onCardEditAgent`, `onCardUseTemplate`, **`onCardPositionChange`**) into the relevant UI state or hook calls.
 4. **Run the auto-refresh interval**: when `activeView.autoRefreshSeconds > 0`, fire `search()` on an interval.
 5. **Fire auto-query on view switch**: search fires automatically when switching to any non-search built-in view (latest, agent-builder, agent-list, template-list, favorites).
 6. **Manage agent builder state**: knowledge entries, edit mode, template mode, source filter, and the create/save lifecycle.
@@ -140,10 +151,13 @@ On mount, `safeReadViews()` reads `ccv:views`, strips any built-in IDs from stor
 
 ### 3.2 `useFavorites` — Per-View Starred Cards & Threads
 
-**File**: [src/hooks/useFavorites.ts](../../src/hooks/useFavorites.ts)
-**Storage key**: `ccv:favorites`
+**File**: [src/hooks/useFavorites.ts](../../src/hooks/useFavorites.ts)  
+**Client storage key**: `ccv:favorites`  
+**Server**: `GET /api/favorites` and `POST /api/favorites` (see [src/hooks/favoriteSync.ts](../../src/hooks/favoriteSync.ts) for diff/signature helpers and `FavoritesSyncConflictDialog` when local and server lists disagree).
 
-Stores a flat `FavoriteEntry[]`. Favorites are keyed by `(cardId, viewId)`, so the same card can appear in multiple favorites views independently. The `FavoriteSource` union holds either a full `SerializedAgentMessage` or `SerializedAgentThread` snapshot (denormalized so favorites survive backend changes).
+Stores a flat `FavoriteEntry[]`. Favorites are keyed by `(cardId, viewId)`, so the same card can appear in multiple favorites views independently. The `FavoriteSource` union holds either a full `SerializedAgentMessage` or `SerializedAgentThread` snapshot.
+
+On startup (when `navigator.onLine`), the hook fetches the server list and either applies it (when local is empty), no-ops (when signatures match), or opens **FavoritesSyncConflictDialog** so the user picks server vs local before overwriting either side. Mutations write localStorage immediately and debounce-save the full list to the server when reachable.
 
 Legacy entries (missing the `type` discriminator) are transparently migrated to `{ type: "message", data: ... }` on load.
 
@@ -194,11 +208,12 @@ Max 100 entries, newest first. Deduplicates by case-insensitive match (moves to 
 
 Manages the lifecycle of the imperative D3 engine declaratively. Key behaviours:
 
-- **Ref-stabilised callbacks**: All event callbacks (`onHover`, `onCardStar`, `onCardAddKnowledge`, etc.) are mirrored into refs so the engine closure never needs recreation on re-render.
+- **Ref-stabilised callbacks**: All event callbacks (`onHover`, `onCardStar`, `onCardAddKnowledge`, **`onCardPositionChange`**, etc.) are mirrored into refs so the engine closure never needs recreation on re-render.
 - **Engine created once**: The init `useEffect` depends only on `containerRef` (stable object), so the engine mounts exactly once.
-- **`setConfig()`**: Called when `viewType` changes (to set `cardRenderMode`) and when `panelWidth` changes (to set `viewportInset.left`). Replaces the old `setAgentBuilderMode()` / `setCardRenderMode()` methods.
+- **`setConfig()`**: Called when **`viewType`** or **`favoriteMapViewId`** change (sets **`cardRenderMode`**, **`favoritesCardPositioning`**, **`favoriteMapViewId`** — for **`viewType === "favorites"`** positioning is always **`CustomCardPositioning`**) and when `panelWidth` changes (sets `viewportInset.left`).
 - **Signature-gated zoom-to-fit**: Only fires when the card set identity actually changes (checked via a `cards.length + ids` signature string), so hover changes and resize events don't trigger a viewport reset.
 - **ResizeObserver**: Re-runs layout on container size change using latest card refs (no stale closures).
+- **Favorites viewport**: While **`viewType === "favorites"`**, **`resetViewportToken`** does **not** trigger **`resetViewportToTop`**. **`zoomToFit(80)`** runs only when the favorites tab id or total card count changes (see **`favoritesFitKeyRef`** in the hook). **Details:** [`archi-favorites-ui.md` §10](./archi-favorites-ui.md#10-d3-engine-rendering-and-layout).
 
 #### Card Render Modes
 
@@ -282,7 +297,7 @@ Additional SearchBar controls:
 
 **File**: [src/components/searchView/EditResultsView.tsx](../../src/components/searchView/EditResultsView.tsx)
 
-Add/edit modal for user-created views. In edit mode shows a Delete button with inline confirmation. Fields: Name, Type (radio: Search/Favorites), Emoji, Color, Query, Auto Query, Auto Refresh, and (for search/search-threads) a **scopes + project scope grid**.
+Add/edit modal for user-created views. In edit mode shows a Delete button with inline confirmation. Fields: Name, Type (radio: Search/Favorites), Emoji, Color, Query, Auto Query, Auto Refresh, and (for search/search-threads) a **scopes + project scope grid**. For **favorites**-type saves, **`cardPositioningMode`** in the payload is always **`CustomCardPositioning`** (no in-modal layout radios — behavior is documented in [`archi-favorites-ui.md`](./archi-favorites-ui.md)).
 
 **Scopes** (search type only): Fetches persisted scopes from `GET /api/list-scopes` on modal open. Scopes are displayed as clickable buttons (emoji + name + color swatch); selecting a scope loads its `projectIds` into the project checkbox grid. Three scope actions are available:
 - **Create Scope**: saves currently selected projects as a new named scope (requires ≥ 2 projects). Opens an inline `EditScope` editor for name/emoji/color (name max 40 chars, emoji defaults to "📦", color validated as `#RRGGBB`).
@@ -333,7 +348,7 @@ Fixed bottom bar. Result count label is context-aware: "X messages", "X threads"
 
 **File**: [src/components/searchView/ChatMap.tsx](../../src/components/searchView/ChatMap.tsx)
 
-Thin React shell rendering `<div ref={containerRef}>` passed to `useChatMap`. The D3 engine mutates the SVG DOM inside. Forwards `viewType` and all event callbacks. Shows empty-state and loading overlays.
+Thin React shell rendering `<div ref={containerRef}>` passed to `useChatMap`. The D3 engine mutates the SVG DOM inside. Forwards **`viewType`**, **`favoriteMapViewId`** (on favorites tabs), and all event callbacks (including **`onCardPositionChange`**). Shows empty-state and loading overlays. When **`viewType === "favorites"`**, the map container adds **`chat-map-container--favorites`** (drag-friendly **`user-select`** on card HTML — see [`archi-favorites-ui.md`](./archi-favorites-ui.md)).
 
 ---
 
@@ -468,7 +483,7 @@ User clicks ✏️ on an agent-list card → D3 emits `"card-edit-agent"` → Ap
 | ------------------- | ------------------ | ----------------------- | ------------------------------------------------------------------------------------------------------ |
 | `ccv:views`         | `useViews`         | `ViewDefinition[]` JSON | Built-ins stripped on read; re-injected from constants. Includes `projects` field for scoped searches. |
 | `ccv:activeViewId`  | `useViews`         | string                  | Validated against loaded views on mount; falls back to `built-in-latest`                               |
-| `ccv:favorites`     | `useFavorites`     | `FavoriteEntry[]` JSON  | Polymorphic `FavoriteSource`; legacy entries auto-migrated                                             |
+| `ccv:favorites`     | `useFavorites`     | `FavoriteEntry[]` JSON  | Polymorphic `FavoriteSource`; legacy entries auto-migrated; synced with `GET/POST /api/favorites` when online |
 | `ccv:searchHistory` | `useSearchHistory` | `string[]` JSON         | Max 100 entries, newest first                                                                          |
 
 All reads are `try/catch`-guarded with safe fallbacks. Write failures surface as `storageError` in App.

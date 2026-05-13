@@ -1,9 +1,9 @@
 import * as d3 from "d3";
 import { getHarnessColor, getProjectColor, getProjectTextColor } from "./colors";
-import { computeGridLayout, computeWorldBounds, computeThreadGridLayout, computeMixedGridLayout, computeMixedWorldBounds, computeMasterCardLayout, computeMasterCardWorldBounds } from "./layout";
+import { computeGridLayout, computeWorldBounds, computeThreadGridLayout, computeMixedGridLayout, computeMixedWorldBounds, computeMasterCardLayout, computeMasterCardWorldBounds, computeCustomFavoritesLayout } from "./layout";
 import { formatDateTime, formatDateTimeRange } from "./dateFormat";
 import { GREEN_FLASH_COLOR, GREEN_FLASH_FILTER, runGreenFlash } from "../shared/greenFlash";
-import type { CardData, ThreadCardData, MasterCardData, HoverEventDetail, ViewportChangeDetail, LineClickEventDetail, CardStarEventDetail, FavoriteSource, CardAddKnowledgeEventDetail, CardEditAgentEventDetail, CardUseTemplateEventDetail } from "../types";
+import type { CardData, ThreadCardData, MasterCardData, HoverEventDetail, ViewportChangeDetail, LineClickEventDetail, CardStarEventDetail, FavoriteSource, CardAddKnowledgeEventDetail, CardEditAgentEventDetail, CardUseTemplateEventDetail, CardPositionChangeEventDetail, CardPositioningMode } from "../types";
 
 type ThreadHoverEventDetail = {
 	phase: "enter" | "move" | "leave";
@@ -18,10 +18,16 @@ type CardRenderMode = "default" | "agent-builder" | "agent-list" | "template-lis
 
 export type EngineConfig = {
 	cardRenderMode: CardRenderMode;
+	/** When set with favoriteMapViewId, favorites mixed layout uses persisted coordinates and skips zoom-bucket reflow. */
+	favoritesCardPositioning?: CardPositioningMode;
+	/** Active favorites tab id (for drag persistence payloads). */
+	favoriteMapViewId?: string;
 };
 
 const DEFAULT_CONFIG: EngineConfig = {
 	cardRenderMode: "default",
+	favoritesCardPositioning: "Auto",
+	favoriteMapViewId: "",
 };
 
 const ZOOM_REFLOW_STEP = 0.3;
@@ -30,6 +36,80 @@ const MAX_LAYOUT_WIDTH_MULTIPLIER = 4;
 const REFLOW_LOCK_ZOOM = 1.0;
 const LOCKED_REFLOW_BUCKET = -1;
 const DOUBLE_CLICK_TARGET_ZOOM = 1.1;
+
+/** True when the event originated on a favorites card body (SVG or foreignObject HTML); used so d3-zoom does not steal drags. */
+function eventTargetInFavoritesCardOrThread(ev: Event): boolean
+{
+	const path = typeof ev.composedPath === "function" ? ev.composedPath() : [];
+	for (const n of path)
+	{
+		if (n instanceof SVGGElement && (n.classList.contains("chat") || n.classList.contains("thread")))
+		{
+			return true;
+		}
+	}
+
+	let node: Node | null = ev.target as Node | null;
+	while (node)
+	{
+		if (node instanceof SVGGElement && (node.classList.contains("chat") || node.classList.contains("thread")))
+		{
+			return true;
+		}
+		node = node.parentNode;
+	}
+
+	let clientX: number | undefined;
+	let clientY: number | undefined;
+	if ("clientX" in ev && typeof (ev as MouseEvent).clientX === "number")
+	{
+		clientX = (ev as MouseEvent).clientX;
+		clientY = (ev as MouseEvent).clientY;
+	}
+	else if (ev.type === "touchstart" && "touches" in ev)
+	{
+		const te = ev as TouchEvent;
+		if (te.touches.length > 0)
+		{
+			clientX = te.touches[0].clientX;
+			clientY = te.touches[0].clientY;
+		}
+	}
+	if (clientX !== undefined && clientY !== undefined && typeof document.elementsFromPoint === "function")
+	{
+		const stack = document.elementsFromPoint(clientX, clientY);
+		for (const el of stack)
+		{
+			let w: Element | null = el;
+			while (w)
+			{
+				if (w instanceof SVGGElement && (w.classList.contains("chat") || w.classList.contains("thread")))
+				{
+					return true;
+				}
+				w = w.parentElement;
+			}
+		}
+	}
+
+	return false;
+}
+
+function logFavDrag(message: string, detail?: Record<string, unknown>): void
+{
+	try
+	{
+		if (typeof window === "undefined" || localStorage.getItem("ccv:debugFavDrag") !== "1")
+		{
+			return;
+		}
+	}
+	catch
+	{
+		return;
+	}
+	console.warn("[cc-fav-drag]", message, detail ?? "");
+}
 
 function getReflowBucket(k: number): number
 {
@@ -72,6 +152,7 @@ type EngineEventMap = {
 	"copy-json": { cardId: string; source: any };
 	"copy-msg": { cardId: string; source: any };
 	"title-click": { sessionId: string; messageId: string };
+	"card-position-change": CardPositionChangeEventDetail;
 };
 
 export type ChatMapEngineOptions = {
@@ -342,10 +423,21 @@ export function createChatMapEngine(
 	let starredIds = new Set<string>();
 	let config: EngineConfig = { ...DEFAULT_CONFIG };
 
+	function isFavoritesCustomLayout(): boolean
+	{
+		//Favorites map: custom world layout whenever we have a tab id and flat cards (no master grouping).
+		return (
+			Boolean(config.favoriteMapViewId?.trim())
+			&& sourceMasterCards.length === 0
+			&& (sourceCards.length > 0 || sourceThreads.length > 0)
+		);
+	}
+
 	function applyLayout(cards: CardData[], threadCards: ThreadCardData[], masterCards: MasterCardData[]): void
 	{
 		const baseWidth = Math.max(container.clientWidth - 24, 320);
-		const width = computeLayoutWidth(baseWidth, currentReflowBucket);
+		const favCustom = isFavoritesCustomLayout();
+		const width = favCustom ? Math.max(320, baseWidth) : computeLayoutWidth(baseWidth, currentReflowBucket);
 
 		// MasterCard grouping path: layout children inside master containers
 		if (masterCards.length > 0)
@@ -356,6 +448,16 @@ export function createChatMapEngine(
 			currentCards = laidOut.flatMap((mc) => mc.cards);
 			currentThreads = laidOut.flatMap((mc) => mc.threads);
 			const bounds = computeMasterCardWorldBounds(laidOut);
+			worldWidth = bounds.width;
+			worldHeight = bounds.height;
+		}
+		else if (favCustom && (cards.length > 0 || threadCards.length > 0))
+		{
+			currentMasterCards = [];
+			const layout = computeCustomFavoritesLayout(cards, threadCards, width);
+			currentCards = layout.cards;
+			currentThreads = layout.threads;
+			const bounds = computeMixedWorldBounds(currentCards, currentThreads);
 			worldWidth = bounds.width;
 			worldHeight = bounds.height;
 		}
@@ -400,6 +502,12 @@ export function createChatMapEngine(
 
 	function relayoutForBucketChange(nextBucket: number): void
 	{
+		if (isFavoritesCustomLayout())
+		{
+			currentReflowBucket = nextBucket;
+			return;
+		}
+
 		if (nextBucket === currentReflowBucket)
 		{
 			return;
@@ -427,10 +535,145 @@ export function createChatMapEngine(
 		container.dispatchEvent(new CustomEvent(type, { detail, bubbles: true }));
 	};
 
+	function syncSourceLayoutFromDrag(id: string, kind: "message" | "thread", x: number, y: number): void
+	{
+		const rx = Math.round(x);
+		const ry = Math.round(y);
+		const pos = { x: rx, y: ry };
+		if (kind === "message")
+		{
+			const src = sourceCards.find((c) => c.id === id);
+			if (src)
+			{
+				src.x = rx;
+				src.y = ry;
+				src.layoutPosition = pos;
+			}
+		}
+		else
+		{
+			const src = sourceThreads.find((t) => t.id === id);
+			if (src)
+			{
+				src.x = rx;
+				src.y = ry;
+				src.layoutPosition = pos;
+			}
+		}
+	}
+
+	function getNearestGroup(element: Element, selector: string): SVGGElement | null
+	{
+		if (element instanceof SVGGElement && element.matches(selector))
+		{
+			return element;
+		}
+		const closest = element.closest(selector) as SVGGElement | null;
+		if (closest)
+		{
+			return closest;
+		}
+		//foreignObject HTML often breaks selector ascent; walk nodes until the card group
+		const wantChat = selector === "g.chat";
+		const wantThread = selector === "g.thread";
+		let n: Node | null = element;
+		while (n)
+		{
+			if (n instanceof SVGGElement)
+			{
+				if (wantChat && n.classList.contains("chat"))
+				{
+					return n;
+				}
+				if (wantThread && n.classList.contains("thread"))
+				{
+					return n;
+				}
+			}
+			n = n.parentNode;
+		}
+		return null;
+	}
+
+	//Datum/Subject vary by caller; we only read sourceEvent — use `any` so specialized D3DragEvent<> passes assignability.
+	function getDragWorldPoint(event: d3.D3DragEvent<Element, any, any>): { x: number; y: number } | null
+	{
+		const node = svg.node();
+		if (!node || !event.sourceEvent)
+		{
+			return null;
+		}
+		const [screenX, screenY] = d3.pointer(event.sourceEvent, node);
+		return {
+			x: (screenX - currentTransform.x) / currentTransform.k,
+			y: (screenY - currentTransform.y) / currentTransform.k,
+		};
+	}
+
+	function isMessageDragTarget(event: Event): boolean
+	{
+		const tgt = event.target as HTMLElement;
+		return !tgt.closest?.(
+			".line-star-btn, .line-copy-msg-btn, .line-add-btn, .chat-title, .card-edit-btn, .card-envelope-btn, .card-use-template-btn",
+		);
+	}
+
+	function isThreadDragTarget(event: Event): boolean
+	{
+		const tgt = event.target as HTMLElement;
+		return !tgt.closest?.(".thread-star-btn, .thread-title");
+	}
+
 	const zoom = d3
 		.zoom<SVGSVGElement, unknown>()
 		.scaleExtent([0.15, 8])
 		.clickDistance(5)
+		.filter((rawEvent) =>
+		{
+			const ev = rawEvent as MouseEvent;
+			if (ev.type === "wheel")
+			{
+				return true;
+			}
+			if (ev.button === 1 || ev.button === 2)
+			{
+				return false;
+			}
+			const isPrimaryDown =
+				ev.type === "touchstart"
+				|| ((ev.type === "mousedown" || ev.type === "pointerdown") && ev.button === 0);
+			const favRelated = Boolean(config.favoriteMapViewId?.trim());
+			const customActive = isFavoritesCustomLayout();
+			if (isPrimaryDown && favRelated)
+			{
+				const overCard = eventTargetInFavoritesCardOrThread(rawEvent as Event);
+				const closestLegacy = Boolean((rawEvent.target as Element | null)?.closest?.("g.chat, g.thread"));
+				logFavDrag("zoom.filter", {
+					type: rawEvent.type,
+					customActive,
+					overCard,
+					closestLegacy,
+					allowZoomPan: !(customActive && overCard),
+					positioning: config.favoritesCardPositioning,
+					viewId: config.favoriteMapViewId,
+					masters: sourceMasterCards.length,
+					cards: sourceCards.length,
+					threads: sourceThreads.length,
+				});
+			}
+			if (!customActive)
+			{
+				return !ev.ctrlKey || ev.type === "wheel";
+			}
+			if (isPrimaryDown)
+			{
+				if (eventTargetInFavoritesCardOrThread(rawEvent as Event))
+				{
+					return false;
+				}
+			}
+			return !ev.ctrlKey || ev.type === "wheel";
+		})
 		.wheelDelta((event: WheelEvent) => -event.deltaY * (event.deltaMode === 1 ? 0.04 : event.deltaMode ? 1 : 0.002))
 		.on("zoom", (event) =>
 		{
@@ -707,6 +950,80 @@ export function createChatMapEngine(
 				zoomToItem(card.id, "card");
 			});
 
+		if (isFavoritesCustomLayout())
+		{
+			const dragOffsets = new Map<string, { x: number; y: number }>();
+			const onStart = function (this: Element, event: d3.D3DragEvent<Element, CardData, CardData>, d: CardData)
+			{
+				logFavDrag("message drag start", { id: event.subject.id, tag: this.tagName });
+				const se = event.sourceEvent;
+				if (se && "preventDefault" in se)
+				{
+					(se as Event).preventDefault();
+				}
+				se?.stopPropagation();
+				const group = getNearestGroup(this, "g.chat");
+				if (group)
+				{
+					d3.select(group).raise();
+				}
+				const pointer = getDragWorldPoint(event);
+				if (pointer)
+				{
+					dragOffsets.set(d.id, { x: pointer.x - d.x, y: pointer.y - d.y });
+				}
+			};
+			const onDrag = function (this: Element, event: d3.D3DragEvent<Element, CardData, CardData>, d: CardData)
+			{
+				event.sourceEvent?.stopPropagation();
+				const pointer = getDragWorldPoint(event);
+				const offset = dragOffsets.get(d.id);
+				if (pointer && offset)
+				{
+					d.x = pointer.x - offset.x;
+					d.y = pointer.y - offset.y;
+				}
+				else
+				{
+					d.x += event.dx;
+					d.y += event.dy;
+				}
+				const group = getNearestGroup(this, "g.chat");
+				if (group)
+				{
+					d3.select(group).attr("transform", `translate(${d.x},${d.y})`);
+				}
+				syncSourceLayoutFromDrag(d.id, "message", d.x, d.y);
+			};
+			const onEnd = function (this: Element, event: d3.D3DragEvent<Element, CardData, CardData>, d: CardData)
+			{
+				logFavDrag("message drag end", { id: d.id, x: Math.round(d.x), y: Math.round(d.y) });
+				event.sourceEvent?.stopPropagation();
+				window.getSelection()?.removeAllRanges();
+				dragOffsets.delete(d.id);
+				const viewId = config.favoriteMapViewId ?? "";
+				if (!viewId)
+				{
+					return;
+				}
+				emit("card-position-change", {
+					viewId,
+					cardId: d.id,
+					kind: "message",
+					x: Math.round(d.x),
+					y: Math.round(d.y),
+				});
+			};
+			const groupDrag = d3.drag<SVGGElement, CardData>().filter(isMessageDragTarget).on("start", onStart).on("drag", onDrag).on("end", onEnd);
+			cards.call(groupDrag);
+			cards.select<HTMLElement>(".chat-html").on(".drag", null);
+		}
+		else
+		{
+			cards.on(".drag", null);
+			cards.select<HTMLElement>(".chat-html").on(".drag", null);
+		}
+
 		updateLod(currentTransform.k, true);
 	}
 
@@ -849,6 +1166,80 @@ export function createChatMapEngine(
 				event.stopPropagation();
 				zoomToItem(thread.id, "thread");
 			});
+
+		if (isFavoritesCustomLayout())
+		{
+			const dragOffsets = new Map<string, { x: number; y: number }>();
+			const onStart = function (this: Element, event: d3.D3DragEvent<Element, ThreadCardData, ThreadCardData>, d: ThreadCardData)
+			{
+				logFavDrag("thread drag start", { id: event.subject.id, tag: this.tagName });
+				const se = event.sourceEvent;
+				if (se && "preventDefault" in se)
+				{
+					(se as Event).preventDefault();
+				}
+				se?.stopPropagation();
+				const group = getNearestGroup(this, "g.thread");
+				if (group)
+				{
+					d3.select(group).raise();
+				}
+				const pointer = getDragWorldPoint(event);
+				if (pointer)
+				{
+					dragOffsets.set(d.id, { x: pointer.x - d.x, y: pointer.y - d.y });
+				}
+			};
+			const onDrag = function (this: Element, event: d3.D3DragEvent<Element, ThreadCardData, ThreadCardData>, d: ThreadCardData)
+			{
+				event.sourceEvent?.stopPropagation();
+				const pointer = getDragWorldPoint(event);
+				const offset = dragOffsets.get(d.id);
+				if (pointer && offset)
+				{
+					d.x = pointer.x - offset.x;
+					d.y = pointer.y - offset.y;
+				}
+				else
+				{
+					d.x += event.dx;
+					d.y += event.dy;
+				}
+				const group = getNearestGroup(this, "g.thread");
+				if (group)
+				{
+					d3.select(group).attr("transform", `translate(${d.x},${d.y})`);
+				}
+				syncSourceLayoutFromDrag(d.id, "thread", d.x, d.y);
+			};
+			const onEnd = function (this: Element, event: d3.D3DragEvent<Element, ThreadCardData, ThreadCardData>, d: ThreadCardData)
+			{
+				logFavDrag("thread drag end", { id: d.id, x: Math.round(d.x), y: Math.round(d.y) });
+				event.sourceEvent?.stopPropagation();
+				window.getSelection()?.removeAllRanges();
+				dragOffsets.delete(d.id);
+				const viewId = config.favoriteMapViewId ?? "";
+				if (!viewId)
+				{
+					return;
+				}
+				emit("card-position-change", {
+					viewId,
+					cardId: d.id,
+					kind: "thread",
+					x: Math.round(d.x),
+					y: Math.round(d.y),
+				});
+			};
+			const groupDrag = d3.drag<SVGGElement, ThreadCardData>().filter(isThreadDragTarget).on("start", onStart).on("drag", onDrag).on("end", onEnd);
+			threads.call(groupDrag);
+			threads.select<HTMLElement>(".thread-html").on(".drag", null);
+		}
+		else
+		{
+			threads.on(".drag", null);
+			threads.select<HTMLElement>(".thread-html").on(".drag", null);
+		}
 
 		world
 			.selectAll<SVGGElement, ThreadCardData>("g.thread")
@@ -1056,7 +1447,26 @@ export function createChatMapEngine(
 	function setConfig(partial: Partial<EngineConfig>): void
 	{
 		const prevMode = config.cardRenderMode;
+		const prevFav = config.favoritesCardPositioning;
+		const prevVid = config.favoriteMapViewId;
 		config = { ...config, ...partial };
+
+		if ("favoritesCardPositioning" in partial || "favoriteMapViewId" in partial)
+		{
+			logFavDrag("setConfig", {
+				favoritesCardPositioning: config.favoritesCardPositioning,
+				favoriteMapViewId: config.favoriteMapViewId,
+				customLayoutActive: isFavoritesCustomLayout(),
+				masters: sourceMasterCards.length,
+				cards: sourceCards.length,
+				threads: sourceThreads.length,
+			});
+		}
+
+		const layoutDriversChanged =
+			config.cardRenderMode !== prevMode
+			|| config.favoritesCardPositioning !== prevFav
+			|| config.favoriteMapViewId !== prevVid;
 
 		if (config.cardRenderMode !== prevMode)
 		{
@@ -1064,6 +1474,10 @@ export function createChatMapEngine(
 				.selectAll<SVGGElement, CardData>("g.chat")
 				.select<HTMLElement>(".chat-html")
 				.html((card) => renderCardHtml(card, currentLod, starredIds, config.cardRenderMode));
+		}
+		if (layoutDriversChanged)
+		{
+			applyLayout(sourceCards, sourceThreads, sourceMasterCards);
 		}
 	}
 

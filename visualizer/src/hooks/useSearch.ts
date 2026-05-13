@@ -279,23 +279,39 @@ export function useSearch({ activeView, favoritesForActiveView, fromDate, limit 
 
 			const messageEntries = sorted.filter((entry) => entry.source.type === "message");
 			const threadEntries = sorted.filter((entry) => entry.source.type === "thread");
-
 			const cardsFromFavorites = toCardsFromMessages(
 				messageEntries.map((entry) => ({
 					score: 0.01,
 					message: entry.source.data as SerializedAgentMessage,
-				}))
-			);
+				})),
+			).map((card, index) =>
+			{
+				const entry = messageEntries[index]!;
+				const withFav: CardData = { ...card, favoriteSource: true };
+				if (entry.position && Number.isFinite(entry.position.x) && Number.isFinite(entry.position.y))
+				{
+					return { ...withFav, layoutPosition: entry.position };
+				}
+				return withFav;
+			});
 
 			const threadCardsFromFavorites = toThreadCards(
-				threadEntries.map((entry) => entry.source.data as SerializedAgentThread)
-			);
+				threadEntries.map((entry) => entry.source.data as SerializedAgentThread),
+			).map((thread, index) =>
+			{
+				const entry = threadEntries[index]!;
+				const withFav: ThreadCardData = { ...thread, favoriteSource: true };
+				if (entry.position && Number.isFinite(entry.position.x) && Number.isFinite(entry.position.y))
+				{
+					return { ...withFav, layoutPosition: entry.position };
+				}
+				return withFav;
+			});
 
 			setCards(cardsFromFavorites);
 			setThreadCards(threadCardsFromFavorites);
 			setLatencyMs(0);
 			setError(null);
-			setSearchResetToken((current) => current + 1);
 			return;
 		}
 

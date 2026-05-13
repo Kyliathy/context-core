@@ -10,10 +10,12 @@ import { initSearchIndex } from "../search/searchEngine.js";
 import type { TopicStore } from "../settings/TopicStore.js";
 import type { AgentBuilder } from "../agentBuilder/AgentBuilder.js";
 import type { ScopeStore } from "../settings/ScopeStore.js";
+import type { FavoriteStore } from "../settings/FavoriteStore.js";
 import type { SummaryEmbeddingCache } from "../vector/SummaryEmbeddingCache.js";
 import type { RouteContext } from "./RouteContext.js";
 import * as topicRoutes from "./routes/topicRoutes.js";
 import * as scopeRoutes from "./routes/scopeRoutes.js";
+import * as favoriteRoutes from "./routes/favoriteRoutes.js";
 import * as sessionRoutes from "./routes/sessionRoutes.js";
 import * as projectRoutes from "./routes/projectRoutes.js";
 import * as messageRoutes from "./routes/messageRoutes.js";
@@ -36,6 +38,7 @@ export async function startServer(
 	topicStore?: TopicStore,
 	agentBuilder?: AgentBuilder,
 	scopeStore?: ScopeStore,
+	favoriteStore?: FavoriteStore,
 	summaryEmbeddingCache?: SummaryEmbeddingCache
 ): Promise<{ server: Server; app: ReturnType<typeof express>; actualPort: number }>
 {
@@ -74,6 +77,7 @@ export async function startServer(
 		messageDB,
 		topicStore,
 		scopeStore,
+		favoriteStore,
 		agentBuilder,
 		summaryEmbeddingCache,
 		vectorServices,
@@ -81,6 +85,7 @@ export async function startServer(
 
 	topicRoutes.register(app, ctx);
 	scopeRoutes.register(app, ctx);
+	favoriteRoutes.register(app, ctx);
 	sessionRoutes.register(app, ctx);
 	projectRoutes.register(app, ctx);
 	messageRoutes.register(app, ctx);

@@ -26,6 +26,7 @@ import type {
 	CardEditAgentEventDetail,
 	CardUseTemplateEventDetail,
 	ViewType,
+	CardPositionChangeEventDetail,
 } from "../../types";
 import "./ChatMap.css";
 
@@ -38,6 +39,7 @@ type ChatMapProps = {
 	query: string;
 	isLoading: boolean;
 	viewType?: ViewType;
+	favoriteMapViewId?: string;
 	onHover: (detail: HoverEventDetail) => void;
 	onViewportChange: (detail: ViewportChangeDetail) => void;
 	onLineClick?: (detail: LineClickEventDetail) => void;
@@ -46,6 +48,7 @@ type ChatMapProps = {
 	onCardAddKnowledge?: (detail: CardAddKnowledgeEventDetail) => void;
 	onCardEditAgent?: (detail: CardEditAgentEventDetail) => void;
 	onCardUseTemplate?: (detail: CardUseTemplateEventDetail) => void;
+	onCardPositionChange?: (detail: CardPositionChangeEventDetail) => void;
 	starredCardIds?: Set<string>;
 };
 
@@ -58,6 +61,7 @@ export default function ChatMap({
 	query,
 	isLoading,
 	viewType,
+	favoriteMapViewId,
 	onHover,
 	onViewportChange,
 	onLineClick,
@@ -66,6 +70,7 @@ export default function ChatMap({
 	onCardAddKnowledge,
 	onCardEditAgent,
 	onCardUseTemplate,
+	onCardPositionChange,
 	starredCardIds,
 }: ChatMapProps) {
 	const containerRef = useRef<HTMLDivElement>(null);
@@ -78,6 +83,7 @@ export default function ChatMap({
 		resetViewportToken,
 		starredCardIds,
 		viewType,
+		favoriteMapViewId,
 		onHover,
 		onViewportChange,
 		onLineClick,
@@ -86,6 +92,7 @@ export default function ChatMap({
 		onCardAddKnowledge,
 		onCardEditAgent,
 		onCardUseTemplate,
+		onCardPositionChange,
 	});
 
 	const showInitial = !hasSearched && !isLoading;
@@ -95,7 +102,10 @@ export default function ChatMap({
 	return (
 		<div className="chat-map-shell">
 			{isLoading && <div className="loading-bar" />}
-			<div ref={containerRef} className="chat-map-container" />
+			<div
+				ref={containerRef}
+				className={viewType === "favorites" ? "chat-map-container chat-map-container--favorites" : "chat-map-container"}
+			/>
 			{showInitial && !showTemplateCreate && <div className="map-overlay">Type a query above and press Search</div>}
 			{showNoResults && !showTemplateCreate && <div className="map-overlay">No results for "{query}"</div>}
 			{showTemplateCreate && <div className="map-overlay">Use the Template Creator panel to build a template</div>}

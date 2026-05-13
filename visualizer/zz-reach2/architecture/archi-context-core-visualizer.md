@@ -1,8 +1,8 @@
 # ContextCore Visualizer — Architectural Review
 
-**Date**: 2026-03-10
+**Date**: 2026-03-10 (updated 2026-05-13)
 **Reviewer**: Architectural post-build analysis (based on implementation of `r2ud-d3-visualizer.md`)
-**Status**: Multi-view upgrade shipped (`r2umv`) — views, favorites, star workflow, keyboard-accessible dropdown, search history with autocomplete, LOD-aware HoverPanel
+**Status**: Multi-view upgrade shipped (`r2umv`) — views, favorites, star workflow, keyboard-accessible dropdown, search history with autocomplete, LOD-aware HoverPanel; **favorites server bundle + conflict UI**, **custom favorites map** (persisted **`FavoriteEntry.position`**, pan/drag rules), **PWA** Workbox cache for **`/api/favorites`**
 
 ---
 
@@ -12,14 +12,14 @@ The ContextCore Visualizer is a standalone Vite + React + D3 SPA that now suppor
 
 The MVP + v1.1 interaction fixes remain intact, and the v2 upgrade adds persistent local views/favorites, card-level starring, a styled favorites picker modal, keyboard-accessible custom view dropdown (arrows, enter, escape, home/end, typeahead), **search history with autocomplete** (100-entry localStorage-backed FIFO queue with individual/bulk deletion), and **LOD-aware HoverPanel** (metadata-only layout at medium/full zoom showing labeled rows instead of duplicating visible card content).
 
----
+**Favorites map & sync (2026-05):** Favorites-type tabs are normalized to **custom world layout** only — **`FavoriteEntry.position`** (optional per row) is the persisted geometry; the D3 engine applies **pan-from-empty-canvas** and **pointer drag** on cards without reflowing on zoom. **`ccv:favorites`** remains the synchronous browser cache; **`GET`/`POST` `/api/favorites`** exchanges a **bundle** (rows + **`favoriteViews`** tab metadata). On divergence, **`FavoritesSyncConflictDialog`** forces a **server vs local** choice before overwrite. The Vite PWA registers **Workbox `runtimeCaching`** for **`/api/favorites`** so the service worker does not break sync fetches. **UI detail:** [ui/archi-favorites-ui.md](ui/archi-favorites-ui.md).
 
 ## 2. Module Topology
 
 ```
 visualizer/
 ├── index.html
-├── vite.config.ts               ← dev proxy + port
+├── vite.config.ts               ← dev proxy + port + PWA (Workbox **`/api/favorites`** runtime cache)
 ├── package.json                 ← isolated from root bun project
 ├── tsconfig.json                ← composite references
 ├── tsconfig.app.json            ← src/ compilation (noEmit, react-jsx, ES2022)
@@ -42,7 +42,9 @@ visualizer/
     │   │   ├── EditResultsView.tsx/.css  ← Add/edit view modal + project scope + scopes
     │   │   └── ClipboardBasket.tsx  ← Saved line snippets panel
     │   └── favorites/
-    │       └── FavoritesPickerDialog.tsx/.css ← Star-target favorites modal (select/create)
+    │       ├── FavoritesPickerDialog.tsx/.css      ← Star-target favorites modal (select/create)
+    │       ├── FavoritesSyncConflictDialog.tsx/.css ← Server vs local bundle conflict
+    │       └── AddFavoriteMessage.tsx              ← Custom text entry for favorites view
     ├── d3/
     │   ├── chatMapEngine.ts     ← Pure imperative D3 engine (closure-based)
     │   ├── layout.ts            ← Score-sorted masonry grid
@@ -50,12 +52,13 @@ visualizer/
     └── hooks/
         ├── useViews.ts          ← LocalStorage-backed view definitions + active view
         ├── useFavorites.ts      ← LocalStorage-backed favorites entries
+        ├── favoriteSync.ts      ← Bundle signatures, startup reconcile, POST payload helpers
         ├── useSearch.ts         ← View-aware search/latest/favorites card sourcing
         ├── useSearchHistory.ts  ← LocalStorage-backed search history (100 entries, FIFO)
         └── useChatMap.ts        ← React ↔ D3 lifecycle bridge
 ```
 
-> **UI deep dive**: component responsibilities, hook internals, localStorage contracts, and modal flows are documented in [ui/archi-context-core-visualizer-ui.md](ui/archi-context-core-visualizer-ui.md).
+> **UI deep dive**: component responsibilities, hook internals, localStorage contracts, and modal flows are documented in [ui/archi-context-core-visualizer-ui.md](ui/archi-context-core-visualizer-ui.md). **Favorites map, sync, and custom layout** are documented in [ui/archi-favorites-ui.md](ui/archi-favorites-ui.md).
 
 ### 2.1 Dependency Graph
 
@@ -66,6 +69,7 @@ graph LR
         App --> ChatMap
         App --> EditResultsView
         App --> FavoritesPickerDialog
+        App --> FavoritesSyncConflictDialog
         App --> ClipboardBasket
         App --> HoverPanel
         App --> StatusBar
@@ -183,7 +187,12 @@ The active view controls card source and search controls:
 
 - `search` view → `/api/search?q=...`
 - `latest` view → `/api/messages` (recent messages)
-- `favorites` view → `localStorage` favorites only (no API call)
+- `favorites` view → cards from **`ccv:favorites`** (synchronous); when online, **`GET`/`POST` `/api/favorites`** reconciles a **server bundle** (rows + **`favoriteViews`**) with the local cache — on conflict, **`FavoritesSyncConflictDialog`** blocks until the user picks **server** or **local**
+
+**Favorites view mode & card settings:**
+
+- **`useViews.normalizeView`** upgrades every favorites-type tab to **`cardPositioningMode: "CustomCardPositioning"`** (legacy **`Auto`** in JSON is normalized on read). There is no SearchBar layout toggle; **`EditResultsView`** still writes **`CustomCardPositioning`** on favorites saves so the server bundle’s view snapshots stay aligned.
+- **`FavoriteEntry.position`** (`{ x, y }`, optional) is the persisted world origin for a card on the map; drag on the D3 card updates it via **`updateFavoritePosition`** after **`card-position-change`**. **Behavior & engine rules:** [ui/archi-favorites-ui.md](ui/archi-favorites-ui.md).
 
 Star workflow:
 

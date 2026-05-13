@@ -364,6 +364,57 @@
 			"authentication": {}
 		},
 		{
+			"_id": "fld_context_core_favorites",
+			"_type": "request_group",
+			"parentId": "wrk_context_core",
+			"name": "Favorites",
+			"description": "Visualizer favorites persistence (snapshots JSON).",
+			"environment": {}
+		},
+		{
+			"_id": "req_list_favorites",
+			"_type": "request",
+			"parentId": "fld_context_core_favorites",
+			"name": "GET /api/favorites",
+			"method": "GET",
+			"url": "{{ base_url }}/api/favorites",
+			"description": "List persisted favorite entries.",
+			"body": {},
+			"parameters": [],
+			"headers": [
+				{
+					"name": "Accept",
+					"value": "application/json"
+				}
+			],
+			"authentication": {}
+		},
+		{
+			"_id": "req_save_favorites",
+			"_type": "request",
+			"parentId": "fld_context_core_favorites",
+			"name": "POST /api/favorites",
+			"method": "POST",
+			"url": "{{ base_url }}/api/favorites",
+			"description": "Replace and persist full favorites bundle (rows + favoriteViews metadata).",
+			"body": {
+				"mimeType": "application/json",
+				"text": "{\n  \"favorites\": [],\n  \"favoriteViews\": []\n}"
+			},
+			"parameters": [],
+			"headers": [
+				{
+					"name": "Accept",
+					"value": "application/json"
+				},
+				{
+					"name": "Content-Type",
+					"value": "application/json"
+				}
+			],
+			"authentication": {}
+		},
+		{
 			"_id": "fld_context_core_agent_builder",
 			"_type": "request_group",
 			"parentId": "wrk_context_core",

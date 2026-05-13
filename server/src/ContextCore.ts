@@ -28,6 +28,7 @@ import { SummaryEmbeddingCache } from "./vector/SummaryEmbeddingCache.js";
 import { VectorPipeline } from "./vector/VectorPipeline.js";
 import { TopicStore } from "./settings/TopicStore.js";
 import { ScopeStore } from "./settings/ScopeStore.js";
+import { FavoriteStore } from "./settings/FavoriteStore.js";
 import { TopicSummarizer } from "./analysis/TopicSummarizer.js";
 import { MCPServer } from "./mcp/MCPServer.js";
 import { mountMcpSse } from "./mcp/transports/sse.js";
@@ -239,6 +240,12 @@ async function main(): Promise<void>
 	scopeStore.load();
 	console.log(`[Scopes] Loaded ${scopeStore.list().length} scope entries from scopes.json`);
 
+	const favoriteStore = new FavoriteStore(settings.storage);
+	favoriteStore.load();
+	console.log(
+		`[Favorites] Loaded ${favoriteStore.list().length} favorite rows and ${favoriteStore.listFavoriteViews().length} favorite view snapshots from favorites.json`,
+	);
+
 	// Log breakdown by harness for diagnostics
 	const harnessCounts = messageDB.getHarnessCounts();
 	console.log(
@@ -442,6 +449,7 @@ async function main(): Promise<void>
 		topicStore,
 		agentBuilder,
 		scopeStore,
+		favoriteStore,
 		summaryEmbeddingCache
 	);
 	activeServer = httpServer;
