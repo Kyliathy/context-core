@@ -365,17 +365,20 @@ function toToolCall(call: PendingToolCall): ToolCall
 
 export function readCodexChats(configuredPath: string, rawBase: string): AgentMessage[]
 {
+	console.trace(chalk.cyan(`########## CODEX HERE readCodexChats configuredPath=${configuredPath} rawBase=${rawBase}`));
+
 	const resolvedRoot = resolveCodexRoot(configuredPath);
 	if (!resolvedRoot)
 	{
-		console.log(chalk.yellow(`[Codex] Path not found: ${configuredPath} - skipping`));
+		console.trace(chalk.red(`########## CODEX HERE Path not found: ${configuredPath} - skipping entire harness`));
 		return [];
 	}
 
 	const sessionFiles = scanCodexSessionFiles(resolvedRoot);
+	console.trace(chalk.cyan(`########## CODEX HERE scan root=${resolvedRoot} rolloutFiles=${sessionFiles.length}`));
 	if (sessionFiles.length === 0)
 	{
-		console.log(chalk.yellow(`[Codex] No rollout JSONL files found under ${resolvedRoot}`));
+		console.trace(chalk.red(`########## CODEX HERE No rollout JSONL files found under ${resolvedRoot}`));
 		return [];
 	}
 
@@ -383,12 +386,17 @@ export function readCodexChats(configuredPath: string, rawBase: string): AgentMe
 	const results: AgentMessage[] = [];
 	let skippedCount = 0;
 	let malformedLineCount = 0;
+	let emptySessionCount = 0;
 
 	for (const filePath of sessionFiles)
 	{
+		const rolloutBasename = basename(filePath);
+		console.trace(chalk.cyan(`########## CODEX HERE session mark file=${rolloutBasename}`));
+
 		if (isSourceFileCached(filePath, rawBase, rawProject))
 		{
 			skippedCount++;
+			console.trace(chalk.yellow(`########## CODEX HERE session skipped (cached) file=${rolloutBasename} cacheProject=${rawProject}`));
 			continue;
 		}
 
@@ -397,14 +405,16 @@ export function readCodexChats(configuredPath: string, rawBase: string): AgentMe
 		{
 			rawText = readFileSync(filePath, "utf-8");
 		}
-		catch
+		catch (err)
 		{
+			console.trace(chalk.red(`########## CODEX HERE session read failed file=${rolloutBasename} err=${String(err)}`));
 			continue;
 		}
 
 		const lines = rawText.split(/\r?\n/);
 		const sessionMeta = parseSessionMeta(lines);
 		const sessionId = sessionMeta.sessionId || basename(filePath, ".jsonl");
+		console.trace(chalk.cyan(`########## CODEX HERE session parsing file=${rolloutBasename} sessionId=${sessionId} cwd=${sessionMeta.cwd ?? "(none)"}`));
 		const project = sessionMeta.cwd
 			? deriveProjectName("Codex", sessionMeta.cwd)
 			: deriveProjectName("Codex", dirname(filePath));
@@ -753,6 +763,26 @@ export function readCodexChats(configuredPath: string, rawBase: string): AgentMe
 			previousId = msg.id;
 		}
 
+		if (deduped.length === 0)
+		{
+			emptySessionCount++;
+			console.trace(
+				chalk.red(
+					`########## CODEX HERE session produced 0 messages file=${rolloutBasename} `
+					+ `sessionId=${sessionId} staged=${staged.length} lines=${lines.length}`
+				)
+			);
+		}
+		else
+		{
+			console.trace(
+				chalk.green(
+					`########## CODEX HERE session ingested file=${rolloutBasename} `
+					+ `sessionId=${sessionId} messages=${deduped.length} project=${project}`
+				)
+			);
+		}
+
 		results.push(...deduped);
 	}
 
@@ -767,6 +797,13 @@ export function readCodexChats(configuredPath: string, rawBase: string): AgentMe
 	{
 		console.log(chalk.yellow(`[Codex] Skipped ${malformedLineCount} malformed JSONL lines.`));
 	}
+
+	if (emptySessionCount > 0)
+	{
+		console.trace(chalk.red(`########## CODEX HERE ${emptySessionCount} rollout file(s) produced zero AgentMessages`));
+	}
+
+	console.trace(chalk.cyan(`########## CODEX HERE readCodexChats done totalMessages=${results.length}`));
 
 	return results;
 }
