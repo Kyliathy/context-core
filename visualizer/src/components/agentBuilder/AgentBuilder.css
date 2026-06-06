@@ -106,6 +106,22 @@
 }
 
 /* Platform checkboxes */
+.agent-basket-publish-btn {
+	margin-left: 8px;
+	background: #0f766e;
+	color: #fff;
+	border: none;
+	border-radius: 6px;
+	padding: 6px 10px;
+	cursor: pointer;
+}
+
+.agent-basket-publish-btn:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+}
+
+/* Legacy platform selector removed — publish platforms live in PublishAgentDialog */
 .agent-basket-platforms {
 	display: flex;
 	gap: 16px;

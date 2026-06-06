@@ -42,8 +42,7 @@ export function register(app: Express, ctx: RouteContext): void
 		if (!agentName) { res.status(400).json({ error: "agentName is required" }); return; }
 		if (!description) { res.status(400).json({ error: "description is required" }); return; }
 		if (!argumentHint) { res.status(400).json({ error: "argument-hint is required" }); return; }
-		if (!platform) { res.status(400).json({ error: "platform is required" }); return; }
-		if (platform !== "github" && platform !== "claude" && platform !== "codex")
+		if (platform && platform !== "github" && platform !== "claude" && platform !== "codex")
 		{
 			res.status(400).json({ error: "platform must be \"github\", \"claude\", or \"codex\"" });
 			return;
@@ -66,7 +65,7 @@ export function register(app: Express, ctx: RouteContext): void
 				agentKnowledge,
 				codexDirectory: codexDirectory || undefined,
 				codexEntryId: codexEntryId || undefined,
-				platform,
+				platform: platform ? (platform as "github" | "claude" | "codex") : undefined,
 			});
 			res.status(201).json(result);
 		} catch (error)
@@ -85,6 +84,31 @@ export function register(app: Express, ctx: RouteContext): void
 		}
 
 		res.json(ctx.agentBuilder.list());
+	});
+
+	app.get("/api/agent-builder/get-definition", (req, res) =>
+	{
+		if (!ctx.agentBuilder)
+		{
+			res.status(404).json({ error: "AgentBuilder not available (no dataSources configured)" });
+			return;
+		}
+
+		const canonicalId = typeof req.query.canonicalId === "string" ? req.query.canonicalId.trim() : "";
+		if (!canonicalId)
+		{
+			res.status(400).json({ error: "canonicalId query parameter is required" });
+			return;
+		}
+
+		const definition = ctx.agentBuilder.getCanonicalDefinition(canonicalId);
+		if (!definition)
+		{
+			res.status(404).json({ error: `No canonical definition found for id "${canonicalId}"` });
+			return;
+		}
+
+		res.json({ definition });
 	});
 
 	app.get("/api/agent-builder/get-agent", (req, res) =>

@@ -149,15 +149,114 @@ export type CreateAgentInput = {
 	agentKnowledge: string[];
 	codexEntryId?: string;
 	codexDirectory?: string;
-	platform: "github" | "claude" | "codex";
+	/** Legacy platform-specific create; omit for canonical-only save. */
+	platform?: "github" | "claude" | "codex";
 };
 
 /** Response from POST /api/agent-builder/create. */
 export type CreateAgentResponse = {
 	created: boolean;
-	path: string;
 	agentName: string;
+	path?: string;
+	canonicalId?: string;
+	canonicalDefinition?: CanonicalAgentDefinition;
+	/** True when canonical-only create persisted to server store. */
+	persisted?: boolean;
 	codexEntryId?: string;
+};
+
+/** Publish platform identifiers (mirrors server AgentPublisher). */
+export type PublishPlatform = "copilot" | "claude" | "codex" | "kiro" | "cursor" | "windsurf" | "antigravity";
+
+export type ArtifactKind = "agent" | "skill";
+
+export type KnowledgeRef = {
+	kind: "file" | "text";
+	value: string;
+};
+
+export type CanonicalAgentDefinition = {
+	id: string;
+	kind: ArtifactKind;
+	projectName: string;
+	name: string;
+	description: string;
+	whenToUse?: string;
+	"argument-hint"?: string;
+	tools?: string[];
+	knowledge: KnowledgeRef[];
+	body?: string;
+	license?: string;
+	compatibility?: string;
+	metadata?: Record<string, string>;
+};
+
+export type PublishTarget = {
+	platform: PublishPlatform;
+	artifactKind: ArtifactKind;
+	outputDir: string;
+	codexEntryId?: string;
+};
+
+export type RenderedArtifactPreview = {
+	absolutePath: string;
+	platform: PublishPlatform;
+	artifactKind: ArtifactKind;
+	previewStatus?: "new" | "replace-generated" | "backup-unmanaged" | "unknown";
+};
+
+export type PreviewResult = {
+	artifacts: RenderedArtifactPreview[];
+	warnings: string[];
+	errors: string[];
+};
+
+export type PublishResult = {
+	written: Array<{ absolutePath: string; platform: PublishPlatform; artifactKind: ArtifactKind }>;
+	warnings: string[];
+	errors: string[];
+};
+
+export type DirHeatNode = {
+	name: string;
+	absolutePath: string;
+	directHits: number;
+	subtreeHits: number;
+	heat: number;
+	children: DirHeatNode[];
+};
+
+export type PathHeatResult = {
+	projectName: string;
+	projectRoot: string;
+	totalHits: number;
+	tree: DirHeatNode[];
+	topPaths: Array<{ path: string; hits: number }>;
+	suggestedOutputDir?: string;
+	droppedPathCount: number;
+};
+
+export type PlatformDefaultDirs = {
+	projectRoot: string;
+	agentOutputDir: string;
+	skillRootDir: string;
+};
+
+export type PlatformCapability = {
+	platform: PublishPlatform;
+	label: string;
+	supportedArtifactKinds: ArtifactKind[];
+	defaultDirs?: PlatformDefaultDirs;
+};
+
+export type DriftReport = {
+	canonicalId: string;
+	entries: Array<{
+		platform: PublishPlatform;
+		artifactKind: ArtifactKind;
+		absolutePath: string;
+		state: "clean" | "canonical-changed" | "disk-changed" | "missing-file" | "unknown";
+	}>;
 };
 
 /** Per-platform location info within a consolidated agent list entry. */
@@ -201,6 +300,12 @@ export type GetAgentResponse = {
 
 /** Emitted by D3 engine when user clicks ✏️ on an agent-list card. */
 export type CardEditAgentEventDetail = {
+	cardId: string;
+	agentPath: string;
+	codexEntryId?: string;
+};
+
+export type CardPublishAgentEventDetail = {
 	cardId: string;
 	agentPath: string;
 	codexEntryId?: string;

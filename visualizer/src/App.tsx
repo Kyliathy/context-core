@@ -27,6 +27,8 @@ import HoverPanel from "./components/searchTools/HoverPanel";
 import StatusBar from "./components/searchTools/StatusBar";
 import ClipboardBasket from "./components/searchView/ClipboardBasket";
 import AgentBasket from "./components/agentBuilder/AgentBuilder";
+import PublishAgentDialog from "./components/agentPublisher/PublishAgentDialog";
+import { agentDefinitionToCanonical } from "./api/agentPublisher";
 import EditResultsView from "./components/searchView/EditResultsView";
 import AddFavoriteMessage, { type CustomTextInitial } from "./components/favorites/AddFavoriteMessage";
 import FavoritesPickerDialog from "./components/favorites/FavoritesPickerDialog";
@@ -54,8 +56,10 @@ import type {
 	FilterState,
 	AgentKnowledgeEntry,
 	CreateAgentInput,
+	CanonicalAgentDefinition,
 	CardAddKnowledgeEventDetail,
 	CardEditAgentEventDetail,
+	CardPublishAgentEventDetail,
 	CardUseTemplateEventDetail,
 	CardPositionChangeEventDetail,
 	FavoriteSource,
@@ -362,6 +366,8 @@ export default function App() {
 	const [isCreatingAgent, setIsCreatingAgent] = useState(false);
 	const [agentCreateError, setAgentCreateError] = useState<string | null>(null);
 	const [agentCreateSuccess, setAgentCreateSuccess] = useState<string | null>(null);
+	const [lastCreatedAgentDefinition, setLastCreatedAgentDefinition] = useState<CanonicalAgentDefinition | null>(null);
+	const [isPublisherOpen, setIsPublisherOpen] = useState(false);
 	const [agentFlashId, setAgentFlashId] = useState<string | null>(null);
 	const [editingAgentPath, setEditingAgentPath] = useState<string | null>(null);
 	const [editingCodexEntryId, setEditingCodexEntryId] = useState<string | null>(null);
@@ -934,27 +940,26 @@ export default function App() {
 	}, []);
 
 	const handleCreateAgent = useCallback(
-		async (input: Omit<CreateAgentInput, "platform">, platforms: ("github" | "claude" | "codex")[]) => {
+		async (input: Omit<CreateAgentInput, "platform">) => {
 			setIsCreatingAgent(true);
 			setAgentCreateError(null);
 			setAgentCreateSuccess(null);
-			const successPaths: string[] = [];
 			try {
-				for (const platform of platforms) {
-					const payload: CreateAgentInput = { ...input, platform };
-					if (platform === "codex") {
-						if (!payload.codexEntryId && editingCodexEntryId) {
-							payload.codexEntryId = editingCodexEntryId;
-						}
-					} else {
-						delete payload.codexEntryId;
-						delete payload.codexDirectory;
+				const payload: CreateAgentInput = {
+					...input,
+					codexEntryId: editingCodexEntryId ?? input.codexEntryId,
+				};
+				const result = await fetchAgentBuilderCreate(payload);
+				if (result.canonicalDefinition)
+				{
+					if (result.persisted === false)
+					{
+						setAgentCreateError("Agent definition was not persisted on the server.");
+						return;
 					}
-
-					const result = await fetchAgentBuilderCreate(payload);
-					successPaths.push(result.path);
+					setLastCreatedAgentDefinition(result.canonicalDefinition);
 				}
-				setAgentCreateSuccess(successPaths.join(" · "));
+				setAgentCreateSuccess(result.canonicalId ?? result.agentName);
 				// H4: In agent-from-template mode, clear template state and switch to agent-list
 				if (isFromTemplate) {
 					setIsFromTemplate(false);
@@ -971,6 +976,36 @@ export default function App() {
 			}
 		},
 		[editingCodexEntryId, isFromTemplate, switchView],
+	);
+
+	const handlePublishAgent = useCallback(() => {
+		if (lastCreatedAgentDefinition) setIsPublisherOpen(true);
+	}, [lastCreatedAgentDefinition]);
+
+	const handlePublisherPublished = useCallback(() => {
+		fetchAgentBuilderPrepare().then((response) => {
+			setAgentBuilderSources(
+				response.sources.map((s) => ({
+					name: s.name,
+					fileCount: s.fileCount,
+					codexDirectories: s.codexDirectories,
+					codexDefaultDirectory: s.codexDefaultDirectory,
+				})),
+			);
+		}).catch(() => { /* best-effort refresh */ });
+	}, []);
+
+	const handleCardPublishAgent = useCallback(
+		async (detail: CardPublishAgentEventDetail) => {
+			try {
+				const response = await fetchAgentBuilderGetAgent(detail.agentPath, detail.codexEntryId);
+				setLastCreatedAgentDefinition(agentDefinitionToCanonical(response.agent));
+				setIsPublisherOpen(true);
+			} catch (err) {
+				setAgentCreateError(err instanceof Error ? err.message : String(err));
+			}
+		},
+		[],
 	);
 
 	// Auto-dismiss agent success banner after 5s
@@ -1412,6 +1447,8 @@ export default function App() {
 						onAddCustomEntry={handleAddCustomKnowledge}
 						onClear={handleClearKnowledge}
 						onCreateAgent={handleCreateAgent}
+						onPublishAgent={handlePublishAgent}
+						canPublish={!!lastCreatedAgentDefinition}
 						sources={agentBuilderSources}
 						isCreating={isCreatingAgent}
 						createError={agentCreateError}
@@ -1446,6 +1483,7 @@ export default function App() {
 					onTitleClick={handleTitleClick}
 					onCardAddKnowledge={handleAddKnowledgeFromCard}
 					onCardEditAgent={handleCardEditAgent}
+					onCardPublishAgent={handleCardPublishAgent}
 					onCardUseTemplate={handleCardUseTemplate}
 					onCardPositionChange={handleCardPositionChange}
 					starredCardIds={starredCardIds}
@@ -1560,6 +1598,12 @@ export default function App() {
 				}}
 			/>
 
+			<PublishAgentDialog
+				open={isPublisherOpen}
+				definition={lastCreatedAgentDefinition}
+				onClose={() => setIsPublisherOpen(false)}
+				onPublished={handlePublisherPublished}
+			/>
 			<EditResultsView
 				open={isEditResultsViewOpen}
 				mode={dialogMode}

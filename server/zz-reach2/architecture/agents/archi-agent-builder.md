@@ -10,7 +10,11 @@
 
 ## 1. System Overview
 
-The AgentBuilder is a subsystem of ContextCore that **indexes external file directories** (declared as `dataSources` in `cc.json`), serves the file listing through an API, and provides a complete agent lifecycle: **create**, **list**, **retrieve**, and **edit** agents. The system supports three output platforms: GitHub (`.agent.md` + `.agent.json`), Claude (`.md` + `.json` under `.claude/agents`), and Codex (`AGENTS.md` + `AGENTS.json`), each with a structured JSON companion for round-trip editing.
+The AgentBuilder is a subsystem of ContextCore that **indexes external file directories** (declared as `dataSources` in `cc.json`), serves the file listing through an API, and provides agent lifecycle operations: **assemble/save canonical definitions**, **list**, **retrieve**, and **edit**. As of r2ab3 (2026-06), **platform file materialization moved to AgentPublisher** — Agent Builder saves canonical definitions only; publishing to GitHub Copilot, Claude, or Codex happens through `/api/agent-publisher/*` and the Visualizer `PublishAgentDialog`.
+
+Legacy `POST /api/agent-builder/create` with `platform` still writes GitHub (`.agent.md` + `.agent.json`), Claude (`.md` + `.json` under `.claude/agents`), and Codex (`AGENTS.md` + `AGENTS.json`) for backward compatibility. Canonical-only create (no `platform`) returns `canonicalDefinition` + `canonicalId` without writing platform files.
+
+**Alternative A linking** (symlink / import-shim / mention-only strategies) was intentionally **not** implemented — every publish target writes concrete materialized files with a provenance ledger at `{storage}/.settings/agent-publish.json`.
 
 The system operates entirely in-memory (no database involvement) and is feature-gated by the presence of `dataSources` entries with `purpose: "AgentBuilder"` in the machine's `cc.json` config. When no such entries exist, the AgentBuilder is not instantiated and all endpoints return 404.
 

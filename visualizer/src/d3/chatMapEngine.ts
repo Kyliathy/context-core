@@ -3,7 +3,7 @@ import { getHarnessColor, getProjectColor, getProjectTextColor } from "./colors"
 import { computeGridLayout, computeWorldBounds, computeThreadGridLayout, computeMixedGridLayout, computeMixedWorldBounds, computeMasterCardLayout, computeMasterCardWorldBounds, computeCustomFavoritesLayout } from "./layout";
 import { formatDateTime, formatDateTimeRange } from "./dateFormat";
 import { GREEN_FLASH_COLOR, GREEN_FLASH_FILTER, runGreenFlash } from "../shared/greenFlash";
-import type { CardData, ThreadCardData, MasterCardData, HoverEventDetail, ViewportChangeDetail, LineClickEventDetail, CardStarEventDetail, FavoriteSource, CardAddKnowledgeEventDetail, CardEditAgentEventDetail, CardUseTemplateEventDetail, CardPositionChangeEventDetail, CardPositioningMode } from "../types";
+import type { CardData, ThreadCardData, MasterCardData, HoverEventDetail, ViewportChangeDetail, LineClickEventDetail, CardStarEventDetail, FavoriteSource, CardAddKnowledgeEventDetail, CardEditAgentEventDetail, CardPublishAgentEventDetail, CardUseTemplateEventDetail, CardPositionChangeEventDetail, CardPositioningMode } from "../types";
 
 type ThreadHoverEventDetail = {
 	phase: "enter" | "move" | "leave";
@@ -146,6 +146,7 @@ type EngineEventMap = {
 	"card-star": CardStarEventDetail;
 	"card-add-knowledge": CardAddKnowledgeEventDetail;
 	"card-edit-agent": CardEditAgentEventDetail;
+	"card-publish-agent": CardPublishAgentEventDetail;
 	"card-use-template": CardUseTemplateEventDetail;
 	"thread-star": CardStarEventDetail;
 	"line-star": { cardId: string; source: any };
@@ -354,7 +355,7 @@ function renderCardHtml(card: CardData, lod: LOD, starredIds: Set<string>, mode:
 	// List card modes use header actions instead of envelope.
 	const customEditBtn = card.harness === "custom" ? `<span class="card-edit-btn" title="Edit custom text">✏️</span>` : "";
 	const headerBtn = mode === "agent-list"
-		? `<span class="card-edit-btn" title="Edit agent">✏️</span>`
+		? `<span class="card-publish-btn" title="Publish agent">📤</span><span class="card-edit-btn" title="Edit agent">✏️</span>`
 		: mode === "template-list"
 			? `<span class="card-use-template-btn" title="Create agent from template">🎓</span><span class="card-edit-btn" title="Edit template">✏️</span>`
 			: `${customEditBtn}<span class="card-envelope-btn" title="Copy message JSON">📧</span>`;
@@ -881,6 +882,12 @@ export function createChatMapEngine(
 				{
 					event.stopPropagation();
 					emit("card-use-template", { cardId: card.id, templateName: card.title });
+					return;
+				}
+				if (target.classList.contains("card-publish-btn"))
+				{
+					event.stopPropagation();
+					emit("card-publish-agent", { cardId: card.id, agentPath: card.agentPath ?? card.id, codexEntryId: card.codexEntryId });
 					return;
 				}
 				if (target.classList.contains("card-edit-btn"))

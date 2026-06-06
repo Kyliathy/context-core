@@ -1,6 +1,9 @@
 import { readdirSync, statSync, readFileSync, writeFileSync, existsSync, mkdirSync, renameSync, unlinkSync } from "fs";
 import { join, relative, dirname } from "path";
 import type { MachineConfig, DataSourceEntry } from "../types.js";
+import { toCanonicalAgentDefinition } from "../agentPublisher/canonical.js";
+import type { CanonicalAgentStore } from "../agentPublisher/CanonicalAgentStore.js";
+import type { CanonicalAgentDefinition, RenderedArtifact } from "../agentPublisher/types.js";
 
 /** A single indexed file from a data source directory. */
 export interface IndexedFile
@@ -50,16 +53,20 @@ export interface CreateAgentInput
 	codexEntryId?: string;
 	/** Explicit Codex output directory (must be one of the source's allowed Codex directories). */
 	codexDirectory?: string;
-	/** Target platform for the generated agent file. "github" writes .agent.md; "claude" writes a Claude Code sub-agent .md; "codex" writes AGENTS.md. */
-	platform: "github" | "claude" | "codex";
+	/** Target platform for legacy platform-specific create. Omit for canonical-only save. */
+	platform?: "github" | "claude" | "codex";
 }
 
 /** Response shape for POST /api/agent-builder/create. */
 export interface CreateAgentResponse
 {
 	created: boolean;
-	path: string;
 	agentName: string;
+	path?: string;
+	canonicalId?: string;
+	canonicalDefinition?: CanonicalAgentDefinition;
+	/** True when canonical-only create persisted to CanonicalAgentStore. */
+	persisted?: boolean;
 	codexEntryId?: string;
 }
 
@@ -965,9 +972,18 @@ export class AgentBuilder
 	private indexedFiles: IndexedFile[] = [];
 	private sources: DataSourceEntry[] = [];
 
-	constructor(machineConfig: MachineConfig)
+	constructor(
+		machineConfig: MachineConfig,
+		private readonly canonicalStore?: CanonicalAgentStore,
+	)
 	{
 		this.sources = this.extractAgentBuilderSources(machineConfig);
+	}
+
+	/** Returns a persisted canonical definition by id. */
+	getCanonicalDefinition(canonicalId: string): CanonicalAgentDefinition | undefined
+	{
+		return this.canonicalStore?.get(canonicalId);
 	}
 
 	/** Extracts all DataSourceEntry items with purpose "AgentBuilder". */
@@ -1185,6 +1201,29 @@ export class AgentBuilder
 				new Error(`No AgentBuilder source found for project "${projectName}"`),
 				{ status: 404 }
 			);
+		}
+
+		// Canonical-only save path — persist definition; platform files written by Publisher.
+		if (!platform)
+		{
+			const canonicalDefinition = toCanonicalAgentDefinition(input);
+			if (!this.canonicalStore)
+			{
+				throw Object.assign(
+					new Error("Canonical agent store is not configured"),
+					{ status: 503 },
+				);
+			}
+			this.canonicalStore.upsert(canonicalDefinition);
+			this.canonicalStore.save();
+			const persisted = this.canonicalStore.get(canonicalDefinition.id) ?? canonicalDefinition;
+			return {
+				created: true,
+				agentName,
+				canonicalId: persisted.id,
+				canonicalDefinition: persisted,
+				persisted: true,
+			};
 		}
 
 		// Resolve output directory and file names based on platform
@@ -1796,5 +1835,56 @@ export class AgentBuilder
 
 		templates.sort((a, b) => a.templateName.localeCompare(b.templateName));
 		return { totalTemplates: templates.length, templates };
+	}
+
+	/**
+	 * Finds an indexed content file by relative knowledge path within a project.
+	 * @param knowledgeValue - Relative path from prepare listing or absolute path.
+	 * @param projectName - Data source name filter.
+	 */
+	findIndexedFile(knowledgeValue: string, projectName: string): IndexedFile | undefined
+	{
+		const normalized = knowledgeValue.replace(/\\/g, "/").replace(/^\.\//, "");
+		return this.indexedFiles.find((f) =>
+		{
+			if (f.sourceName !== projectName) return false;
+			const rel = f.relativePath.replace(/\\/g, "/");
+			return rel === normalized
+				|| f.absolutePath === knowledgeValue
+				|| rel.endsWith(`/${normalized}`)
+				|| f.absolutePath.replace(/\\/g, "/").endsWith(`/${normalized}`);
+		});
+	}
+
+	/**
+	 * Updates in-memory index after AgentPublisher materializes markdown artifacts.
+	 * Companion .json files are excluded from indexedFiles.
+	 */
+	upsertPublishedArtifacts(sourceName: string, artifacts: RenderedArtifact[]): void
+	{
+		const source = this.sources.find((s) => s.name === sourceName);
+		if (!source) return;
+
+		const markdownArtifacts = artifacts.filter((a) => !a.isCompanionJson);
+		const paths = new Set(markdownArtifacts.map((a) => a.absolutePath));
+		this.indexedFiles = this.indexedFiles.filter((f) => !paths.has(f.absolutePath));
+
+		for (const artifact of markdownArtifacts)
+		{
+			let stat;
+			try { stat = statSync(artifact.absolutePath); } catch { stat = null; }
+
+			const outputDir = dirname(artifact.absolutePath);
+			this.indexedFiles.push({
+				relativePath: relative(outputDir, artifact.absolutePath).replace(/\\/g, "/"),
+				absolutePath: artifact.absolutePath,
+				size: stat?.size ?? artifact.content.length,
+				lastModified: stat?.mtime.toISOString() ?? new Date().toISOString(),
+				sourceName,
+				sourceType: source.type,
+				origin: "agent",
+				excerpt: artifact.content.slice(0, 1000),
+			});
+		}
 	}
 }

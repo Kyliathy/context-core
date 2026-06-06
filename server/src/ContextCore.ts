@@ -35,6 +35,8 @@ import { mountMcpSse } from "./mcp/transports/sse.js";
 import { FileWatcher } from "./watcher/FileWatcher.js";
 import { IncrementalPipeline } from "./watcher/IncrementalPipeline.js";
 import { AgentBuilder } from "./agentBuilder/AgentBuilder.js";
+import { AgentPublisher } from "./agentPublisher/AgentPublisher.js";
+import { CanonicalAgentStore } from "./agentPublisher/CanonicalAgentStore.js";
 
 type HarnessStats = {
 	/** Harness name from machine configuration (e.g. ClaudeCode, Cursor). */
@@ -426,6 +428,7 @@ async function main(): Promise<void>
 
 	// === AgentBuilder Initialization ===
 	let agentBuilder: AgentBuilder | undefined;
+	let agentPublisher: AgentPublisher | undefined;
 	console.log(`[AgentBuilder] cc.json loaded from: ${settings.configPath}`);
 	console.log(`[AgentBuilder] matched machine: "${machine.machine}", hostname: "${hostname}"`);
 	console.log(`[AgentBuilder] dataSources keys: ${Object.keys(machine.dataSources ?? {}).join(", ") || "(none)"}`);
@@ -434,8 +437,19 @@ async function main(): Promise<void>
 		.filter((s) => s.purpose === "AgentBuilder");
 	if (agentBuilderSources.length > 0)
 	{
-		agentBuilder = new AgentBuilder(machine);
+		const canonicalAgentStore = new CanonicalAgentStore(settings.storage);
+		const storeWarning = canonicalAgentStore.load();
+		if (storeWarning) console.warn(`[AgentBuilder] ${storeWarning}`);
+		agentBuilder = new AgentBuilder(machine, canonicalAgentStore);
 		await agentBuilder.index();
+		agentPublisher = new AgentPublisher(
+			agentBuilderSources,
+			settings.storage,
+			agentBuilder,
+			(sourceName, artifacts) => agentBuilder!.upsertPublishedArtifacts(sourceName, artifacts),
+			canonicalAgentStore,
+		);
+		console.log("[AgentPublisher] Initialized with publish ledger and index callback.");
 	} else
 	{
 		console.log("[AgentBuilder] No AgentBuilder data sources configured — skipping.");
@@ -448,6 +462,7 @@ async function main(): Promise<void>
 		embeddingService && qdrantService ? { embeddingService, qdrantService } : undefined,
 		topicStore,
 		agentBuilder,
+		agentPublisher,
 		scopeStore,
 		favoriteStore,
 		summaryEmbeddingCache

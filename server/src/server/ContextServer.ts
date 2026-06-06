@@ -9,6 +9,7 @@ import type { QdrantService } from "../vector/QdrantService.js";
 import { initSearchIndex } from "../search/searchEngine.js";
 import type { TopicStore } from "../settings/TopicStore.js";
 import type { AgentBuilder } from "../agentBuilder/AgentBuilder.js";
+import type { AgentPublisher } from "../agentPublisher/AgentPublisher.js";
 import type { ScopeStore } from "../settings/ScopeStore.js";
 import type { FavoriteStore } from "../settings/FavoriteStore.js";
 import type { SummaryEmbeddingCache } from "../vector/SummaryEmbeddingCache.js";
@@ -21,6 +22,7 @@ import * as projectRoutes from "./routes/projectRoutes.js";
 import * as messageRoutes from "./routes/messageRoutes.js";
 import * as threadRoutes from "./routes/threadRoutes.js";
 import * as agentBuilderRoutes from "./routes/agentBuilderRoutes.js";
+import * as agentPublisherRoutes from "./routes/agentPublisherRoutes.js";
 
 /**
  * Builds and starts the ContextCore API server.
@@ -37,6 +39,7 @@ export async function startServer(
 	},
 	topicStore?: TopicStore,
 	agentBuilder?: AgentBuilder,
+	agentPublisher?: AgentPublisher,
 	scopeStore?: ScopeStore,
 	favoriteStore?: FavoriteStore,
 	summaryEmbeddingCache?: SummaryEmbeddingCache
@@ -79,6 +82,7 @@ export async function startServer(
 		scopeStore,
 		favoriteStore,
 		agentBuilder,
+		agentPublisher,
 		summaryEmbeddingCache,
 		vectorServices,
 	};
@@ -91,6 +95,7 @@ export async function startServer(
 	messageRoutes.register(app, ctx);
 	threadRoutes.register(app, ctx);
 	agentBuilderRoutes.register(app, ctx);
+	agentPublisherRoutes.register(app, ctx);
 
 	const visualizerDist = resolve(dirname(fileURLToPath(import.meta.url)), "../../../visualizer/dist");
 	app.use(express.static(visualizerDist, {
