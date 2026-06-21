@@ -29,6 +29,7 @@ type Props = {
 	isCreating: boolean;
 	createError: string | null;
 	createSuccess: string | null;
+	onDismissCreateSuccess?: () => void;
 	flashId?: string | null;
 	editMode?: boolean;
 	initialValues?: {
@@ -76,6 +77,7 @@ export default function AgentBuilder({
 	isCreating,
 	createError,
 	createSuccess,
+	onDismissCreateSuccess,
 	flashId,
 	editMode = false,
 	initialValues,
@@ -359,8 +361,21 @@ export default function AgentBuilder({
 				</div>
 			)}
 
-			{/* Success banner */}
-			{createSuccess && <div className="agent-basket-banner-success">✓ Created: {createSuccess}</div>}
+			{/* Success banner — stays until dismissed */}
+			{createSuccess && (
+				<div className="agent-basket-banner-success">
+					<span className="agent-basket-banner-success-text">{createSuccess}</span>
+					{onDismissCreateSuccess && (
+						<button
+							type="button"
+							className="agent-basket-banner-dismiss"
+							aria-label="Dismiss notice"
+							onClick={onDismissCreateSuccess}>
+							✕
+						</button>
+					)}
+				</div>
+			)}
 
 			{/* Content divergence warning (edit mode only) */}
 			{editMode && initialValues?.contentDiverged && (

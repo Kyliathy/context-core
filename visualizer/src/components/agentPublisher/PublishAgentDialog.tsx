@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
 	ArtifactKind,
 	CanonicalAgentDefinition,
+	LinkStrategy,
 	PathHeatResult,
 	PlatformCapability,
 	PlatformDefaultDirs,
@@ -19,7 +20,7 @@ import {
 } from "../../api/agentPublisher";
 import PlatformTargetRow from "./PlatformTargetRow";
 import PathHeatTree, { findNearestDirectoryForTopPath } from "./PathHeatTree";
-import { resolveDefaultOutputDir, resolveFilenameHint } from "./publishUtils";
+import { resolveDefaultOutputDir, resolveFilenameHint, normalizeLinkStrategy } from "./publishUtils";
 import "./PublishAgentDialog.css";
 
 type Props = {
@@ -33,6 +34,7 @@ type TargetState = {
 	selected: boolean;
 	artifactKind: ArtifactKind;
 	outputDir: string;
+	linkStrategy: LinkStrategy;
 };
 
 const PLATFORM_ORDER: PublishPlatform[] = ["codex", "claude", "copilot", "kiro", "cursor", "windsurf", "antigravity"];
@@ -59,6 +61,9 @@ function makePublishTargetsFromState(
 			artifactKind: targets[platform].artifactKind,
 			outputDir: targets[platform].outputDir,
 			codexEntryId: platform === "codex" ? def.id : undefined,
+			...(targets[platform].linkStrategy !== "copy"
+				? { linkStrategy: targets[platform].linkStrategy }
+				: {}),
 		}));
 }
 
@@ -67,7 +72,7 @@ function buildInitialTargets(
 ): Record<PublishPlatform, TargetState>
 {
 	const next = Object.fromEntries(
-		PLATFORM_ORDER.map((p) => [p, { selected: false, artifactKind: "agent" as ArtifactKind, outputDir: "" }]),
+		PLATFORM_ORDER.map((p) => [p, { selected: false, artifactKind: "agent" as ArtifactKind, outputDir: "", linkStrategy: "copy" as LinkStrategy }]),
 	) as Record<PublishPlatform, TargetState>;
 
 	for (const platform of PLATFORM_ORDER)
@@ -78,6 +83,7 @@ function buildInitialTargets(
 			selected: platform === "copilot" || platform === "claude" || platform === "codex",
 			artifactKind: "agent",
 			outputDir,
+			linkStrategy: "copy",
 		};
 	}
 	return next;
@@ -96,7 +102,7 @@ export default function PublishAgentDialog({ open, definition, onClose, onPublis
 	const [error, setError] = useState<string | null>(null);
 	const [activePlatform, setActivePlatform] = useState<PublishPlatform>("codex");
 	const [targets, setTargets] = useState<Record<PublishPlatform, TargetState>>(() =>
-		Object.fromEntries(PLATFORM_ORDER.map((p) => [p, { selected: false, artifactKind: "agent" as ArtifactKind, outputDir: "" }])) as Record<PublishPlatform, TargetState>,
+		Object.fromEntries(PLATFORM_ORDER.map((p) => [p, { selected: false, artifactKind: "agent" as ArtifactKind, outputDir: "", linkStrategy: "copy" as LinkStrategy }])) as Record<PublishPlatform, TargetState>,
 	);
 	const previewTimer = useRef<number | null>(null);
 
@@ -216,6 +222,7 @@ export default function PublishAgentDialog({ open, definition, onClose, onPublis
 						<h3>Platforms</h3>
 						{PLATFORM_ORDER.map((platform) =>
 						{
+							const cap = capabilities.find((item) => item.platform === platform);
 							const supported = (supportedKinds.get(platform)?.length ?? 0) > 0;
 							const state = targets[platform];
 							const defaultDirs = nativeDefaults[platform];
@@ -229,7 +236,13 @@ export default function PublishAgentDialog({ open, definition, onClose, onPublis
 									supported={supported}
 									artifactKind={state.artifactKind}
 									outputDir={state.outputDir}
-									filenameHint={resolveFilenameHint(definition, platform, state.artifactKind, state.outputDir)}
+									linkStrategy={state.linkStrategy}
+									supportedLinkStrategies={
+										cap?.supportedLinkStrategiesByKind?.[state.artifactKind]
+										?? cap?.supportedLinkStrategies
+									}
+									platformNotes={cap?.notes}
+									filenameHint={resolveFilenameHint(definition, platform, state.artifactKind, state.outputDir, cap)}
 									nativeDefaultDir={
 										state.artifactKind === "skill"
 											? defaultDirs?.skillRootDir
@@ -253,7 +266,16 @@ export default function PublishAgentDialog({ open, definition, onClose, onPublis
 												...prev[platform],
 												artifactKind: kind,
 												outputDir: resolveDefaultOutputDir(defaultDirs, kind) || prev[platform].outputDir,
+												linkStrategy: normalizeLinkStrategy(platform, kind, prev[platform].linkStrategy),
 											},
+										}));
+									}}
+									onLinkStrategyChange={(strategy) =>
+									{
+										setActivePlatform(platform);
+										setTargets((prev) => ({
+											...prev,
+											[platform]: { ...prev[platform], linkStrategy: strategy },
 										}));
 									}}
 									onPickDirectory={() => setActivePlatform(platform)}
@@ -270,8 +292,23 @@ export default function PublishAgentDialog({ open, definition, onClose, onPublis
 						{heat && heat.totalHits === 0 && (
 							<div>No file-path heat (custom text knowledge only). Pick a directory manually.</div>
 						)}
+						{heat && heat.knowledgeFilePaths?.length > 0 && (
+							<div className="publish-placement-knowledge">
+								<div className="publish-placement-caption">Knowledge files in this agent</div>
+								<ul className="publish-placement-knowledge-list">
+									{heat.knowledgeFilePaths.map((filePath) => (
+										<li key={filePath} title={filePath}>
+											{filePath.replace(/\\/g, "/").split("/").slice(-3).join("/")}
+										</li>
+									))}
+								</ul>
+							</div>
+						)}
 						{heat && heat.topPaths.length > 0 && (
 							<div className="top-paths-panel">
+								<div className="publish-placement-caption">
+									Top referenced paths — file paths mentioned inside your knowledge docs, plus the knowledge files themselves. Click a chip to pick a nearby output folder for the active platform.
+								</div>
 								{heat.topPaths.map((item) => (
 									<button
 										key={item.path}
@@ -292,6 +329,14 @@ export default function PublishAgentDialog({ open, definition, onClose, onPublis
 								))}
 							</div>
 						)}
+						{heat && heat.topPaths.length === 0 && heat.knowledgeFilePaths?.length > 0 && (
+							<div className="publish-placement-caption">
+								No extra path references were found inside your knowledge files. Use the directory tree below to choose an output folder.
+							</div>
+						)}
+						<div className="publish-placement-caption publish-placement-tree-caption">
+							Directory tree — color shows how often paths under each folder were referenced in knowledge (warmer = more). [n] is the mention count in that folder and its subfolders. Click a folder to set the output directory for {LABELS[activePlatform]}.
+						</div>
 						<PathHeatTree
 							nodes={heat?.tree?.length ? heat.tree : tree}
 							selectedPath={selectedDir}
@@ -313,7 +358,11 @@ export default function PublishAgentDialog({ open, definition, onClose, onPublis
 					<div className="publish-preview-list">
 						{(preview?.artifacts ?? []).filter((a) => !a.absolutePath.endsWith(".json")).map((artifact) => (
 							<div key={artifact.absolutePath}>
-								[{artifact.previewStatus ?? "unknown"}] {artifact.absolutePath}
+								[{artifact.previewStatus ?? "unknown"}]
+								{artifact.materialization?.actualLinkStrategy
+									? ` ${artifact.materialization.actualLinkStrategy}`
+									: ""}{" "}
+								{artifact.absolutePath}
 							</div>
 						))}
 					</div>

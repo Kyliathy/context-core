@@ -167,6 +167,17 @@
 	color: #86efac;
 	border-bottom: 1px solid #166534;
 	flex-shrink: 0;
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 8px;
+}
+
+.agent-basket-banner-success-text {
+	white-space: pre-line;
+	line-height: 1.45;
+	flex: 1;
+	min-width: 0;
 }
 
 .agent-basket-banner-warning {

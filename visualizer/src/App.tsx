@@ -784,7 +784,6 @@ export default function App() {
 						const agentName = agent.agentName || detail.relativePath;
 						const imported = agent.agentKnowledge.length;
 						setAgentCreateSuccess(`Imported ${imported} knowledge ${imported === 1 ? "entry" : "entries"} from ${agentName}`);
-						setTimeout(() => setAgentCreateSuccess(null), 5000);
 					})
 					.catch(() => {
 						// Fallback: add the agent file itself as a single reference
@@ -959,7 +958,11 @@ export default function App() {
 					}
 					setLastCreatedAgentDefinition(result.canonicalDefinition);
 				}
-				setAgentCreateSuccess(result.canonicalId ?? result.agentName);
+				setAgentCreateSuccess(
+					result.canonicalStoragePath
+						? `Saved canonical definition "${result.canonicalId ?? result.agentName}"\n${result.canonicalStoragePath}`
+						: `Saved canonical definition "${result.canonicalId ?? result.agentName}"`,
+				);
 				// H4: In agent-from-template mode, clear template state and switch to agent-list
 				if (isFromTemplate) {
 					setIsFromTemplate(false);
@@ -1008,12 +1011,9 @@ export default function App() {
 		[],
 	);
 
-	// Auto-dismiss agent success banner after 5s
-	useEffect(() => {
-		if (!agentCreateSuccess) return;
-		const timer = setTimeout(() => setAgentCreateSuccess(null), 5000);
-		return () => clearTimeout(timer);
-	}, [agentCreateSuccess]);
+	const handleDismissCreateSuccess = useCallback(() => {
+		setAgentCreateSuccess(null);
+	}, []);
 
 	// --- Template handlers (G2, G3) ---
 
@@ -1453,6 +1453,7 @@ export default function App() {
 						isCreating={isCreatingAgent}
 						createError={agentCreateError}
 						createSuccess={agentCreateSuccess}
+						onDismissCreateSuccess={handleDismissCreateSuccess}
 						flashId={agentFlashId}
 						editMode={editingAgentPath !== null && basketMode === "agent"}
 						initialValues={agentEditInitial}

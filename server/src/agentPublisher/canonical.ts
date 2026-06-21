@@ -37,7 +37,17 @@ export function fromKnowledgeRefs(knowledge: KnowledgeRef[]): string[]
 
 /** Maps legacy CreateAgentInput to CanonicalAgentDefinition. */
 export function toCanonicalAgentDefinition(
-	input: Omit<CreateAgentInput, "platform"> & { kind?: ArtifactKind; id?: string },
+	input: Omit<CreateAgentInput, "platform"> & {
+		kind?: ArtifactKind;
+		id?: string;
+		whenToUse?: string;
+		paths?: string[];
+		disableModelInvocation?: boolean;
+		body?: string;
+		license?: string;
+		compatibility?: string;
+		metadata?: Record<string, string>;
+	},
 ): CanonicalAgentDefinition
 {
 	const name = input.agentName;
@@ -48,9 +58,16 @@ export function toCanonicalAgentDefinition(
 		projectName: input.projectName,
 		name,
 		description: input.description,
+		whenToUse: input.whenToUse,
 		"argument-hint": input["argument-hint"],
 		tools: input.tools ?? [],
 		knowledge: toKnowledgeRefs(input.agentKnowledge),
+		paths: input.paths,
+		disableModelInvocation: input.disableModelInvocation,
+		body: input.body,
+		license: input.license,
+		compatibility: input.compatibility,
+		metadata: input.metadata,
 	};
 }
 
@@ -80,6 +97,7 @@ export function stableCanonicalJson(def: CanonicalAgentDefinition): string
 		...def,
 		knowledge: [...def.knowledge].sort((a, b) => a.value.localeCompare(b.value)),
 		tools: [...(def.tools ?? [])].sort(),
+		paths: def.paths ? [...def.paths].sort() : undefined,
 		metadata: def.metadata
 			? Object.fromEntries(Object.entries(def.metadata).sort(([a], [b]) => a.localeCompare(b)))
 			: undefined,

@@ -24,7 +24,7 @@ Agent Builder no longer owns normal platform selection in the UI. The default vi
 
 Legacy `POST /api/agent-builder/create` with `platform: "github" | "claude" | "codex"` is still supported for old clients and tests. That path writes GitHub, Claude, or Codex artifacts directly from `AgentBuilder`, but the current product flow uses `AgentPublisher`.
 
-Alternative A linking was intentionally not implemented in the r2ab3 rollout. There are no symlink, import-shim, or mention-only publish strategies in the active code path. Every supported publish target writes concrete materialized files and records provenance in the ledger at `{storage}/.settings/agent-publish.json`.
+Active publishing is **materialized copy-only** for all platforms. Claude **agent** targets may optionally use `import-shim` (writes `CLAUDE.md` importing `@AGENTS.md`). Symlink and mention-only strategies are deferred behind an internal flag (`ENABLE_SYMLINK_PUBLISH = false`) and are not exposed in `/api/agent-publisher/platforms` or the Publisher UI. Every supported publish target writes concrete files and records provenance in the ledger at `{storage}/.settings/agent-publish.json`.
 
 ```mermaid
 flowchart LR
@@ -285,16 +285,21 @@ Current concrete Publisher support:
 | --- | --- | --- | --- |
 | `copilot` | `{outputDir}/{name}.agent.md` plus companion JSON where applicable | `{skillRoot}/.github/skills/{id}/SKILL.md` | Default agent output dir is `agentPath` or `<projectRoot>/.github/agents`. |
 | `claude` | `{outputDir}/{name}.md` plus companion JSON where applicable | `{skillRoot}/.claude/skills/{id}/SKILL.md` | Default agent output dir is `claudeAgentPath`, inferred `.claude/agents`, or `<projectRoot>/.claude/agents`. |
-| `codex` | `{outputDir}/AGENTS.md` and `AGENTS.json` collection | `{skillRoot}/.agents/skills/{id}/SKILL.md` | Preserves multi-entry Codex collection behavior. |
+| `codex` | `{outputDir}/AGENTS.md` and `AGENTS.json` collection | `{skillRoot}/.agents/skills/{id}/SKILL.md` | `artifactFormat: codex-collection` on ledger rows. |
+| `cursor` | `{outputDir}/AGENTS.md` plain Markdown | `{skillRoot}/.agents/skills/{id}/SKILL.md` | Default `agentOutputDir` is `projectRoot`; supports `paths` and `disableModelInvocation` on skills. |
+| `windsurf` | `{outputDir}/AGENTS.md` | `{skillRoot}/.windsurf/skills/{id}/SKILL.md` | Root AGENTS is always-on in Windsurf rules engine. |
+| `antigravity` | `{outputDir}/AGENTS.md` | `{skillRoot}/.agents/skills/{id}/SKILL.md` | Portable `.agents/skills` default; avoids Codelab orchestration pattern. |
+| `kiro` | `{outputDir}/AGENTS.md` compatibility | `{skillRoot}/.kiro/skills/{id}/SKILL.md` | Native steering mirrors are out of scope for first pass. |
 
-Declared but not yet implemented as supported backends:
+Link strategies (opt-in via `PublishTarget.linkStrategy`):
 
-| Platform | Status |
+| Strategy | Support |
 | --- | --- |
-| `cursor` | Present in types/UI capability rows, disabled until `AgentPublisherCursor` exists. |
-| `kiro` | Present in types/UI capability rows, disabled until `AgentPublisherKiro` exists. |
-| `windsurf` | Present in types/UI capability rows, disabled until `AgentPublisherWindsurf` exists. |
-| `antigravity` | Present in types/UI capability rows, disabled until `AgentPublisherAntigravity` exists. |
+| `copy` (default) | All platforms and artifact kinds |
+| `import-shim` | Claude **agent** only — writes `CLAUDE.md` importing `@AGENTS.md` |
+| `symlink` | Deferred — not advertised in capabilities; gated by `ENABLE_SYMLINK_PUBLISH` |
+
+`GET /api/agent-publisher/platforms` returns `supportedLinkStrategiesByKind` (and legacy `supportedLinkStrategies` for agent rows) per platform.
 
 ---
 
@@ -307,10 +312,18 @@ Important current behavior:
 - `prepare()` returns all indexed files and source summaries.
 - `get-file-content` only reads paths already in `indexedFiles`.
 - `upsertPublishedArtifacts()` adds published markdown artifacts to the in-memory index immediately.
-- `list()` consolidates legacy GitHub, Claude, and Codex-style artifacts by agent name.
+- `list()` consolidates GitHub, Claude, Codex collections, and provenance-backed plain `AGENTS.md` agents (Cursor/Windsurf/Kiro/Antigravity).
 - `get-agent()` reconstructs legacy artifacts from companion JSON when present, otherwise from markdown frontmatter and links.
+- Plain `AGENTS.md` without publish ledger provenance is **not** listed or editable (classified as `unknown`).
 
-Current gap: `AgentBuilder.list()` and `get-agent()` classify any `AGENTS.md` path as Codex. Cursor/Windsurf/Kiro/Antigravity support needs explicit platform classification so generic or nested `AGENTS.md` files do not become accidental Codex collections.
+### AGENTS.md collision and provenance policy
+
+- Codex collections use `artifactFormat: codex-collection`.
+- Cursor/Windsurf/Kiro/Antigravity plain guidance uses `artifactFormat: plain-agents-md`.
+- Publisher preview blocks incompatible generated collisions within the same request and against ledger/on-disk state (e.g. Codex collection vs Cursor plain on the same path).
+- `AgentBuilder.invalidatePublishLedger()` is called from `upsertPublishedArtifacts()` so list/get-agent classification sees fresh provenance after publish.
+- Unmanaged `AGENTS.md` files still receive backup behavior, not silent cross-platform overwrite.
+- `GET /api/agent-publisher/platforms` returns `artifactTemplates`, `notes`, and `supportedLinkStrategiesByKind` per platform.
 
 ---
 
@@ -329,8 +342,6 @@ Current gap: `AgentBuilder.list()` and `get-agent()` classify any `AGENTS.md` pa
 
 ## 12. Known Gaps
 
-1. Cursor, Kiro, Windsurf, and Antigravity are visible in the capability model but not yet supported by concrete publisher classes.
-2. Link strategies (`symlink`, `import-shim`, `mention`) are intentionally out of the active rollout; concrete materialization is the only current path.
-3. Publishing an existing Agent List item converts the legacy artifact to a canonical definition in the browser and publishes it, but the converted definition is not yet upserted into `CanonicalAgentStore`.
-4. Generic `AGENTS.md` files need platform-specific classification before Cursor/Windsurf/Kiro/Antigravity can be indexed and listed safely.
-5. Manual verification is still recommended for refresh-after-save publish, platform-native default preview paths, and repeated generated-file publish without repeated backups.
+1. Manual verification of live Publisher refresh-after-save remains recommended.
+2. Antigravity optional `GEMINI.md` mirror is not implemented in the first materialized pass.
+3. Kiro native `.kiro/steering/*.md` mirrors are deferred; compatibility `AGENTS.md` only.

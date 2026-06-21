@@ -242,9 +242,8 @@ Agent List cards carry `platforms[]`, `contentDiverged`, `agentPath`, and option
 
 ## 10. Current Constraints
 
-1. The UI displays Cursor, Kiro, Windsurf, and Antigravity rows, but the backend returns no supported artifact kinds for them.
-2. Cursor needs UI filename hints, default directory handling, and tests before it can be enabled.
-3. Agent List currently reflects legacy GitHub/Claude/Codex classification; generic `AGENTS.md` files from future platforms need explicit platform identity to avoid Codex misclassification.
-4. Link strategies are not exposed in the active UI because r2ab3 intentionally uses materialized files only.
-5. Publishing an existing Agent List item should persist its converted canonical definition to close the drift/reload gap.
-6. Manual verification remains useful for native default previews, browser refresh after save, and repeated publish over generated files.
+1. Cursor, Windsurf, Kiro, and Antigravity are enabled when backend publishers are registered; Copilot/Claude/Codex remain the default preselected platforms.
+2. Filename hints prefer backend `artifactTemplates` from `/api/agent-publisher/platforms`, with UI fallback for older responses.
+3. Claude **agent** rows may expose `import-shim` when the backend reports it in `supportedLinkStrategiesByKind`; skill rows are copy-only. Symlink is not exposed in the Cursor rollout.
+4. Platform notes (e.g. Cursor ancestor merge) appear on supported rows when provided by the backend.
+5. Manual verification remains useful for browser refresh-after-save.

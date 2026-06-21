@@ -411,7 +411,7 @@ async function main(): Promise<void>
 		const canonicalAgentStore = new CanonicalAgentStore(settings.storage);
 		const storeWarning = canonicalAgentStore.load();
 		if (storeWarning) agentBuilderLogger.warn(storeWarning);
-		agentBuilder = new AgentBuilder(machine, canonicalAgentStore);
+		agentBuilder = new AgentBuilder(machine, canonicalAgentStore, settings.storage);
 		await agentBuilder.index();
 		agentPublisher = new AgentPublisher(
 			agentBuilderSources,

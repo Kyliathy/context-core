@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import {
 	heatDiffersFromNative,
+	linkStrategiesForTarget,
+	normalizeLinkStrategy,
 	resolveDefaultOutputDir,
 	resolveFilenameHint,
 } from "./publishUtils";
@@ -32,8 +34,10 @@ describe("publishUtils", () =>
 	{
 		const copilotHint = resolveFilenameHint(def, "copilot", "agent", "D:/repo/.github/agents");
 		const claudeHint = resolveFilenameHint(def, "claude", "agent", "D:/repo/.claude/agents");
+		const cursorHint = resolveFilenameHint(def, "cursor", "agent", "D:/repo");
 		expect(copilotHint).toContain(".github/agents/worker.agent.md");
 		expect(claudeHint).toContain(".claude/agents/worker.md");
+		expect(cursorHint).toBe("D:/repo/AGENTS.md");
 	});
 
 	test("resolveFilenameHint shows skill path separately from agent dir", () =>
@@ -46,5 +50,18 @@ describe("publishUtils", () =>
 	{
 		expect(heatDiffersFromNative("D:/repo/server", "D:/repo/.github/agents")).toBe(true);
 		expect(heatDiffersFromNative("D:/repo/.github/agents", "D:/repo/.github/agents")).toBe(false);
+	});
+
+	test("linkStrategiesForTarget exposes import-shim only for Claude agents", () =>
+	{
+		expect(linkStrategiesForTarget("claude", "agent")).toEqual(["copy", "import-shim"]);
+		expect(linkStrategiesForTarget("claude", "skill")).toEqual(["copy"]);
+		expect(linkStrategiesForTarget("cursor", "agent")).toEqual(["copy"]);
+	});
+
+	test("normalizeLinkStrategy resets import-shim when switching to skill", () =>
+	{
+		expect(normalizeLinkStrategy("claude", "skill", "import-shim")).toBe("copy");
+		expect(normalizeLinkStrategy("claude", "agent", "import-shim")).toBe("import-shim");
 	});
 });

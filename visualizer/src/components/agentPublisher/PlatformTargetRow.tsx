@@ -1,4 +1,11 @@
-import type { ArtifactKind, PublishPlatform } from "../../types";
+/**
+ * Single platform row in PublishAgentDialog.
+ *
+ * Architecture: visualizer/zz-reach2/architecture/agents/archi-agent-builder-ui.md
+ * Upgrade: server/zz-reach2/upgrades/2026-06/r2ab3-agent-builder-3.md
+ */
+
+import type { ArtifactKind, LinkStrategy, PublishPlatform } from "../../types";
 
 export type PlatformTargetRowProps = {
 	platform: PublishPlatform;
@@ -7,11 +14,15 @@ export type PlatformTargetRowProps = {
 	supported: boolean;
 	artifactKind: ArtifactKind;
 	outputDir: string;
+	linkStrategy: LinkStrategy;
+	supportedLinkStrategies?: LinkStrategy[];
+	platformNotes?: string[];
 	filenameHint: string;
 	nativeDefaultDir?: string;
 	heatSuggestedDir?: string;
 	onToggle: () => void;
 	onArtifactKindChange: (kind: ArtifactKind) => void;
+	onLinkStrategyChange: (strategy: LinkStrategy) => void;
 	onPickDirectory: () => void;
 };
 
@@ -22,11 +33,15 @@ export default function PlatformTargetRow({
 	supported,
 	artifactKind,
 	outputDir,
+	linkStrategy,
+	supportedLinkStrategies,
+	platformNotes,
 	filenameHint,
 	nativeDefaultDir,
 	heatSuggestedDir,
 	onToggle,
 	onArtifactKindChange,
+	onLinkStrategyChange,
 	onPickDirectory,
 }: PlatformTargetRowProps)
 {
@@ -34,12 +49,18 @@ export default function PlatformTargetRow({
 		&& nativeDefaultDir
 		&& heatSuggestedDir.replace(/\\/g, "/").replace(/\/+$/, "") !== nativeDefaultDir.replace(/\\/g, "/").replace(/\/+$/, "");
 
+	const strategies = supportedLinkStrategies ?? ["copy"];
+	const showStrategySelector = strategies.length > 1;
+
 	return (
 		<div className={`platform-target-row${selected ? " platform-target-row-selected" : ""}${!supported ? " platform-target-row-disabled" : ""}`}>
 			<label className="platform-target-row-check">
 				<input type="checkbox" checked={selected} disabled={!supported} onChange={onToggle} />
 				<span>{label}</span>
 			</label>
+			{supported && platformNotes && platformNotes.length > 0 && (
+				<div className="platform-target-notes">{platformNotes[0]}</div>
+			)}
 			{selected && supported && (
 				<div className="platform-target-row-body">
 					<div className="platform-target-kind">
@@ -56,6 +77,20 @@ export default function PlatformTargetRow({
 							Skill
 						</button>
 					</div>
+					{showStrategySelector && (
+						<div className="platform-target-strategy">
+							<label>
+								Strategy{" "}
+								<select
+									value={linkStrategy}
+									onChange={(e) => onLinkStrategyChange(e.target.value as LinkStrategy)}>
+									{strategies.map((strategy) => (
+										<option key={strategy} value={strategy}>{strategy}</option>
+									))}
+								</select>
+							</label>
+						</div>
+					)}
 					<div className="platform-target-dir">
 						<button type="button" onClick={onPickDirectory} title={outputDir || "Select directory"}>
 							{outputDir || "Select directory…"}

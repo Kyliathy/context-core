@@ -101,6 +101,29 @@
 	font-size: 0.82rem;
 	color: #94a3b8;
 	margin: 0 0 8px;
+	line-height: 1.4;
+}
+
+.publish-placement-caption {
+	font-size: 0.78rem;
+	color: #94a3b8;
+	line-height: 1.4;
+	margin-bottom: 8px;
+}
+
+.publish-placement-tree-caption {
+	margin-top: 10px;
+}
+
+.publish-placement-knowledge-list {
+	margin: 0 0 10px;
+	padding-left: 18px;
+	font-size: 0.8rem;
+	color: #cbd5e1;
+}
+
+.publish-placement-knowledge-list li {
+	margin-bottom: 2px;
 }
 
 .path-heat-tree {

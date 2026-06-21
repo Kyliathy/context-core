@@ -47,12 +47,20 @@ export function renderSkillMarkdown(def: CanonicalAgentDefinition, platform: Pub
 	].join("\n"));
 }
 
-/** Resolves skill output path for a platform publisher. */
+/**
+ * Resolves skill output path for a platform publisher.
+ * @param outputDir - Skill root directory selected in Publisher.
+ * @param def - Canonical skill definition (uses id for folder name).
+ * @param platform - Target publish platform.
+ */
 export function resolveSkillPath(outputDir: string, def: CanonicalAgentDefinition, platform: PublishPlatform): string
 {
 	const id = def.id || def.name;
 	if (platform === "copilot") return join(outputDir, ".github", "skills", id, "SKILL.md");
 	if (platform === "claude") return join(outputDir, ".claude", "skills", id, "SKILL.md");
 	if (platform === "codex") return join(outputDir, ".agents", "skills", id, "SKILL.md");
+	if (platform === "cursor" || platform === "antigravity") return join(outputDir, ".agents", "skills", id, "SKILL.md");
+	if (platform === "windsurf") return join(outputDir, ".windsurf", "skills", id, "SKILL.md");
+	if (platform === "kiro") return join(outputDir, ".kiro", "skills", id, "SKILL.md");
 	return join(outputDir, "skills", id, "SKILL.md");
 }

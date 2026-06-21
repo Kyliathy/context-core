@@ -162,6 +162,8 @@ export type CreateAgentResponse = {
 	canonicalDefinition?: CanonicalAgentDefinition;
 	/** True when canonical-only create persisted to server store. */
 	persisted?: boolean;
+	/** Absolute path to agent-definitions.json when canonical-only create succeeded. */
+	canonicalStoragePath?: string;
 	codexEntryId?: string;
 };
 
@@ -189,13 +191,18 @@ export type CanonicalAgentDefinition = {
 	license?: string;
 	compatibility?: string;
 	metadata?: Record<string, string>;
+	paths?: string[];
+	disableModelInvocation?: boolean;
 };
+
+export type LinkStrategy = "copy" | "import-shim" | "symlink";
 
 export type PublishTarget = {
 	platform: PublishPlatform;
 	artifactKind: ArtifactKind;
 	outputDir: string;
 	codexEntryId?: string;
+	linkStrategy?: LinkStrategy;
 };
 
 export type RenderedArtifactPreview = {
@@ -203,6 +210,10 @@ export type RenderedArtifactPreview = {
 	platform: PublishPlatform;
 	artifactKind: ArtifactKind;
 	previewStatus?: "new" | "replace-generated" | "backup-unmanaged" | "unknown";
+	materialization?: {
+		requestedLinkStrategy?: LinkStrategy;
+		actualLinkStrategy?: LinkStrategy;
+	};
 };
 
 export type PreviewResult = {
@@ -234,6 +245,8 @@ export type PathHeatResult = {
 	topPaths: Array<{ path: string; hits: number }>;
 	suggestedOutputDir?: string;
 	droppedPathCount: number;
+	/** Absolute paths of knowledge basket files included in this analysis. */
+	knowledgeFilePaths?: string[];
 };
 
 export type PlatformDefaultDirs = {
@@ -242,11 +255,24 @@ export type PlatformDefaultDirs = {
 	skillRootDir: string;
 };
 
+export type PlatformArtifactTemplate = {
+	artifactKind: ArtifactKind;
+	rootKey: "agentOutputDir" | "skillRootDir" | "projectRoot";
+	relativePathTemplate: string;
+	note?: string;
+};
+
 export type PlatformCapability = {
 	platform: PublishPlatform;
 	label: string;
 	supportedArtifactKinds: ArtifactKind[];
 	defaultDirs?: PlatformDefaultDirs;
+	artifactTemplates?: PlatformArtifactTemplate[];
+	notes?: string[];
+	/** @deprecated Prefer supportedLinkStrategiesByKind */
+	supportedLinkStrategies?: LinkStrategy[];
+	/** Per-artifact-kind link strategies exposed to the Publisher UI. */
+	supportedLinkStrategiesByKind?: Partial<Record<ArtifactKind, LinkStrategy[]>>;
 };
 
 export type DriftReport = {
@@ -261,7 +287,7 @@ export type DriftReport = {
 
 /** Per-platform location info within a consolidated agent list entry. */
 export type AgentListPlatformEntry = {
-	platform: "github" | "claude" | "codex";
+	platform: "github" | "claude" | "codex" | "cursor" | "windsurf" | "kiro" | "antigravity";
 	path: string;
 	codexEntryId?: string;
 	codexDirectory?: string;

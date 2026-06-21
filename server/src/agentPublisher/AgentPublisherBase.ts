@@ -33,7 +33,7 @@ export abstract class AgentPublisherBase
 	}
 
 	/** Determines preview status for an artifact path. */
-	protected previewStatusFor(filePath: string, generatedMarker?: string | string[]): RenderedArtifact["previewStatus"]
+	previewStatusFor(filePath: string, generatedMarker?: string | string[]): RenderedArtifact["previewStatus"]
 	{
 		if (!existsSync(filePath)) return "new";
 		const markers = generatedMarker

@@ -52,6 +52,20 @@ export function resolveDefaultClaudeAgentOutputDir(source: DataSourceEntry): str
 	return join(inferProjectRoot(source), ".claude", "agents");
 }
 
+/**
+ * Resolves Cursor default agent output (project root) honoring publishRoots.cursor.
+ * @param source - AgentBuilder data source entry.
+ */
+export function resolveDefaultCursorAgentOutputDir(source: DataSourceEntry): string
+{
+	const roots = source.publishRoots?.cursor;
+	if (Array.isArray(roots) && roots.length > 0 && roots[0]?.trim())
+	{
+		return resolve(roots[0]);
+	}
+	return inferProjectRoot(source);
+}
+
 /** Resolves per-platform default directories for Publisher target initialization. */
 export function resolvePlatformPathContract(source: DataSourceEntry, platform: PublishPlatform): PlatformPathContract
 {
@@ -60,6 +74,15 @@ export function resolvePlatformPathContract(source: DataSourceEntry, platform: P
 	if (platform === "copilot") agentOutputDir = resolveDefaultCopilotAgentOutputDir(source);
 	else if (platform === "claude") agentOutputDir = resolveDefaultClaudeAgentOutputDir(source);
 	else if (platform === "codex") agentOutputDir = resolveDefaultCodexAgentOutputDir(source);
+	else if (platform === "cursor") agentOutputDir = resolveDefaultCursorAgentOutputDir(source);
+	else if (platform === "windsurf" || platform === "antigravity" || platform === "kiro")
+	{
+		const roots = source.publishRoots?.[platform];
+		if (Array.isArray(roots) && roots.length > 0 && roots[0]?.trim())
+		{
+			agentOutputDir = resolve(roots[0]);
+		}
+	}
 
 	return {
 		projectRoot,

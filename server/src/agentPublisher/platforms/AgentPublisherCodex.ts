@@ -73,6 +73,7 @@ export class AgentPublisherCodex extends AgentPublisherBase
 				content: mdContent,
 				platform: "codex",
 				artifactKind: "agent",
+				artifactFormat: "codex-collection",
 				previewStatus: this.previewStatusFor(mdPath, generatedMarkersForPlatform("codex")),
 			},
 			{

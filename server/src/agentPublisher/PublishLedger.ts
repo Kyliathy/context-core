@@ -74,4 +74,16 @@ export class PublishLedger
 	{
 		return [...this.entries];
 	}
+
+	/**
+	 * Returns the most recent ledger entry for an absolute artifact path.
+	 * @param absolutePath - Normalized absolute path of a materialized artifact.
+	 */
+	getByAbsolutePath(absolutePath: string): PublishLedgerEntry | undefined
+	{
+		const normalized = absolutePath.replace(/\\/g, "/");
+		const matches = this.entries.filter((e) => e.absolutePath.replace(/\\/g, "/") === normalized);
+		if (matches.length === 0) return undefined;
+		return matches.sort((a, b) => b.publishedAt.localeCompare(a.publishedAt))[0];
+	}
 }

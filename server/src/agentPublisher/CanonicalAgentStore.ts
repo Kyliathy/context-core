@@ -86,4 +86,10 @@ export class CanonicalAgentStore
 	{
 		return [...this.definitions];
 	}
+
+	/** Absolute path to agent-definitions.json on disk. */
+	getStorePath(): string
+	{
+		return this.storePath;
+	}
 }

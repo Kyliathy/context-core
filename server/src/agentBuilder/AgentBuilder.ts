@@ -1,7 +1,8 @@
 /**
  * AgentBuilder – indexes content sources and manages agent file lifecycle.
  *
- * Architecture: server/zz-reach2/architecture/archi-context-core-level0.md
+ * Architecture: server/zz-reach2/architecture/agents/archi-agent-builder.md
+ * Upgrade: server/zz-reach2/upgrades/2026-06/r2ab3-agent-builder-3.md
  * Logging: server/zz-reach2/upgrades/2026-06/r2wl-winston-logging.md
  */
 
@@ -14,6 +15,12 @@ import type { MachineConfig, DataSourceEntry } from "../types.js";
 import { toCanonicalAgentDefinition } from "../agentPublisher/canonical.js";
 import type { CanonicalAgentStore } from "../agentPublisher/CanonicalAgentStore.js";
 import type { CanonicalAgentDefinition, RenderedArtifact } from "../agentPublisher/types.js";
+import { PublishLedger } from "../agentPublisher/PublishLedger.js";
+import {
+	classifyAgentArtifactPath,
+	isListableAgentDefinitionPath,
+} from "../agentPublisher/agentArtifactClassifier.js";
+import { CXC_GENERATED_MARKER } from "../agentPublisher/generatedMarker.js";
 
 /** A single indexed file from a data source directory. */
 export interface IndexedFile
@@ -64,7 +71,7 @@ export interface CreateAgentInput
 	/** Explicit Codex output directory (must be one of the source's allowed Codex directories). */
 	codexDirectory?: string;
 	/** Target platform for legacy platform-specific create. Omit for canonical-only save. */
-	platform?: "github" | "claude" | "codex";
+	platform?: "github" | "claude" | "codex" | "cursor" | "windsurf" | "kiro" | "antigravity";
 }
 
 /** Response shape for POST /api/agent-builder/create. */
@@ -77,13 +84,15 @@ export interface CreateAgentResponse
 	canonicalDefinition?: CanonicalAgentDefinition;
 	/** True when canonical-only create persisted to CanonicalAgentStore. */
 	persisted?: boolean;
+	/** Absolute path to agent-definitions.json when canonical-only create succeeded. */
+	canonicalStoragePath?: string;
 	codexEntryId?: string;
 }
 
 /** Per-platform location info within a consolidated agent list entry. */
 export interface AgentListPlatformEntry
 {
-	platform: "github" | "claude" | "codex";
+	platform: "github" | "claude" | "codex" | "cursor" | "windsurf" | "kiro" | "antigravity";
 	path: string;
 	codexEntryId?: string;
 	codexDirectory?: string;
@@ -103,7 +112,7 @@ export interface AgentListEntry
 	/** Optional Codex directory (set when primary platform is Codex). */
 	codexDirectory?: string;
 	/** Primary platform (the one with the biggest dataLength). */
-	platform?: "github" | "claude" | "codex";
+	platform?: "github" | "claude" | "codex" | "cursor" | "windsurf" | "kiro" | "antigravity";
 	/** All platforms this logical agent exists on. */
 	platforms: AgentListPlatformEntry[];
 	/** True when the agent content differs between platforms (knowledge, description, etc.). */
@@ -867,6 +876,49 @@ function parseKnowledgeLinks(content: string): string[]
 	return links;
 }
 
+/**
+ * Reconstructs a Cursor plain AGENTS.md agent from disk content and optional canonical store data.
+ * @param content - Raw AGENTS.md file content.
+ * @param sourceName - Project/source label.
+ * @param agentMdPath - Absolute path to AGENTS.md.
+ * @param canonicalDef - Optional canonical definition from publish ledger id.
+ */
+function reconstructCursorPlainAgent(
+	content: string,
+	sourceName: string,
+	agentMdPath: string,
+	canonicalDef?: CanonicalAgentDefinition,
+): CreateAgentInput & { platform: "cursor" }
+{
+	if (canonicalDef)
+	{
+		return {
+			projectName: canonicalDef.projectName,
+			agentName: canonicalDef.name,
+			description: canonicalDef.description,
+			"argument-hint": canonicalDef["argument-hint"] ?? "",
+			tools: canonicalDef.tools ?? [],
+			agentKnowledge: canonicalDef.knowledge.map((k) => k.value),
+			platform: "cursor",
+		};
+	}
+
+	const lines = content.replace(CXC_GENERATED_MARKER, "").split("\n");
+	const heading = lines.find((line) => line.trim().startsWith("# "))?.trim().slice(2).trim();
+	const bodyStart = lines.findIndex((line) => line.trim() !== "" && !line.trim().startsWith("#") && !line.trim().startsWith("<!--"));
+	const description = bodyStart >= 0 ? lines.slice(bodyStart).join("\n").trim().split("\n\n")[0]?.trim() ?? "" : "";
+
+	return {
+		projectName: sourceName,
+		agentName: heading || getAgentNameFromPath(agentMdPath),
+		description,
+		"argument-hint": "",
+		tools: [],
+		agentKnowledge: parseKnowledgeLinks(content),
+		platform: "cursor",
+	};
+}
+
 /** Reconstructs CreateAgentInput from a legacy agent file without companion JSON. */
 function reconstructAgentInput(content: string, sourceName: string, agentMdPath: string): CreateAgentInput
 {
@@ -1131,10 +1183,31 @@ export class AgentBuilder
 	constructor(
 		machineConfig: MachineConfig,
 		private readonly canonicalStore?: CanonicalAgentStore,
+		private readonly storagePath?: string,
 	)
 	{
 		this.sources = this.extractAgentBuilderSources(machineConfig);
 	}
+
+	/** Lazy publish ledger reader for AGENTS.md provenance classification. */
+	private getPublishLedger(): PublishLedger | undefined
+	{
+		if (!this.storagePath) return undefined;
+		if (!this.publishLedger)
+		{
+			this.publishLedger = new PublishLedger(this.storagePath);
+			this.publishLedger.load();
+		}
+		return this.publishLedger;
+	}
+
+	/** Clears cached publish ledger so the next read reflects Publisher writes. */
+	invalidatePublishLedger(): void
+	{
+		this.publishLedger = undefined;
+	}
+
+	private publishLedger?: PublishLedger;
 
 	/** Returns a persisted canonical definition by id. */
 	getCanonicalDefinition(canonicalId: string): CanonicalAgentDefinition | undefined
@@ -1404,6 +1477,7 @@ export class AgentBuilder
 				canonicalId: persisted.id,
 				canonicalDefinition: persisted,
 				persisted: true,
+				canonicalStoragePath: this.canonicalStore.getStorePath(),
 			};
 		}
 
@@ -1579,12 +1653,17 @@ export class AgentBuilder
 	{
 		this.refreshAgentEntriesFromDisk();
 
-		const mdEntries = this.indexedFiles.filter((f) => f.origin === "agent" && isAnyAgentDefinitionPath(f.absolutePath));
+		const mdEntries = this.indexedFiles.filter((f) =>
+		{
+			if (f.origin !== "agent") return false;
+			const ledgerEntry = this.getPublishLedger()?.getByAbsolutePath(f.absolutePath);
+			return isListableAgentDefinitionPath(f.absolutePath, ledgerEntry);
+		});
 
 		// Step 1: Build flat intermediate list with per-entry platform info + content fingerprint.
 		type FlatEntry = {
 			name: string;
-			platform: "github" | "claude" | "codex";
+			platform: AgentListPlatformEntry["platform"];
 			path: string;
 			codexEntryId?: string;
 			codexDirectory?: string;
@@ -1600,9 +1679,49 @@ export class AgentBuilder
 
 		for (const entry of mdEntries)
 		{
+			const ledgerEntry = this.getPublishLedger()?.getByAbsolutePath(entry.absolutePath);
+			const classification = classifyAgentArtifactPath(entry.absolutePath, ledgerEntry);
+
+			// Business logic: plain AGENTS.md platforms appear as one logical project-guidance agent when provenance is known.
+			if (classification.artifactFormat === "plain-agents-md"
+				&& (classification.platform === "cursor"
+					|| classification.platform === "windsurf"
+					|| classification.platform === "kiro"
+					|| classification.platform === "antigravity"))
+			{
+				const canonicalDef = ledgerEntry?.canonicalId
+					? this.canonicalStore?.get(ledgerEntry.canonicalId)
+					: undefined;
+				let description = canonicalDef?.description ?? "";
+				let hint = canonicalDef?.["argument-hint"] ?? "";
+				let fingerprint = canonicalDef ? JSON.stringify(canonicalDef) : "";
+				if (!description)
+				{
+					try
+					{
+						const content = readFileSync(entry.absolutePath, "utf8");
+						const reconstructed = reconstructCursorPlainAgent(content, entry.sourceName, entry.absolutePath);
+						description = reconstructed.description;
+						hint = reconstructed["argument-hint"];
+						fingerprint = JSON.stringify({ d: description, h: hint, k: reconstructed.agentKnowledge });
+					} catch { /* keep defaults */ }
+				}
+				flat.push({
+					name: canonicalDef?.name ?? getAgentNameFromPath(entry.absolutePath),
+					platform: classification.platform,
+					path: entry.absolutePath,
+					dataLength: entry.size,
+					description,
+					hint,
+					excerpt: entry.excerpt,
+					contentFingerprint: fingerprint || JSON.stringify({ size: entry.size }),
+				});
+				continue;
+			}
+
 			// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting agent builder artifact integrity from partial or invalid state.
 
-			if (isCodexAgentsMdPath(entry.absolutePath) || isCodexOverrideMdPath(entry.absolutePath))
+			if (classification.platform === "codex" && classification.artifactFormat === "codex-collection")
 			{
 				const codexCollection = loadCodexCollection(entry.absolutePath, entry.sourceName);
 				if (codexCollection.agents.length > 0)
@@ -1744,21 +1863,46 @@ export class AgentBuilder
 		// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting agent builder artifact integrity from partial or invalid state.
 
 
-		if (!agentPath || !isAnyAgentDefinitionPath(agentPath))
+		if (!agentPath)
 		{
-			throw Object.assign(new Error("path must point to a .agent.md (GitHub), .claude/agents/*.md (Claude), or AGENTS*.md (Codex) file"), { status: 400 });
+			throw Object.assign(new Error("path must point to a supported agent artifact (.agent.md, .claude/agents/*.md, provenance-backed AGENTS.md, or Codex collection)"), { status: 400 });
+		}
+
+		const ledgerEntry = this.getPublishLedger()?.getByAbsolutePath(agentPath);
+		const classification = classifyAgentArtifactPath(agentPath, ledgerEntry);
+		if (!isListableAgentDefinitionPath(agentPath, ledgerEntry))
+		{
+			throw Object.assign(new Error("path must point to a supported agent artifact (.agent.md, .claude/agents/*.md, provenance-backed AGENTS.md, or Codex collection)"), { status: 400 });
 		}
 
 		const indexed = this.indexedFiles.find(
-			(f) => f.origin === "agent" && f.absolutePath === agentPath &&
-				isAnyAgentDefinitionPath(f.absolutePath)
+			(f) => f.origin === "agent" && f.absolutePath === agentPath,
 		);
 		if (!indexed)
 		{
 			throw Object.assign(new Error(`Agent not found in index: ${agentPath}`), { status: 404 });
 		}
 
-		const isCodexPath = isCodexAgentsMdPath(agentPath) || isCodexOverrideMdPath(agentPath);
+		if (classification.platform === "cursor"
+			|| classification.platform === "windsurf"
+			|| classification.platform === "kiro"
+			|| classification.platform === "antigravity")
+		{
+			const content = readFileSync(agentPath, "utf8");
+			const canonicalDef = ledgerEntry?.canonicalId
+				? this.canonicalStore?.get(ledgerEntry.canonicalId)
+				: undefined;
+			const reconstructed = reconstructCursorPlainAgent(content, indexed.sourceName, agentPath, canonicalDef);
+			return {
+				agent: {
+					...reconstructed,
+					platform: classification.platform,
+					fromJson: false,
+				},
+			};
+		}
+
+		const isCodexPath = classification.platform === "codex" && classification.artifactFormat === "codex-collection";
 		if (isCodexPath)
 		{
 			const jsonPath = toAgentJsonPath(agentPath);
@@ -2093,5 +2237,8 @@ export class AgentBuilder
 				excerpt: artifact.content.slice(0, 1000),
 			});
 		}
+
+		// Business logic: Publisher updates the ledger on disk; drop cache so list/get-agent see fresh provenance.
+		this.invalidatePublishLedger();
 	}
 }

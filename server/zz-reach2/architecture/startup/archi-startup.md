@@ -7,7 +7,7 @@
 
 ## Purpose
 
-ContextCore startup used to be a simple but expensive routine: read every configured harness source, rewrite storage, load the database, then start the API. R2SO replaced that with a planned ingest model that skips unchanged sources, reads only deltas where possible, and bounds large Cursor reads. R2SO2 then fixed the shared-storage case where multiple machines sync the same CXC storage tree but do not share local SQLite database files.
+ContextCore startup used to be a simple but expensive routine: read every configured harness source, rewrite storage, load the database, then start the API. R2SO replaced that with a planned ingest model that skips unchanged sources, reads only deltas where possible, and bounds large Cursor reads. R2SO2 then fixed the shared-storage case where multiple machines sync the same CXC storage tree but do not share local SQLite database files.Re
 
 This document reviews the architecture of the startup systems involved in those changes. It is meant to answer:
 
@@ -53,20 +53,20 @@ The key R2SO2 correction is that the **database is local-only** even if its conf
 
 ## Important Modules
 
-| Module | Role |
-|---|---|
-| `ContextCore.ts` | Main startup orchestration, DB load, run markers, startup ingest, downstream topic/vector/server setup. |
-| `GlobalSettingsStore.ts` | Synced v3 ingest metadata, scoped by active machine. Writes `global-settings.json` atomically with merge-on-save. |
-| `DbFingerprint.ts` | Local DB fingerprint collection and validation. Used only against the active machine's stored fingerprint. |
-| `StartupPlanner.ts` | Pure-ish decision layer: selects skip, delta, full, forced-full, recovery-full, resume-full, or resume-recovery. |
-| `StartupIngestCoordinator.ts` | Executes planner decisions, calls readers, persists batches, commits bookmarks after persistence succeeds. |
-| `BatchPersistence.ts` | Shared storage + DB persistence path for startup and watcher ingest. |
-| `FileManifest.ts` | Machine-named manifests for file harness skip/delta decisions. |
-| `cursor.ts` | Bounded Cursor startup/recovery reader, rowid checkpoints, incremental watcher reader. |
-| `opencode.ts` | OpenCode rowid checkpoints, affected-session reads, startup/watch delta paths. |
-| `harness/index.ts` | Reader registry and scoped-reader dispatch for file harnesses. |
-| `IncrementalPipeline.ts` | Post-startup watcher ingest. Reuses batch persistence and commits checkpoints only after persistence. |
-| `cxccli.ts` | Operator inspection/reset tools, including per-machine ingest status and Cursor progress. |
+| Module                        | Role                                                                                                              |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `ContextCore.ts`              | Main startup orchestration, DB load, run markers, startup ingest, downstream topic/vector/server setup.           |
+| `GlobalSettingsStore.ts`      | Synced v3 ingest metadata, scoped by active machine. Writes `global-settings.json` atomically with merge-on-save. |
+| `DbFingerprint.ts`            | Local DB fingerprint collection and validation. Used only against the active machine's stored fingerprint.        |
+| `StartupPlanner.ts`           | Pure-ish decision layer: selects skip, delta, full, forced-full, recovery-full, resume-full, or resume-recovery.  |
+| `StartupIngestCoordinator.ts` | Executes planner decisions, calls readers, persists batches, commits bookmarks after persistence succeeds.        |
+| `BatchPersistence.ts`         | Shared storage + DB persistence path for startup and watcher ingest.                                              |
+| `FileManifest.ts`             | Machine-named manifests for file harness skip/delta decisions.                                                    |
+| `cursor.ts`                   | Bounded Cursor startup/recovery reader, rowid checkpoints, incremental watcher reader.                            |
+| `opencode.ts`                 | OpenCode rowid checkpoints, affected-session reads, startup/watch delta paths.                                    |
+| `harness/index.ts`            | Reader registry and scoped-reader dispatch for file harnesses.                                                    |
+| `IncrementalPipeline.ts`      | Post-startup watcher ingest. Reuses batch persistence and commits checkpoints only after persistence.             |
+| `cxccli.ts`                   | Operator inspection/reset tools, including per-machine ingest status and Cursor progress.                         |
 
 ## Startup Order
 
@@ -115,15 +115,15 @@ After startup ingest completes, ContextCore loads topic/scopes/favorites stores,
 
 Startup state is split deliberately.
 
-| State | Location | Shared by sync? | Owner | Notes |
-|---|---|---:|---|---|
-| Machine config | `server/cc.json` | Usually no | Operator/setup/CLI | Startup reads it but must not mutate it. |
-| Session storage | `<storage>/<machine>/<harness>/<project>/*.json` | Yes | `StorageWriter` / batch persistence | Historical source of truth for reloads. |
-| Raw archives | `<storage>/<machine>-RAW/...` | Yes | Harness readers | Cursor writes page-scoped raw files. |
-| Ingest metadata | `<storage>/.settings/global-settings.json` | Yes | `GlobalSettingsStore` | v3 schema, per-machine ingest state. |
-| File manifests | `<storage>/.settings/ingest-manifests/{machine}-{harness}.json` | Yes | `FileManifest` helpers | Large file-harness state lives outside global settings. |
-| Query DB | `cxc-db.sqlite` plus WAL/SHM | No | `IMessageStore` implementation | Local cache/index rebuilt from storage when needed. |
-| Topics/scopes/favorites | `.settings` JSON files | Yes | Settings stores | Loaded after startup ingest. |
+| State                   | Location                                                        | Shared by sync? | Owner                               | Notes                                                   |
+| ----------------------- | --------------------------------------------------------------- | --------------: | ----------------------------------- | ------------------------------------------------------- |
+| Machine config          | `server/cc.json`                                                |      Usually no | Operator/setup/CLI                  | Startup reads it but must not mutate it.                |
+| Session storage         | `<storage>/<machine>/<harness>/<project>/*.json`                |             Yes | `StorageWriter` / batch persistence | Historical source of truth for reloads.                 |
+| Raw archives            | `<storage>/<machine>-RAW/...`                                   |             Yes | Harness readers                     | Cursor writes page-scoped raw files.                    |
+| Ingest metadata         | `<storage>/.settings/global-settings.json`                      |             Yes | `GlobalSettingsStore`               | v3 schema, per-machine ingest state.                    |
+| File manifests          | `<storage>/.settings/ingest-manifests/{machine}-{harness}.json` |             Yes | `FileManifest` helpers              | Large file-harness state lives outside global settings. |
+| Query DB                | `cxc-db.sqlite` plus WAL/SHM                                    |              No | `IMessageStore` implementation      | Local cache/index rebuilt from storage when needed.     |
+| Topics/scopes/favorites | `.settings` JSON files                                          |             Yes | Settings stores                     | Loaded after startup ingest.                            |
 
 ## Global Settings v3
 
@@ -220,14 +220,14 @@ flowchart TD
 
 ### Actions
 
-| Action | Meaning |
-|---|---|
-| `skipped` | No source parsing. The coordinator may refresh bookmark metadata. |
-| `delta` | Read only changed/new files or DB rows beyond stored rowids. |
-| `full` | First run or missing bookmark; read the whole source scope. Cursor/OpenCode still use bounded batch paths where available. |
-| `forced-full` | Operator-forced full read via `FORCE_FULL_HARNESS_REFRESH`. |
-| `recovery-full` | Conservative read due to invalid bookmark, local DB fingerprint failure, source replacement, rowid regression, parser epoch drift, manifest corruption, or interrupted non-Cursor startup. |
-| `resume-full` / `resume-recovery` | Cursor-only continuation from durable page progress after an interrupted full/recovery run. |
+| Action                            | Meaning                                                                                                                                                                                    |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `skipped`                         | No source parsing. The coordinator may refresh bookmark metadata.                                                                                                                          |
+| `delta`                           | Read only changed/new files or DB rows beyond stored rowids.                                                                                                                               |
+| `full`                            | First run or missing bookmark; read the whole source scope. Cursor/OpenCode still use bounded batch paths where available.                                                                 |
+| `forced-full`                     | Operator-forced full read via `FORCE_FULL_HARNESS_REFRESH`.                                                                                                                                |
+| `recovery-full`                   | Conservative read due to invalid bookmark, local DB fingerprint failure, source replacement, rowid regression, parser epoch drift, manifest corruption, or interrupted non-Cursor startup. |
+| `resume-full` / `resume-recovery` | Cursor-only continuation from durable page progress after an interrupted full/recovery run.                                                                                                |
 
 ## DB Fingerprint Semantics
 
@@ -465,16 +465,16 @@ Non-Cursor harnesses do not currently have page-level progress. An interrupted a
 
 Important namespaces:
 
-| Namespace | What to look for |
-|---|---|
-| `startup-db-load` | Storage load count, DB message/session counts, DB fingerprint invalidation. |
-| `startup-ingest-plan` | Previous run handling, bookmark presence, live rowids, expected read count, summary line. |
-| `startup-harness-skip` | Harnesses skipped without source parsing. |
-| `startup-harness-delta` | File/rowid deltas. |
-| `startup-harness-full` | Full/recovery/forced/resume actions and scope. |
-| `startup-harness-batch` | Batch-level parsed/session/insert/error/duration counters. |
-| `StartupIngestCoordinator` | Per-harness final stats and Cursor symbol-map writes. |
-| `harness:cursor` | Cursor batched reader mode, emitted messages/batches, peak RSS. |
+| Namespace                  | What to look for                                                                          |
+| -------------------------- | ----------------------------------------------------------------------------------------- |
+| `startup-db-load`          | Storage load count, DB message/session counts, DB fingerprint invalidation.               |
+| `startup-ingest-plan`      | Previous run handling, bookmark presence, live rowids, expected read count, summary line. |
+| `startup-harness-skip`     | Harnesses skipped without source parsing.                                                 |
+| `startup-harness-delta`    | File/rowid deltas.                                                                        |
+| `startup-harness-full`     | Full/recovery/forced/resume actions and scope.                                            |
+| `startup-harness-batch`    | Batch-level parsed/session/insert/error/duration counters.                                |
+| `StartupIngestCoordinator` | Per-harness final stats and Cursor symbol-map writes.                                     |
+| `harness:cursor`           | Cursor batched reader mode, emitted messages/batches, peak RSS.                           |
 
 Healthy steady-state examples:
 
@@ -526,12 +526,12 @@ The status command should show:
 
 ## Environment Controls
 
-| Control | Effect |
-|---|---|
+| Control                             | Effect                                                                                                                                  |
+| ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
 | `FORCE_FULL_HARNESS_REFRESH=Cursor` | Forces one harness through full/recovery path. Comma-separated values are supported; `true`, `yes`, `1`, or `all` target all harnesses. |
-| `CURSOR_INGEST_BATCH_SIZE=5000` | Sets Cursor page/emitted batch cap. Values above `5000` are clamped. |
-| `STARTUP_INGEST_TRACE=true` | Emits extra startup planning trace lines. |
-| Parser epoch constants | `HARNESS_PARSER_EPOCHS` in `IngestConfig.ts`; bump when parser semantics change enough to invalidate bookmarks/manifests. |
+| `CURSOR_INGEST_BATCH_SIZE=5000`     | Sets Cursor page/emitted batch cap. Values above `5000` are clamped.                                                                    |
+| `STARTUP_INGEST_TRACE=true`         | Emits extra startup planning trace lines.                                                                                               |
+| Parser epoch constants              | `HARNESS_PARSER_EPOCHS` in `IngestConfig.ts`; bump when parser semantics change enough to invalidate bookmarks/manifests.               |
 
 ## Invariants
 

@@ -82,6 +82,7 @@ export class PathHeatAnalyzer
 		const directHits = new Map<string, number>();
 		const subtreeHits = new Map<string, number>();
 		const pathHitCounts = new Map<string, number>();
+		const knowledgeFilePaths: string[] = [];
 		let droppedPathCount = 0;
 
 		const increment = (key: string, map: Map<string, number>): void =>
@@ -93,8 +94,20 @@ export class PathHeatAnalyzer
 		{
 			if (item.kind !== "file") continue;
 			const indexed = this.agentBuilder?.findIndexedFile(item.value, def.projectName);
-			const knowledgePath = indexed?.absolutePath ?? resolve(projectRoot, item.value);
+			const knowledgePath = indexed?.absolutePath
+				? resolve(indexed.absolutePath)
+				: resolve(projectRoot, item.value);
 			if (!existsSync(knowledgePath)) continue;
+
+			knowledgeFilePaths.push(knowledgePath);
+
+			// Business logic: always count the basket file itself so placement reflects selected knowledge, not only cross-references inside docs.
+			increment(knowledgePath, pathHitCounts);
+			increment(knowledgePath, directHits);
+			for (const ancestor of ancestorsUntilRoot(knowledgePath, projectRoot))
+			{
+				increment(ancestor, subtreeHits);
+			}
 
 			let content = "";
 			try { content = readFileSync(knowledgePath, "utf8"); } catch { continue; }
@@ -129,6 +142,7 @@ export class PathHeatAnalyzer
 			topPaths: topPathsFromCounts(pathHitCounts),
 			suggestedOutputDir: selectPlacementPlan(tree, totalHits),
 			droppedPathCount,
+			knowledgeFilePaths,
 		};
 	}
 
