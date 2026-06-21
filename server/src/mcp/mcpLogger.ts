@@ -1,17 +1,22 @@
 /**
  * Centralized MCP tool-call logger.
  *
- * Console logging (stderr) is always active.
+ * Console diagnostics use a stderr-safe Winston logger (always active).
  * File logging is gated by MCP_LOGGING=true.
  *
  * File layout:
  *   logs/YYYY-MM-DD HH:mm MCP Tool Calls.json       — session log (one per run)
  *   logs/mcp-tool-calls/YYYY-MM-DD/HH:mm:ss Tool- <name>.json  — per-call detail
+ *
+ * Upgrade plan: server/zz-reach2/upgrades/2026-06/r2wl-winston-logging.md (T51-T52)
  */
 
-import { mkdirSync, writeFileSync, readFileSync, existsSync } from "fs";
+import { mkdirSync, writeFileSync, existsSync } from "fs";
 import { join } from "path";
-import chalk from "chalk";
+import { getStderrLogger, serializeError } from "../logging/logger.js";
+
+/** Stderr-safe logger for tool-call console diagnostics. */
+const logger = getStderrLogger("mcp:stdio");
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -45,8 +50,8 @@ const filenameCounters = new Map<string, number>();
  * - Creates the logs directory if needed
  * - Freezes the session log filename for the lifetime of the process
  *
- * @param serverLogsDir - Absolute path to the logs directory (e.g. /project/server/logs)
- * @param mcpLoggingEnabled - Value of CCSettings.MCP_LOGGING
+ * @param serverLogsDir – absolute path to the logs directory (e.g. /project/server/logs)
+ * @param mcpLoggingEnabled – value of CCSettings.MCP_LOGGING
  */
 export function initMcpLogger(serverLogsDir: string, mcpLoggingEnabled: boolean): void
 {
@@ -64,7 +69,7 @@ export function initMcpLogger(serverLogsDir: string, mcpLoggingEnabled: boolean)
 	// Write an empty array to seed a valid JSON file
 	writeFileSync(sessionLogPath, "[]", "utf-8");
 
-	process.stderr.write(chalk.blue(`[MCP] File logging enabled → ${sessionLogPath}\n`));
+	logger.info(`[MCP] File logging enabled → ${sessionLogPath}`);
 }
 
 // ─── Request logging ──────────────────────────────────────────────────────────
@@ -72,11 +77,13 @@ export function initMcpLogger(serverLogsDir: string, mcpLoggingEnabled: boolean)
 /**
  * Log the incoming tool request to stderr.
  * Call this immediately on entry, before dispatch.
+ * @param toolName – MCP tool name being invoked.
+ * @param args – sanitized tool arguments from the client.
  */
 export function logToolRequest(toolName: string, args: Record<string, unknown>): void
 {
 	const argsStr = formatArgs(args);
-	process.stderr.write(chalk.cyan(`[MCP/Tool] ${toolName} ← ${argsStr}\n`));
+	logger.debug(`[MCP/Tool] ${toolName} ← ${argsStr}`);
 }
 
 // ─── Result logging ───────────────────────────────────────────────────────────
@@ -84,20 +91,16 @@ export function logToolRequest(toolName: string, args: Record<string, unknown>):
 /**
  * Log a completed tool call to console (always) and to files (when enabled).
  * Call this after dispatch, with the final response text.
+ * @param entry – completed tool call metadata and response text.
  */
 export function logToolCall(entry: McpToolLogEntry): void
 {
 	const { tool, durationMs, request, responseText, isError } = entry;
 	const resultCount = entry.resultCount ?? parseResultCount(tool, responseText);
 	const countStr = resultCount !== undefined ? ` | ${resultCount} results` : "";
-	const errorFlag = isError ? chalk.red(" [ERROR]") : "";
+	const errorFlag = isError ? " [ERROR]" : "";
 
-	// Console: always
-	process.stderr.write(
-		chalk.cyan(`[MCP/Tool] ${tool} →`) +
-		chalk.white(` ${durationMs}ms${countStr} | ${responseText.length} chars`) +
-		errorFlag + "\n"
-	);
+	logger.info(`[MCP/Tool] ${tool} → ${durationMs}ms${countStr} | ${responseText.length} chars${errorFlag}`);
 
 	if (!loggingEnabled) return;
 
@@ -122,6 +125,11 @@ export function logToolCall(entry: McpToolLogEntry): void
 
 /**
  * Log a tool error to console (always) and to files (when enabled).
+ * @param toolName – MCP tool name that failed.
+ * @param durationMs – elapsed milliseconds before the error.
+ * @param request – sanitized tool arguments from the client.
+ * @param errorMessage – human-readable error description.
+ * @param isMcpError – when true, labels the failure as an MCP protocol error.
  */
 export function logToolError(
 	toolName: string,
@@ -132,10 +140,7 @@ export function logToolError(
 ): void
 {
 	const label = isMcpError ? "MCP error" : "error";
-	process.stderr.write(
-		chalk.cyan(`[MCP/Tool] ${toolName} →`) +
-		chalk.red(` ${label} in ${durationMs}ms: ${errorMessage}`) + "\n"
-	);
+	logger.error(`[MCP/Tool] ${toolName} → ${label} in ${durationMs}ms: ${errorMessage}`);
 
 	if (!loggingEnabled) return;
 
@@ -155,6 +160,9 @@ export function logToolError(
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────
 
+/**
+ * Rewrites the session JSON file with all entries accumulated so far.
+ */
 function flushSessionLog(): void
 {
 	try
@@ -162,10 +170,15 @@ function flushSessionLog(): void
 		writeFileSync(sessionLogPath, JSON.stringify(sessionEntries, null, 2), "utf-8");
 	} catch (err)
 	{
-		process.stderr.write(`[MCP] Failed to write session log: ${err}\n`);
+		logger.error("[MCP] Failed to write session log", { error: serializeError(err) });
 	}
 }
 
+/**
+ * Writes a per-call detail JSON file under logs/mcp-tool-calls/.
+ * @param toolName – tool name used in the filename.
+ * @param data – full detail payload including response text when applicable.
+ */
 function writeDetailLog(toolName: string, data: object): void
 {
 	try
@@ -183,13 +196,16 @@ function writeDetailLog(toolName: string, data: object): void
 		writeFileSync(join(dir, filename), JSON.stringify(data, null, 2), "utf-8");
 	} catch (err)
 	{
-		process.stderr.write(`[MCP] Failed to write detail log for ${toolName}: ${err}\n`);
+		logger.error(`[MCP] Failed to write detail log for ${toolName}`, { error: serializeError(err) });
 	}
 }
 
 /**
  * Returns a unique filename by appending a counter if the base name already exists.
  * e.g. "07:51:03 Tool- search_messages.json" → "07:51:03 Tool- search_messages (2).json"
+ * @param dir – target directory for the detail file.
+ * @param baseName – base filename without extension.
+ * @returns unique filename with `.json` extension.
  */
 function uniqueFilename(dir: string, baseName: string): string
 {
@@ -197,6 +213,9 @@ function uniqueFilename(dir: string, baseName: string): string
 	let counter = filenameCounters.get(key) ?? 1;
 
 	let candidate = `${baseName}.json`;
+	// Business logic: this iteration walks every relevant item so query and MCP response correctness reflects the complete source set instead of a partial snapshot.
+
+	//Bump the counter until we find a filename slot not already on disk.
 	while (existsSync(join(dir, candidate)))
 	{
 		counter++;
@@ -210,6 +229,8 @@ function uniqueFilename(dir: string, baseName: string): string
 /**
  * Extracts a result count from the formatted response text using known header patterns.
  * Returns undefined when no pattern matches.
+ * @param toolName – tool name for tool-specific heuristics.
+ * @param text – formatted response text returned to the MCP client.
  */
 export function parseResultCount(toolName: string, text: string): number | undefined
 {
@@ -234,7 +255,8 @@ export function parseResultCount(toolName: string, text: string): number | undef
 	{
 		const separators = (text.match(/^---$/gm) ?? []).length;
 		if (separators > 0) return separators + 1;
-	}
+	}	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting query and MCP response correctness from partial or invalid state.
+
 
 	// Single-result tools
 	if (toolName === "get_message" || toolName === "get_topic")
@@ -247,6 +269,7 @@ export function parseResultCount(toolName: string, text: string): number | undef
 
 // ─── Date/time formatters ─────────────────────────────────────────────────────
 
+/** @param d – date to format. @returns `YYYY-MM-DD` string. */
 function formatDate(d: Date): string
 {
 	const yyyy = d.getFullYear();
@@ -255,6 +278,7 @@ function formatDate(d: Date): string
 	return `${yyyy}-${mm}-${dd}`;
 }
 
+/** @param d – date to format. @returns `HH-mm` string for session log filenames. */
 function formatTime(d: Date): string
 {
 	const hh = String(d.getHours()).padStart(2, "0");
@@ -262,6 +286,7 @@ function formatTime(d: Date): string
 	return `${hh}-${min}`;
 }
 
+/** @param d – date to format. @returns `HH-mm-ss` string for per-call detail filenames. */
 function formatTimeSeconds(d: Date): string
 {
 	const hh = String(d.getHours()).padStart(2, "0");
@@ -270,6 +295,10 @@ function formatTimeSeconds(d: Date): string
 	return `${hh}-${min}-${ss}`;
 }
 
+/**
+ * Serializes tool arguments for console output, truncating very long payloads.
+ * @param args – tool arguments object from the MCP client.
+ */
 function formatArgs(args: Record<string, unknown>): string
 {
 	try

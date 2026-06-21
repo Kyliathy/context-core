@@ -18,6 +18,8 @@
  *       "cwd": "<project root>"
  *     }
  *   }
+ *
+ * Upgrade plan: server/zz-reach2/upgrades/2026-06/r2wl-winston-logging.md (T53)
  */
 
 import { CCSettings } from "../settings/CCSettings.js";
@@ -29,21 +31,28 @@ import { getVectorConfig, isQdrantEnabled } from "../vector/VectorConfig.js";
 import { EmbeddingService } from "../vector/EmbeddingService.js";
 import { QdrantService } from "../vector/QdrantService.js";
 import { getHostname } from "../config.js";
+import { getStderrLogger, serializeError } from "../logging/logger.js";
 import { MCPServer } from "./MCPServer.js";
 
+/** Stderr-safe logger for standalone MCP startup and shutdown diagnostics. */
+const logger = getStderrLogger("mcp:serve");
+
+/**
+ * Boots the standalone stdio MCP server: load stores, init search, connect transport.
+ */
 async function main(): Promise<void>
 {
 	const settings = CCSettings.getInstance();
 	if (!settings.MCP_ENABLED)
 	{
-		console.error("[MCP] Disabled via MCP_ENABLED=false");
+		logger.info("[MCP] Disabled via MCP_ENABLED=false");
 		return;
 	}
 
 	// Load message corpus from persisted storage (no ingestion pipeline)
 	const db = await createMessageStore(settings);
 	const loadedCount = db.loadFromStorage(settings.storage);
-	console.error(`[MCP] Loaded ${loadedCount} messages from storage`);
+	logger.info(`[MCP] Loaded ${loadedCount} messages from storage`);
 
 	// Initialize Fuse.js search index
 	let allMessages = db.getAllMessages();
@@ -53,12 +62,12 @@ async function main(): Promise<void>
 	// Load topic store for subject resolution and topic management
 	const topicStore = new TopicStore(settings.storage);
 	topicStore.load();
-	console.error(`[MCP] Loaded ${topicStore.count} topic entries`);
+	logger.info(`[MCP] Loaded ${topicStore.count} topic entries`);
 
 	// Load scope store for scope-aware search
 	const scopeStore = new ScopeStore(settings.storage);
 	scopeStore.load();
-	console.error(`[MCP] Loaded ${scopeStore.list().length} scope entries`);
+	logger.info(`[MCP] Loaded ${scopeStore.list().length} scope entries`);
 
 	// Optionally initialize Qdrant/Embedding services (same gate as HTTP server)
 	let vectorServices: { embeddingService: EmbeddingService; qdrantService: QdrantService } | undefined;
@@ -70,16 +79,22 @@ async function main(): Promise<void>
 		const embeddingService = new EmbeddingService(vectorConfig.openaiApiKey!);
 		const qdrantService = new QdrantService(vectorConfig.qdrantUrl!, vectorConfig.qdrantApiKey, hostname);
 		vectorServices = { embeddingService, qdrantService };
-		console.error(`[MCP] Qdrant enabled: ${vectorConfig.qdrantUrl}`);
+		logger.info(`[MCP] Qdrant enabled: ${vectorConfig.qdrantUrl}`);
 	}
 
 	// Start MCP server on stdio
 	const mcpServer = new MCPServer(db, topicStore, vectorServices, settings.MCP_LOGGING, scopeStore);
 
+	/**
+	 * Handles shutdown behavior for this CXC module.
+	 * @returns Result produced by shutdown.
+	 */
+
+
 	// Graceful shutdown
 	const shutdown = async () =>
 	{
-		console.error("[MCP] Shutting down…");
+		logger.info("[MCP] Shutting down…");
 		await mcpServer.close();
 		db.close();
 		process.exit(0);
@@ -93,6 +108,6 @@ async function main(): Promise<void>
 
 main().catch((err) =>
 {
-	console.error("[MCP] Fatal startup error:", err);
+	logger.error("[MCP] Fatal startup error", { error: serializeError(err) });
 	process.exit(1);
 });

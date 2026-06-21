@@ -1,5 +1,8 @@
 /**
  * ContextCore – shared types for config and harness definitions.
+ *
+ * Architecture: server/zz-reach2/architecture/archi-context-core-level0.md
+ * Logging audit: server/zz-reach2/upgrades/2026-06/r2wl-winston-logging.md (T63 — no runtime logging)
  */
 
 /** Harness config: paths to chat history storage for a given IDE. */

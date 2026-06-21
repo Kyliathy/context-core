@@ -1,16 +1,19 @@
 /**
  * ContextCore – HarnessMatcher: per-session + per-project symbol frequency maps.
  * Operates only on messages belonging to explicitly rule-matched projects.
+ *
+ * Architecture: server/zz-reach2/architecture/archi-context-core-level0.md
+ * Logging: server/zz-reach2/upgrades/2026-06/r2wl-winston-logging.md
  */
 
 import { existsSync, mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
-import chalk from "chalk";
+import { getLogger } from "../logging/logger.js";
 import { AgentMessage } from "../models/AgentMessage.js";
 import { extractMessageSymbols } from "../analysis/SubjectGenerator.js";
 import { buildYYYYMM, sanitizeFilename } from "../utils/pathHelpers.js";
 
-const SYM = chalk.hex("#9B59B6")("[SymbolMap]");
+const logger = getLogger("harness:matcher");
 
 /** Serialized symbol frequency entry for JSON output. */
 type SymbolEntry = { symbol: string; count: number };
@@ -32,6 +35,13 @@ export class HarnessMatcher
 	/** Computed per-project symbol frequency maps (built lazily). */
 	private projectSymbolMaps: Map<string, Map<string, number>> | null = null;
 
+	/**
+	 * Creates an instance with the dependencies needed by this CXC component.
+	 * @param messages - Message data processed by constructor.
+	 * @param ruleMatchedProjects - Value consumed by constructor.
+	 */
+
+
 	constructor(messages: Array<AgentMessage>, ruleMatchedProjects: string[])
 	{
 		this.ruleMatchedProjects = new Set(ruleMatchedProjects);
@@ -39,6 +49,8 @@ export class HarnessMatcher
 
 		this.sessionMessages = new Map();
 		this.projectMessages = new Map();
+		// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 
 		for (const msg of this.messages)
 		{
@@ -68,14 +80,20 @@ export class HarnessMatcher
 		}
 
 		const result = new Map<string, Map<string, number>>();
+		// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 
 		for (const [sessionId, msgs] of this.sessionMessages.entries())
 		{
 			const counts = new Map<string, number>();
+			// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 
 			for (const msg of msgs)
 			{
 				const symbols = extractMessageSymbols(msg.message);
+				// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 				for (const sym of symbols)
 				{
 					counts.set(sym, (counts.get(sym) ?? 0) + 1);
@@ -102,6 +120,8 @@ export class HarnessMatcher
 
 		const sessionMaps = this.buildSessionSymbolMaps();
 		const result = new Map<string, Map<string, number>>();
+		// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 
 		for (const [sessionId, symbolMap] of sessionMaps.entries())
 		{
@@ -114,6 +134,8 @@ export class HarnessMatcher
 				result.set(project, new Map<string, number>());
 			}
 			const projectCounts = result.get(project)!;
+			// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 
 			for (const [sym, count] of symbolMap.entries())
 			{
@@ -133,6 +155,8 @@ export class HarnessMatcher
 	{
 		const sessionMaps = this.buildSessionSymbolMaps();
 		let written = 0;
+		// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 
 		for (const [sessionId, symbolMap] of sessionMaps.entries())
 		{
@@ -164,6 +188,8 @@ export class HarnessMatcher
 	{
 		const projectMaps = this.buildProjectSymbolMaps();
 		let written = 0;
+		// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 
 		for (const [project, symbolMap] of projectMaps.entries())
 		{
@@ -185,7 +211,7 @@ export class HarnessMatcher
 	}
 
 	/**
-	 * Logs chalk-colored diagnostic stats: per-project symbol count, top-5 symbols, session count.
+	 * Logs symbol-map diagnostic stats: per-project symbol count, top-5 symbols, session count.
 	 */
 	logDiagnostics(): void
 	{
@@ -195,7 +221,11 @@ export class HarnessMatcher
 		const totalSessions = sessionMaps.size;
 		const totalMessages = this.messages.length;
 
-		console.log(`${SYM} Matched ${chalk.green(totalMessages + "")} messages across ${chalk.green(totalSessions + "")} sessions in ${chalk.green(this.ruleMatchedProjects.size + "")} projects`);
+		logger.info(
+			`Matched ${totalMessages} messages across ${totalSessions} sessions in ${this.ruleMatchedProjects.size} projects`
+		);
+		// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 
 		for (const [project, symbolMap] of projectMaps.entries())
 		{
@@ -206,15 +236,15 @@ export class HarnessMatcher
 			const symbolCount = symbolMap.size;
 			const top5 = sortedEntries(symbolMap)
 				.slice(0, 5)
-				.map((e) => `${chalk.cyan(e.symbol)}(${e.count})`)
-				.join(chalk.dim(", "));
+				.map((e) => `${e.symbol}(${e.count})`)
+				.join(", ");
 
-			console.log(
-				`${SYM}   ${chalk.green.bold(project)}: ${chalk.magenta(symbolCount + "")} symbols, ${chalk.magenta(sessionCount + "")} sessions, ${chalk.magenta(projectSessionCount + "")} messages`
+			logger.debug(
+				`${project}: ${symbolCount} symbols, ${sessionCount} sessions, ${projectSessionCount} messages`
 			);
 			if (top5)
 			{
-				console.log(`${SYM}     top-5: ${top5}`);
+				logger.debug(`top-5: ${top5}`);
 			}
 		}
 	}

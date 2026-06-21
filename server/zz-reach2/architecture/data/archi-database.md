@@ -651,7 +651,28 @@ Neither search system is backed by the database for lookups — they maintain in
 
 ---
 
-## 14. Future Considerations
+## 14. DB Fingerprint and Startup Recovery
+
+The startup pipeline stores a conservative fingerprint in global settings after a successful ingest run. The fingerprint records message/session counts, harness counts, storage metadata, and source file metadata sufficient to detect a missing, wiped, or regressed Context Core DB.
+
+At the next startup, `ContextCore` loads the DB first, validates the stored fingerprint, and only then asks the ingest planner to decide per-harness work. If the fingerprint is missing or invalid, startup enters recovery mode instead of trusting harness bookmarks that may point past data no longer present in `cxc-db.sqlite`.
+
+The resulting lifecycle is:
+
+```mermaid
+flowchart TD
+    LOAD["Load cxc-db.sqlite"] --> VALIDATE["Validate stored fingerprint"]
+    VALIDATE --> PLAN["Plan each harness"]
+    PLAN --> PERSIST["Persist selected batches"]
+    PERSIST --> BOOKMARK["Commit harness bookmark"]
+    BOOKMARK --> FP["Store new DB fingerprint"]
+```
+
+This keeps bookmarks tied to durable data. A crash, persistence error, or deleted DB must not advance rowid/file-manifest state past what was actually written.
+
+---
+
+## 15. Future Considerations
 
 1. **SQLite FTS5**: The Fuse.js in-memory index could be replaced with SQLite's built-in full-text search extension. This would eliminate the need to load all messages into RAM for search and would scale better with corpus size.
 

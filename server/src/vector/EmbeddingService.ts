@@ -1,9 +1,15 @@
 /**
  * EmbeddingService – OpenAI embedding generation via Vercel AI SDK.
  * Handles retry logic with exponential backoff for transient failures.
+ *
+ * Architecture: server/zz-reach2/architecture/archi-context-core-level0.md
+ * Logging: server/zz-reach2/upgrades/2026-06/r2wl-winston-logging.md
  */
 
 import { embed, embedMany } from "ai";
+import { getLogger } from "../logging/logger.js";
+
+const logger = getLogger("vector:EmbeddingService");
 import { openai } from "@ai-sdk/openai";
 
 /** Embedding vector dimension for text-embedding-3-large model. */
@@ -60,6 +66,8 @@ export class EmbeddingService
 		// Split into safe batch sizes (100 texts per batch)
 		const batchSize = 100;
 		const batches: string[][] = [];
+		// Business logic: this iteration walks every relevant item so vector indexing consistency reflects the complete source set instead of a partial snapshot.
+
 		for (let i = 0; i < texts.length; i += batchSize)
 		{
 			batches.push(texts.slice(i, i + batchSize));
@@ -67,6 +75,8 @@ export class EmbeddingService
 
 		// Process each batch
 		const allEmbeddings: number[][] = [];
+		// Business logic: this iteration walks every relevant item so vector indexing consistency reflects the complete source set instead of a partial snapshot.
+
 		for (const batch of batches)
 		{
 			const batchEmbeddings = await this.withRetry(async () =>
@@ -93,7 +103,9 @@ export class EmbeddingService
 	private async withRetry<T>(operation: () => Promise<T>, context: string): Promise<T>
 	{
 		const maxAttempts = 3;
-		const delays = [1000, 2000, 4000]; // 1s, 2s, 4s
+		const delays = [1000, 2000, 4000];
+		// Business logic: this iteration walks every relevant item so vector indexing consistency reflects the complete source set instead of a partial snapshot.
+ // 1s, 2s, 4s
 
 		for (let attempt = 0; attempt < maxAttempts; attempt++)
 		{
@@ -104,20 +116,22 @@ export class EmbeddingService
 			{
 				const err = error as { status?: number; message?: string };
 				const isRetryable = this.isRetryableError(err);
+				// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting vector indexing consistency from partial or invalid state.
+
 
 				if (!isRetryable || attempt === maxAttempts - 1)
 				{
 					// Final failure or non-retryable error
-					console.warn(
-						`[EmbeddingService] Failed to ${context}: ${err.message ?? error}. Attempt ${attempt + 1}/${maxAttempts}.`
+					logger.warn(
+						`Failed to ${context}: ${err.message ?? error}. Attempt ${attempt + 1}/${maxAttempts}.`
 					);
 					throw error;
 				}
 
 				// Retry with backoff
 				const delay = delays[attempt] ?? 4000;
-				console.warn(
-					`[EmbeddingService] Retrying ${context} after ${delay}ms. Attempt ${attempt + 1}/${maxAttempts}. Error: ${err.message ?? error}`
+				logger.warn(
+					`Retrying ${context} after ${delay}ms. Attempt ${attempt + 1}/${maxAttempts}. Error: ${err.message ?? error}`
 				);
 				await this.sleep(delay);
 			}
@@ -137,7 +151,9 @@ export class EmbeddingService
 		const status = error.status;
 
 		// Retry on rate limits, server errors, and network errors
-		if (status === 429) return true; // Rate limit
+		if (status === 429) return true;
+		// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting vector indexing consistency from partial or invalid state.
+ // Rate limit
 		if (status && status >= 500) return true; // 5xx server errors
 		if (!status) return true; // Network errors (no status code)
 

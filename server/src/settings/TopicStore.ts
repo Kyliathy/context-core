@@ -1,11 +1,17 @@
 /**
  * TopicStore — persistence layer for AI-generated and custom topic summaries.
  * Stores topic entries in .settings/topics.json, isolated from AgentMessage storage.
+ *
+ * Architecture: server/zz-reach2/architecture/archi-context-core-level0.md
+ * Logging: server/zz-reach2/upgrades/2026-06/r2wl-winston-logging.md
  */
 
 import { join } from "path";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { getLogger } from "../logging/logger.js";
 import type { TopicEntry } from "../models/TopicEntry.js";
+
+const logger = getLogger("settings:TopicStore");
 
 export class TopicStore
 {
@@ -51,14 +57,16 @@ export class TopicStore
 
 			// Build map keyed by sessionId for fast lookups
 			this.entries = new Map();
+			// Business logic: this iteration walks every relevant item so synced settings durability reflects the complete source set instead of a partial snapshot.
+
 			for (const entry of entriesArray)
 			{
 				this.entries.set(entry.sessionId, entry);
 			}
 		} catch (error)
 		{
-			console.warn(
-				`[TopicStore] Failed to parse topics.json: ${(error as Error).message}. Starting with empty map.`
+			logger.warn(
+				`Failed to parse topics.json: ${(error as Error).message}. Starting with empty map.`
 			);
 			this.entries = new Map();
 		}

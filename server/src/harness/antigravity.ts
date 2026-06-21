@@ -1,15 +1,23 @@
 /**
  * ContextCore – Antigravity harness.
  * Reads chat history from protobuf (.pb) files.
+ *
+ * Architecture: server/zz-reach2/architecture/archi-context-core-level0.md
+ * Logging: server/zz-reach2/upgrades/2026-06/r2wl-winston-logging.md
+ *
+ * DISABLED in harness registry until protobuf decryption/parsing is implemented.
  */
 
 import { existsSync, readdirSync, readFileSync, statSync } from "fs";
 import { join } from "path";
 import { DateTime } from "luxon";
+import { getLogger } from "../logging/logger.js";
 import { AgentMessage } from "../models/AgentMessage.js";
 import { generateMessageId } from "../utils/hashId.js";
 import { sanitizeFilename } from "../utils/pathHelpers.js";
 import { copyRawSourceFile } from "../utils/rawCopier.js";
+
+const logger = getLogger("harness:antigravity");
 
 /**
  * Given an Antigravity .pb path, parses the history and produces normalized rows.
@@ -26,7 +34,7 @@ export function readAntigravityChats(
 
   try {
     if (!existsSync(searchPath)) {
-      console.warn(`[Antigravity] Path not found: ${searchPath}`);
+      logger.warn(`Path not found: ${searchPath}`);
       return messages;
     }
 
@@ -39,10 +47,12 @@ export function readAntigravityChats(
       ? [searchPath]
       : [];
 
-    console.log(`[Antigravity] Scanning ${files.length} .pb files in ${searchPath}`);
+    logger.debug(`Scanning ${files.length} .pb files in ${searchPath}`);
+    // Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 
     for (const file of files) {
-      console.log(`\n--- Inspecting: ${file} ---`);
+      logger.debug(`Inspecting: ${file}`);
       const buffer = readFileSync(file);
       
       // After extensive probing, we identified that the .pb files in this directory are 
@@ -55,24 +65,28 @@ export function readAntigravityChats(
       const stringMatches = rawText.match(/[\x20-\x7E\t\n\r]{15,}/g) || [];
       
       let messageCount = 0;
+      // Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
       for (let i = 0; i < stringMatches.length; i++) {
         const textChunk = stringMatches[i].trim();
+        // Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
         if (textChunk.length > 20 && textChunk.includes(" ")) {
           messageCount++;
-          console.log(`[Antigravity] Message #${messageCount} in ${file}:\n${textChunk}\n`);
+          logger.silly(`Message #${messageCount} in ${file}:\n${textChunk}\n`);
         }
       }
 
       if (messageCount === 0) {
-        console.warn(`[Antigravity] No clear text messages found in ${file}.`);
-        console.warn(`[Antigravity] The file data appears to be encrypted or compressed with an unknown algorithm.`);
-        console.warn(`[Antigravity] We need the specific decryption key/method or a new reader strategy to parse the actual Protobuf schema.`);
+        logger.warn(`No clear text messages found in ${file}.`);
+        logger.warn(`The file data appears to be encrypted or compressed with an unknown algorithm.`);
+        logger.warn(`We need the specific decryption key/method or a new reader strategy to parse the actual Protobuf schema.`);
       }
     }
 
   } catch (err) {
     if (err instanceof Error) {
-      console.error(`[Antigravity] Error reading ${searchPath}: ${err.message}`);
+      logger.error(`Error reading ${searchPath}: ${err.message}`);
     }
   }
 

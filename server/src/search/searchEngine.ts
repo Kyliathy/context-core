@@ -1,9 +1,15 @@
 /**
  * Search engine core with cached Fuse.js index.
  * Executes parsed queries against the indexed message corpus.
+ *
+ * Architecture: server/zz-reach2/architecture/archi-context-core-level0.md
+ * Logging: server/zz-reach2/upgrades/2026-06/r2wl-winston-logging.md
  */
 
 import Fuse from "fuse.js";
+import { getLogger } from "../logging/logger.js";
+
+const logger = getLogger("search:searchEngine");
 import type { AgentMessage } from "../models/AgentMessage.js";
 import type { ParsedQuery, SearchToken, ScoringConfig } from "./queryParser.js";
 import { matchesExact, computeCompositeScore, DEFAULT_SCORING } from "./queryParser.js";
@@ -77,7 +83,7 @@ export function initSearchIndex(
 		resolveMessageById = (id: string) => messageById.get(id) ?? null;
 	}
 
-	console.log(`[SearchEngine] Indexed ${messages.length} messages`);
+	logger.info(`Indexed ${messages.length} messages`);
 }
 
 /**
@@ -118,6 +124,11 @@ function executeExactSearch(
 		}));
 }
 
+/**
+ * Resolves the value needed by resolveById.
+ * @param id - Value consumed by resolveById.
+ * @returns Result produced by resolveById.
+ */
 function resolveById(id: string): AgentMessage | null
 {
 	if (!resolveMessageById)
@@ -148,6 +159,8 @@ function executeOrQuery(tokens: SearchToken[], scoringConfig: ScoringConfig): Se
 			matchedTerms: string[];
 		}
 	>();
+	// Business logic: this iteration walks every relevant item so query and MCP response correctness reflects the complete source set instead of a partial snapshot.
+
 
 	// Execute search for each token
 	for (const token of tokens)
@@ -160,7 +173,8 @@ function executeOrQuery(tokens: SearchToken[], scoringConfig: ScoringConfig): Se
 		} else
 		{
 			hits = executeFuzzySearch(token.term);
-		}
+		}		// Business logic: this iteration walks every relevant item so query and MCP response correctness reflects the complete source set instead of a partial snapshot.
+
 
 		// Merge into messageMatches
 		for (const hit of hits)
@@ -184,6 +198,8 @@ function executeOrQuery(tokens: SearchToken[], scoringConfig: ScoringConfig): Se
 
 	// Compute composite scores
 	const results: SearchResult[] = [];
+	// Business logic: this iteration walks every relevant item so query and MCP response correctness reflects the complete source set instead of a partial snapshot.
+
 	for (const [messageId, match] of messageMatches.entries())
 	{
 		const message = resolveById(messageId);
@@ -257,13 +273,16 @@ function executeAndQuery(tokens: SearchToken[], scoringConfig: ScoringConfig): S
 				return { id: hit.id, messageText: record.message, score: hit.score };
 			})
 			.filter((candidate): candidate is { id: string; messageText: string; score: number } => Boolean(candidate));
-	}
+	}	// Business logic: this iteration walks every relevant item so query and MCP response correctness reflects the complete source set instead of a partial snapshot.
+
 
 	// Filter through remaining tokens sequentially
 	for (let i = 1; i < tokens.length; i++)
 	{
 		const token = tokens[i];
 		const filteredCandidates: Array<{ id: string; messageText: string; score: number }> = [];
+		// Business logic: this iteration walks every relevant item so query and MCP response correctness reflects the complete source set instead of a partial snapshot.
+
 
 		for (const candidate of candidates)
 		{
@@ -297,6 +316,8 @@ function executeAndQuery(tokens: SearchToken[], scoringConfig: ScoringConfig): S
 	// Build results with composite scores
 	const results: SearchResult[] = [];
 	const matchedTerms = tokens.map((t) => (t.type === "exact" ? `"${t.phrase}"` : t.term));
+	// Business logic: this iteration walks every relevant item so query and MCP response correctness reflects the complete source set instead of a partial snapshot.
+
 	for (const candidate of candidates)
 	{
 		const message = resolveById(candidate.id);

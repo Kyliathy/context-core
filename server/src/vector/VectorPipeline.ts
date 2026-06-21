@@ -1,9 +1,15 @@
 /**
  * VectorPipeline – Orchestrates the full embedding pipeline.
  * Chunks messages → generates embeddings → upserts to Qdrant with named vectors.
+ *
+ * Architecture: server/zz-reach2/architecture/archi-context-core-level0.md
+ * Logging: server/zz-reach2/upgrades/2026-06/r2wl-winston-logging.md
  */
 
 import type { AgentMessage } from "../models/AgentMessage.js";
+import { getLogger } from "../logging/logger.js";
+
+const logger = getLogger("vector:VectorPipeline");
 import type { TopicEntry } from "../models/TopicEntry.js";
 import type { TopicStore } from "../settings/TopicStore.js";
 import { chunkMessage } from "./Chunker.js";
@@ -122,6 +128,8 @@ export class VectorPipeline
 
 		// Group messages by harness
 		const messagesByHarness = new Map<string, AgentMessage[]>();
+		// Business logic: this iteration walks every relevant item so vector indexing consistency reflects the complete source set instead of a partial snapshot.
+
 		for (const message of messages)
 		{
 			const harness = message.harness || "UNKNOWN";
@@ -130,7 +138,8 @@ export class VectorPipeline
 				messagesByHarness.set(harness, []);
 			}
 			messagesByHarness.get(harness)!.push(message);
-		}
+		}		// Business logic: this iteration walks every relevant item so vector indexing consistency reflects the complete source set instead of a partial snapshot.
+
 
 		// Process each harness separately
 		for (const [harness, harnessMessages] of messagesByHarness)
@@ -148,9 +157,11 @@ export class VectorPipeline
 				// Preload all already-indexed message IDs once per harness.
 				// This allows restart/resume behavior without expensive per-message Qdrant checks.
 				const indexedMessageIds = await this.qdrantService.getIndexedMessageIds(harness);
-				console.log(
-					`[VectorPipeline] ${harness}: resume baseline loaded (${indexedMessageIds.size} indexed message IDs).`
+				logger.info(
+					`${harness}: resume baseline loaded (${indexedMessageIds.size} indexed message IDs).`
 				);
+				// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting vector indexing consistency from partial or invalid state.
+
 
 				// Diagnostic: show force session overlap for this harness
 				if (forceSessionIds && forceSessionIds.size > 0)
@@ -158,8 +169,8 @@ export class VectorPipeline
 					const userMsgs = harnessMessages.filter(m => m.role === "user");
 					const forceUserMsgs = userMsgs.filter(m => forceSessionIds.has(m.sessionId));
 					const forceAndIndexed = forceUserMsgs.filter(m => indexedMessageIds.has(m.id));
-					console.log(
-						`[VectorPipeline] ${harness}: force backfill diagnostic — ` +
+					logger.info(
+						`${harness}: force backfill diagnostic — ` +
 						`${userMsgs.length} user msgs total, ` +
 						`${forceUserMsgs.length} in force sessions, ` +
 						`${forceAndIndexed.length} already indexed (→enhance), ` +
@@ -169,6 +180,8 @@ export class VectorPipeline
 
 				// Process in batches
 				const batchCount = Math.ceil(harnessMessages.length / this.batchSize);
+				// Business logic: this iteration walks every relevant item so vector indexing consistency reflects the complete source set instead of a partial snapshot.
+
 				for (let batchNum = 0; batchNum < batchCount; batchNum++)
 				{
 					const batchStart = batchNum * this.batchSize;
@@ -191,8 +204,8 @@ export class VectorPipeline
 					stats.payloadWithCustomTopic += batchStats.payloadWithCustomTopic;
 
 					// Log progress
-					console.log(
-						`[VectorPipeline] ${harness}: Batch ${batchNum + 1}/${batchCount} - ` +
+					logger.debug(
+						`${harness}: Batch ${batchNum + 1}/${batchCount} - ` +
 						`processed=${batchStats.messagesProcessed}, enhanced=${batchStats.messagesEnhanced}, ` +
 						`forceEmbed=${batchStats.forceFullEmbed}, chunks=${batchStats.chunksGenerated}, ` +
 						`skipped=${batchStats.skipped}, errors=${batchStats.errors}`
@@ -207,18 +220,20 @@ export class VectorPipeline
 			} catch (error)
 			{
 				// Harness-level error: log and continue with other harnesses
-				console.warn(`[VectorPipeline] Failed to process harness "${harness}": ${(error as Error).message}`);
+				logger.warn(`Failed to process harness "${harness}": ${(error as Error).message}`);
 				stats.errors += 1;
 			}
 		}
 
 		stats.durationMs = Date.now() - startMs;
+		// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting vector indexing consistency from partial or invalid state.
+
 
 		// Log summary-vector stats at end of pipeline
 		if (stats.summaryCacheHits > 0 || stats.summaryCacheMisses > 0)
 		{
-			console.log(
-				`[VectorPipeline] Summary vectors: attached=${stats.summaryVectorsAttached}, ` +
+			logger.info(
+				`Summary vectors: attached=${stats.summaryVectorsAttached}, ` +
 				`cacheHits=${stats.summaryCacheHits}, cacheMisses=${stats.summaryCacheMisses}, ` +
 				`payloadAiSummary=${stats.payloadWithAiSummary}, payloadCustomTopic=${stats.payloadWithCustomTopic}`
 			);
@@ -270,6 +285,8 @@ export class VectorPipeline
 		// Enhance-in-place updates (no re-embedding — summary vector + V2 payload only)
 		const vectorUpdates: { id: string; vector: { summary: number[] } }[] = [];
 		const payloadUpdates: { pointIds: string[]; payload: Record<string, unknown> }[] = [];
+		// Business logic: this iteration walks every relevant item so vector indexing consistency reflects the complete source set instead of a partial snapshot.
+
 
 		for (const message of messages)
 		{
@@ -285,6 +302,8 @@ export class VectorPipeline
 				// Resume/deduplication check from preloaded indexed IDs.
 				const alreadyIndexed = indexedMessageIds.has(message.id);
 				const forceReindex = forceSessionIds?.has(message.sessionId) ?? false;
+				// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting vector indexing consistency from partial or invalid state.
+
 				if (alreadyIndexed && !forceReindex)
 				{
 					stats.skipped += 1;
@@ -302,7 +321,8 @@ export class VectorPipeline
 				} else if (this.summaryEmbeddingCache)
 				{
 					stats.summaryCacheMisses += 1;
-				}
+				}				// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting vector indexing consistency from partial or invalid state.
+
 
 				// ── Enhance-in-place path ──
 				// Already indexed but needs summary vector backfill or V2 payload update.
@@ -322,6 +342,8 @@ export class VectorPipeline
 					// Attach summary vector to existing points (preserves chunk vector)
 					if (summaryVector)
 					{
+						// Business logic: this iteration walks every relevant item so vector indexing consistency reflects the complete source set instead of a partial snapshot.
+
 						for (const pointId of pointIds)
 						{
 							vectorUpdates.push({ id: pointId, vector: { summary: summaryVector } });
@@ -360,6 +382,8 @@ export class VectorPipeline
 				}
 				const chunks = await chunkMessage(message.message);
 				stats.chunksGenerated += chunks.length;
+				// Business logic: this iteration walks every relevant item so vector indexing consistency reflects the complete source set instead of a partial snapshot.
+
 
 				for (const chunk of chunks)
 				{
@@ -411,8 +435,8 @@ export class VectorPipeline
 						pointsToUpsert.push(point);
 					} catch (error)
 					{
-						console.warn(
-							`[VectorPipeline] Failed to embed chunk ${chunk.index} of message ${message.id}: ${(error as Error).message}`
+						logger.warn(
+							`Failed to embed chunk ${chunk.index} of message ${message.id}: ${(error as Error).message}`
 						);
 						stats.errors += 1;
 					}
@@ -422,7 +446,7 @@ export class VectorPipeline
 				indexedMessageIds.add(message.id);
 			} catch (error)
 			{
-				console.warn(`[VectorPipeline] Failed to process message ${message.id}: ${(error as Error).message}`);
+				logger.warn(`Failed to process message ${message.id}: ${(error as Error).message}`);
 				stats.errors += 1;
 			}
 		}
@@ -435,7 +459,7 @@ export class VectorPipeline
 				await this.qdrantService.upsertPoints(harness, pointsToUpsert);
 			} catch (error)
 			{
-				console.warn(`[VectorPipeline] Failed to upsert points for harness "${harness}": ${(error as Error).message}`);
+				logger.warn(`Failed to upsert points for harness "${harness}": ${(error as Error).message}`);
 				stats.errors += 1;
 			}
 		}
@@ -448,10 +472,11 @@ export class VectorPipeline
 				await this.qdrantService.updateVectors(harness, vectorUpdates);
 			} catch (error)
 			{
-				console.warn(`[VectorPipeline] Failed to update vectors for harness "${harness}": ${(error as Error).message}`);
+				logger.warn(`Failed to update vectors for harness "${harness}": ${(error as Error).message}`);
 				stats.errors += 1;
 			}
-		}
+		}		// Business logic: this iteration walks every relevant item so vector indexing consistency reflects the complete source set instead of a partial snapshot.
+
 
 		// Apply enhance-in-place updates: V2 payload fields
 		for (const update of payloadUpdates)
@@ -461,7 +486,7 @@ export class VectorPipeline
 				await this.qdrantService.setPayload(harness, update.pointIds, update.payload);
 			} catch (error)
 			{
-				console.warn(`[VectorPipeline] Failed to set payload for harness "${harness}": ${(error as Error).message}`);
+				logger.warn(`Failed to set payload for harness "${harness}": ${(error as Error).message}`);
 				stats.errors += 1;
 			}
 		}

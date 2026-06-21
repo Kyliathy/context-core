@@ -1,9 +1,15 @@
 /**
  * SearchResults – Encapsulates combined search results from Fuse.js + Qdrant.
  * Provides metadata about which search engines contributed to results.
+ *
+ * Architecture: server/zz-reach2/architecture/archi-context-core-level0.md
+ * Logging: server/zz-reach2/upgrades/2026-06/r2wl-winston-logging.md
  */
 
 import type { AgentMessage } from "./AgentMessage.js";
+import { getLogger } from "../logging/logger.js";
+
+const logger = getLogger("models:SearchResults");
 import { AgentMessageFound, type SerializedAgentMessageFound } from "./AgentMessageFound.js";
 import type { IMessageStore } from "../db/IMessageStore.js";
 import type { QdrantPointPayload } from "../vector/QdrantService.js";
@@ -78,6 +84,8 @@ export class SearchResults
 	): SearchResults
 	{
 		const resultMap = new Map<string, AgentMessageFound>();
+		// Business logic: this iteration walks every relevant item so ContextCore runtime behavior reflects the complete source set instead of a partial snapshot.
+
 
 		// Add all Fuse.js results
 		for (const hit of fuseHits)
@@ -94,6 +102,8 @@ export class SearchResults
 		const queryTerms = parseSearchQuery(query).tokens.map((t) =>
 			t.type === "exact" ? `"${t.phrase}"` : t.term
 		);
+		// Business logic: this iteration walks every relevant item so ContextCore runtime behavior reflects the complete source set instead of a partial snapshot.
+
 
 		// Add/merge Qdrant results — max-score dedup (R2BQ):
 		// When a messageId appears multiple times (cross-chunk or cross-channel),
@@ -106,7 +116,7 @@ export class SearchResults
 			if (!message)
 			{
 				// Stale index: Qdrant references a message that no longer exists
-				console.warn(`[SearchResults] Qdrant point references missing message: ${messageId}`);
+				logger.warn(`Qdrant point references missing message: ${messageId}`);
 				continue;
 			}
 
@@ -140,6 +150,8 @@ export class SearchResults
 		const totalFuseResults = fuseHits.length;
 		const totalQdrantResults = qdrantHits.length;
 		let engine: SearchEngine;
+		// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting ContextCore runtime behavior from partial or invalid state.
+
 
 		if (totalFuseResults > 0 && totalQdrantResults > 0)
 		{

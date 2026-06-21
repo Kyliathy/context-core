@@ -1,3 +1,10 @@
+/**
+ * CLI harness path discovery scanners.
+ *
+ * Architecture: server/zz-reach2/architecture/archi-context-core-level0.md
+ * Logging audit: server/zz-reach2/upgrades/2026-06/r2wl-winston-logging.md (T58 — no runtime logging)
+ */
+
 import { existsSync, readdirSync, statSync } from "fs";
 import { basename, join } from "path";
 
@@ -32,9 +39,15 @@ export interface HarnessScanner
 
 export const KIRO_HEX_HASH = /^[0-9a-f]{32}$/i;
 
+/**
+ * Detects host state used by detectPlatform.
+ * @returns Result produced by detectPlatform.
+ */
 export function detectPlatform(): Platform
 {
 	const p = process.platform;
+	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting operator configuration flows from partial or invalid state.
+
 	if (p === "win32" || p === "darwin" || p === "linux")
 	{
 		return p;
@@ -42,17 +55,31 @@ export function detectPlatform(): Platform
 	return "linux";
 }
 
+/**
+ * Detects host state used by detectUsername.
+ * @returns Result produced by detectUsername.
+ */
 export function detectUsername(): string
 {
 	return process.env.USERNAME ?? process.env.USER ?? process.env.LOGNAME ?? "";
 }
 
+/**
+ * Handles withTrailingSlash behavior for this CXC module.
+ * @param p - Value consumed by withTrailingSlash.
+ * @returns Result produced by withTrailingSlash.
+ */
 export function withTrailingSlash(p: string): string
 {
 	const slash = process.platform === "win32" ? "\\" : "/";
 	return p.endsWith("\\") || p.endsWith("/") ? p : p + slash;
 }
 
+/**
+ * Formats data for formatBytes.
+ * @param bytes - Value consumed by formatBytes.
+ * @returns Result produced by formatBytes.
+ */
 export function formatBytes(bytes: number): string
 {
 	if (bytes < 1024) return `${bytes} B`;
@@ -60,11 +87,22 @@ export function formatBytes(bytes: number): string
 	return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+/**
+ * Handles dirName behavior for this CXC module.
+ * @param p - Value consumed by dirName.
+ * @returns Result produced by dirName.
+ */
 export function dirName(p: string): string
 {
 	return basename(p.replace(/[\\/]$/, ""));
 }
 
+/**
+ * Returns the value managed by getClaudeCodeBasePath.
+ * @param username - Value consumed by getClaudeCodeBasePath.
+ * @param platform - Value consumed by getClaudeCodeBasePath.
+ * @returns Result produced by getClaudeCodeBasePath.
+ */
 export function getClaudeCodeBasePath(username: string, platform: Platform): string
 {
 	switch (platform)
@@ -75,6 +113,12 @@ export function getClaudeCodeBasePath(username: string, platform: Platform): str
 	}
 }
 
+/**
+ * Returns the value managed by getCursorDbPath.
+ * @param username - Value consumed by getCursorDbPath.
+ * @param platform - Value consumed by getCursorDbPath.
+ * @returns Result produced by getCursorDbPath.
+ */
 export function getCursorDbPath(username: string, platform: Platform): string
 {
 	switch (platform)
@@ -85,6 +129,12 @@ export function getCursorDbPath(username: string, platform: Platform): string
 	}
 }
 
+/**
+ * Returns the value managed by getVSCodeStoragePath.
+ * @param username - Value consumed by getVSCodeStoragePath.
+ * @param platform - Value consumed by getVSCodeStoragePath.
+ * @returns Result produced by getVSCodeStoragePath.
+ */
 export function getVSCodeStoragePath(username: string, platform: Platform): string
 {
 	switch (platform)
@@ -95,6 +145,12 @@ export function getVSCodeStoragePath(username: string, platform: Platform): stri
 	}
 }
 
+/**
+ * Returns the value managed by getKiroAgentPaths.
+ * @param username - Value consumed by getKiroAgentPaths.
+ * @param platform - Value consumed by getKiroAgentPaths.
+ * @returns Result produced by getKiroAgentPaths.
+ */
 export function getKiroAgentPaths(username: string, platform: Platform): string[]
 {
 	switch (platform)
@@ -108,6 +164,12 @@ export function getKiroAgentPaths(username: string, platform: Platform): string[
 	}
 }
 
+/**
+ * Returns the value managed by getOpenCodeStoragePaths.
+ * @param username - Value consumed by getOpenCodeStoragePaths.
+ * @param platform - Value consumed by getOpenCodeStoragePaths.
+ * @returns Result produced by getOpenCodeStoragePaths.
+ */
 export function getOpenCodeStoragePaths(username: string, platform: Platform): string[]
 {
 	switch (platform)
@@ -121,6 +183,12 @@ export function getOpenCodeStoragePaths(username: string, platform: Platform): s
 	}
 }
 
+/**
+ * Returns the value managed by getCodexSessionPaths.
+ * @param username - Value consumed by getCodexSessionPaths.
+ * @param platform - Value consumed by getCodexSessionPaths.
+ * @returns Result produced by getCodexSessionPaths.
+ */
 export function getCodexSessionPaths(username: string, platform: Platform): string[]
 {
 	switch (platform)
@@ -131,6 +199,11 @@ export function getCodexSessionPaths(username: string, platform: Platform): stri
 	}
 }
 
+/**
+ * Handles scanJsonlProjects behavior for this CXC module.
+ * @param basePath - Path used by scanJsonlProjects to locate the relevant CXC resource.
+ * @returns Result produced by scanJsonlProjects.
+ */
 export function scanJsonlProjects(basePath: string): Array<{ path: string; count: number }>
 {
 	try
@@ -157,6 +230,11 @@ export function scanJsonlProjects(basePath: string): Array<{ path: string; count
 	}
 }
 
+/**
+ * Handles scanChatSessionDirs behavior for this CXC module.
+ * @param basePath - Path used by scanChatSessionDirs to locate the relevant CXC resource.
+ * @returns Result produced by scanChatSessionDirs.
+ */
 export function scanChatSessionDirs(basePath: string): string[]
 {
 	try
@@ -171,6 +249,11 @@ export function scanChatSessionDirs(basePath: string): string[]
 	}
 }
 
+/**
+ * Handles scanKiroHexDirs behavior for this CXC module.
+ * @param basePath - Path used by scanKiroHexDirs to locate the relevant CXC resource.
+ * @returns Result produced by scanKiroHexDirs.
+ */
 export function scanKiroHexDirs(basePath: string): string[]
 {
 	try
@@ -185,6 +268,11 @@ export function scanKiroHexDirs(basePath: string): string[]
 	}
 }
 
+/**
+ * Handles countCodexRolloutFiles behavior for this CXC module.
+ * @param basePath - Path used by countCodexRolloutFiles to locate the relevant CXC resource.
+ * @returns Result produced by countCodexRolloutFiles.
+ */
 export function countCodexRolloutFiles(basePath: string): number
 {
 	if (!existsSync(basePath))
@@ -194,6 +282,8 @@ export function countCodexRolloutFiles(basePath: string): number
 
 	let count = 0;
 	const stack: string[] = [basePath];
+	// Business logic: this iteration walks every relevant item so operator configuration flows reflects the complete source set instead of a partial snapshot.
+
 	while (stack.length > 0)
 	{
 		const current = stack.pop()!;
@@ -214,7 +304,8 @@ export function countCodexRolloutFiles(basePath: string): number
 		if (!entries)
 		{
 			continue;
-		}
+		}		// Business logic: this iteration walks every relevant item so operator configuration flows reflects the complete source set instead of a partial snapshot.
+
 
 		for (const entry of entries)
 		{
@@ -223,7 +314,8 @@ export function countCodexRolloutFiles(basePath: string): number
 			{
 				stack.push(next);
 			}
-			else if (entry.isFile() && /^rollout-.*\.jsonl$/i.test(entry.name))
+			else			// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting operator configuration flows from partial or invalid state.
+ if (entry.isFile() && /^rollout-.*\.jsonl$/i.test(entry.name))
 			{
 				count += 1;
 			}
@@ -234,10 +326,20 @@ export function countCodexRolloutFiles(basePath: string): number
 
 const claudeScanner: HarnessScanner = {
 	harness: "ClaudeCode",
+	/**
+	 * Returns the value managed by getCandidates.
+	 * @param context - Value consumed by getCandidates.
+	 * @returns Result produced by getCandidates.
+	 */
 	getCandidates(context)
 	{
 		return [getClaudeCodeBasePath(context.username, context.platform)];
 	},
+	/**
+	 * Handles scan behavior for this CXC module.
+	 * @param context - Value consumed by scan.
+	 * @returns Result produced by scan.
+	 */
 	scan(context)
 	{
 		const basePath = getClaudeCodeBasePath(context.username, context.platform);
@@ -253,6 +355,11 @@ const claudeScanner: HarnessScanner = {
 			meta: { count: project.count, sourceBase: basePath },
 		}));
 	},
+	/**
+	 * Handles describe behavior for this CXC module.
+	 * @param candidate - Value consumed by describe.
+	 * @returns Result produced by describe.
+	 */
 	describe(candidate)
 	{
 		return candidate.evidence;
@@ -261,10 +368,20 @@ const claudeScanner: HarnessScanner = {
 
 const cursorScanner: HarnessScanner = {
 	harness: "Cursor",
+	/**
+	 * Returns the value managed by getCandidates.
+	 * @param context - Value consumed by getCandidates.
+	 * @returns Result produced by getCandidates.
+	 */
 	getCandidates(context)
 	{
 		return [getCursorDbPath(context.username, context.platform)];
 	},
+	/**
+	 * Handles scan behavior for this CXC module.
+	 * @param context - Value consumed by scan.
+	 * @returns Result produced by scan.
+	 */
 	scan(context)
 	{
 		const dbPath = getCursorDbPath(context.username, context.platform);
@@ -289,6 +406,11 @@ const cursorScanner: HarnessScanner = {
 			meta: { size },
 		}];
 	},
+	/**
+	 * Handles describe behavior for this CXC module.
+	 * @param candidate - Value consumed by describe.
+	 * @returns Result produced by describe.
+	 */
 	describe(candidate)
 	{
 		return candidate.evidence;
@@ -297,10 +419,20 @@ const cursorScanner: HarnessScanner = {
 
 const vscodeScanner: HarnessScanner = {
 	harness: "VSCode",
+	/**
+	 * Returns the value managed by getCandidates.
+	 * @param context - Value consumed by getCandidates.
+	 * @returns Result produced by getCandidates.
+	 */
 	getCandidates(context)
 	{
 		return [getVSCodeStoragePath(context.username, context.platform)];
 	},
+	/**
+	 * Handles scan behavior for this CXC module.
+	 * @param context - Value consumed by scan.
+	 * @returns Result produced by scan.
+	 */
 	scan(context)
 	{
 		const basePath = getVSCodeStoragePath(context.username, context.platform);
@@ -316,6 +448,11 @@ const vscodeScanner: HarnessScanner = {
 			meta: { sourceBase: basePath },
 		}));
 	},
+	/**
+	 * Handles describe behavior for this CXC module.
+	 * @param candidate - Value consumed by describe.
+	 * @returns Result produced by describe.
+	 */
 	describe(candidate)
 	{
 		return candidate.evidence;
@@ -324,20 +461,33 @@ const vscodeScanner: HarnessScanner = {
 
 const kiroScanner: HarnessScanner = {
 	harness: "Kiro",
+	/**
+	 * Returns the value managed by getCandidates.
+	 * @param context - Value consumed by getCandidates.
+	 * @returns Result produced by getCandidates.
+	 */
 	getCandidates(context)
 	{
 		return getKiroAgentPaths(context.username, context.platform);
 	},
+	/**
+	 * Handles scan behavior for this CXC module.
+	 * @param context - Value consumed by scan.
+	 * @returns Result produced by scan.
+	 */
 	scan(context)
 	{
 		const baseCandidates = getKiroAgentPaths(context.username, context.platform);
 		const results: HarnessScannerCandidate[] = [];
+		// Business logic: this iteration walks every relevant item so operator configuration flows reflects the complete source set instead of a partial snapshot.
+
 		for (const basePath of baseCandidates)
 		{
 			if (!existsSync(basePath))
 			{
 				continue;
-			}
+			}			// Business logic: this iteration walks every relevant item so operator configuration flows reflects the complete source set instead of a partial snapshot.
+
 			for (const path of scanKiroHexDirs(basePath))
 			{
 				results.push({
@@ -351,6 +501,11 @@ const kiroScanner: HarnessScanner = {
 		}
 		return results;
 	},
+	/**
+	 * Handles describe behavior for this CXC module.
+	 * @param candidate - Value consumed by describe.
+	 * @returns Result produced by describe.
+	 */
 	describe(candidate)
 	{
 		return candidate.evidence;
@@ -359,13 +514,25 @@ const kiroScanner: HarnessScanner = {
 
 const openCodeScanner: HarnessScanner = {
 	harness: "OpenCode",
+	/**
+	 * Returns the value managed by getCandidates.
+	 * @param context - Value consumed by getCandidates.
+	 * @returns Result produced by getCandidates.
+	 */
 	getCandidates(context)
 	{
 		return getOpenCodeStoragePaths(context.username, context.platform);
 	},
+	/**
+	 * Handles scan behavior for this CXC module.
+	 * @param context - Value consumed by scan.
+	 * @returns Result produced by scan.
+	 */
 	scan(context)
 	{
 		const results: HarnessScannerCandidate[] = [];
+		// Business logic: this iteration walks every relevant item so operator configuration flows reflects the complete source set instead of a partial snapshot.
+
 		for (const dirPath of getOpenCodeStoragePaths(context.username, context.platform))
 		{
 			const dbPath = join(dirPath.replace(/[\\/]+$/, ""), "opencode.db");
@@ -392,6 +559,11 @@ const openCodeScanner: HarnessScanner = {
 		}
 		return results;
 	},
+	/**
+	 * Handles describe behavior for this CXC module.
+	 * @param candidate - Value consumed by describe.
+	 * @returns Result produced by describe.
+	 */
 	describe(candidate)
 	{
 		return candidate.evidence;
@@ -400,13 +572,25 @@ const openCodeScanner: HarnessScanner = {
 
 const codexScanner: HarnessScanner = {
 	harness: "Codex",
+	/**
+	 * Returns the value managed by getCandidates.
+	 * @param context - Value consumed by getCandidates.
+	 * @returns Result produced by getCandidates.
+	 */
 	getCandidates(context)
 	{
 		return getCodexSessionPaths(context.username, context.platform);
 	},
+	/**
+	 * Handles scan behavior for this CXC module.
+	 * @param context - Value consumed by scan.
+	 * @returns Result produced by scan.
+	 */
 	scan(context)
 	{
 		const results: HarnessScannerCandidate[] = [];
+		// Business logic: this iteration walks every relevant item so operator configuration flows reflects the complete source set instead of a partial snapshot.
+
 		for (const sessionsPath of getCodexSessionPaths(context.username, context.platform))
 		{
 			const rolloutCount = countCodexRolloutFiles(sessionsPath);
@@ -424,6 +608,11 @@ const codexScanner: HarnessScanner = {
 		}
 		return results;
 	},
+	/**
+	 * Handles describe behavior for this CXC module.
+	 * @param candidate - Value consumed by describe.
+	 * @returns Result produced by describe.
+	 */
 	describe(candidate)
 	{
 		return candidate.evidence;
@@ -439,14 +628,24 @@ export const DEFAULT_HARNESS_SCANNERS: HarnessScanner[] = [
 	codexScanner,
 ];
 
+/**
+ * Handles scanHarnessCandidates behavior for this CXC module.
+ * @param context - Value consumed by scanHarnessCandidates.
+ * @param scanners - Value consumed by scanHarnessCandidates.
+ * @returns Result produced by scanHarnessCandidates.
+ */
 export function scanHarnessCandidates(
 	context: HarnessScannerContext,
 	scanners: HarnessScanner[] = DEFAULT_HARNESS_SCANNERS
 ): HarnessScannerCandidate[]
 {
 	const candidates: HarnessScannerCandidate[] = [];
+	// Business logic: this iteration walks every relevant item so operator configuration flows reflects the complete source set instead of a partial snapshot.
+
 	for (const scanner of scanners)
 	{
+		// Business logic: this iteration walks every relevant item so operator configuration flows reflects the complete source set instead of a partial snapshot.
+
 		for (const candidate of scanner.scan(context))
 		{
 			candidates.push(candidate);

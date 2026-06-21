@@ -17,16 +17,21 @@
  *   many rapid flushes during an active session.
  * - Remote storage dirs use a 3s debounce and accumulate all changed file paths
  *   during the window so one ingest call handles the whole sync burst.
+ *
+ * Architecture: server/zz-reach2/architecture/archi-context-core-level0.md
+ * Logging: server/zz-reach2/upgrades/2026-06/r2wl-winston-logging.md
  */
 
 import { watch, existsSync, readdirSync } from "fs";
 import type { FSWatcher } from "fs";
 import { extname, basename, join as joinPath } from "path";
-import chalk from "chalk";
+import { getLogger } from "../logging/logger.js";
 import type { CCSettings } from "../settings/CCSettings.js";
 import type { MachineConfig } from "../types.js";
 import { getHarnessEntries } from "../types.js";
 import type { IncrementalPipeline } from "./IncrementalPipeline.js";
+
+const logger = getLogger("FileWatcher");
 
 /** Relevant file extensions per harness type. */
 const HARNESS_EXTENSIONS: Record<string, string[]> = {
@@ -95,6 +100,12 @@ export class FileWatcher
 	private isProcessingQueue = false;
 	private ignoredEventCounts = new Map<string, number>();
 
+	/**
+	 * Wires the watcher to settings, machine config, and the incremental ingest pipeline.
+	 * @param settings - Loaded CCSettings including storage root and harness paths.
+	 * @param machine - Machine identity and per-harness source configuration.
+	 * @param pipeline - Downstream incremental ingest orchestrator.
+	 */
 	constructor(settings: CCSettings, machine: MachineConfig, pipeline: IncrementalPipeline)
 	{
 		this.settings = settings;
@@ -108,6 +119,8 @@ export class FileWatcher
 	 */
 	start(): void
 	{
+		// Business logic: this iteration walks every relevant item so incremental ingest and checkpoint safety reflects the complete source set instead of a partial snapshot.
+
 		// ── Local harness source paths ─────────────────────────────────────────
 		for (const [harnessName, harnessConfig] of getHarnessEntries(this.machine.harnesses))
 		{
@@ -117,6 +130,8 @@ export class FileWatcher
 			const debounceMs = HARNESS_DEBOUNCE_MS[harnessName] ?? DEFAULT_DEBOUNCE_MS;
 			// Cursor watches a single file; all others watch directories recursively.
 			const isSingleFile = harnessName === "Cursor";
+			// Business logic: this iteration walks every relevant item so incremental ingest and checkpoint safety reflects the complete source set instead of a partial snapshot.
+
 
 			for (const p of paths)
 			{
@@ -129,11 +144,7 @@ export class FileWatcher
 
 		const harnessPaths = this.watchers.filter((w) => w.type === "harness").length;
 		const remotePaths = this.watchers.filter((w) => w.type === "remote-storage").length;
-		console.log(
-			chalk.blue(
-				`[FileWatcher] Active: ${harnessPaths} harness watcher(s), ${remotePaths} remote storage watcher(s)`
-			)
-		);
+		logger.info(`Active: ${harnessPaths} harness watcher(s), ${remotePaths} remote storage watcher(s)`);
 	}
 
 	/**
@@ -141,6 +152,8 @@ export class FileWatcher
 	 */
 	stop(): void
 	{
+		// Business logic: this iteration walks every relevant item so incremental ingest and checkpoint safety reflects the complete source set instead of a partial snapshot.
+
 		for (const { watcher } of this.watchers)
 		{
 			try
@@ -151,12 +164,14 @@ export class FileWatcher
 			{
 				// Ignore close errors during shutdown.
 			}
-		}
+		}		// Business logic: this iteration walks every relevant item so incremental ingest and checkpoint safety reflects the complete source set instead of a partial snapshot.
+
 
 		for (const timer of this.debounceTimers.values())
 		{
 			clearTimeout(timer);
-		}
+		}		// Business logic: this iteration walks every relevant item so incremental ingest and checkpoint safety reflects the complete source set instead of a partial snapshot.
+
 
 		for (const state of this.remoteDebounceState.values())
 		{
@@ -166,7 +181,7 @@ export class FileWatcher
 		this.watchers = [];
 		this.debounceTimers.clear();
 		this.remoteDebounceState.clear();
-		console.log(chalk.blue("[FileWatcher] Stopped."));
+		logger.info("Stopped.");
 	}
 
 	/**
@@ -191,7 +206,8 @@ export class FileWatcher
 		if (!existsSync(storagePath))
 		{
 			return;
-		}
+		}		// Business logic: this iteration walks every relevant item so incremental ingest and checkpoint safety reflects the complete source set instead of a partial snapshot.
+
 
 		// Watch existing remote machine dirs.
 		for (const machineDirName of this.discoverRemoteMachineDirs())
@@ -221,7 +237,7 @@ export class FileWatcher
 				);
 				if (!alreadyWatched)
 				{
-					console.log(chalk.blue(`[FileWatcher] New remote machine dir detected: ${name}`));
+					logger.info(`New remote machine dir detected: ${name}`);
 					this.watchRemoteMachineDir(name);
 				}
 			});
@@ -236,11 +252,7 @@ export class FileWatcher
 		}
 		catch (err)
 		{
-			console.warn(
-				chalk.yellow(
-					`[FileWatcher] Cannot watch storage root @ ${storagePath}: ${(err as Error).message}`
-				)
-			);
+			logger.warn(`Cannot watch storage root @ ${storagePath}: ${(err as Error).message}`);
 		}
 	}
 
@@ -276,7 +288,8 @@ export class FileWatcher
 		if (lower.endsWith("-raw"))
 		{
 			return false; // raw archive dirs
-		}
+		}		// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting incremental ingest and checkpoint safety from partial or invalid state.
+
 		if (lower.startsWith("zzz") || lower.startsWith("."))
 		{
 			return false; // internal cache/settings dirs
@@ -326,14 +339,12 @@ export class FileWatcher
 				watcher,
 			});
 
-			console.log(chalk.blue(`[FileWatcher] Watching remote storage: ${machineDirName} @ ${dirPath}`));
+			logger.info(`Watching remote storage: ${machineDirName} @ ${dirPath}`);
 		}
 		catch (err)
 		{
-			console.warn(
-				chalk.yellow(
-					`[FileWatcher] Cannot watch remote machine dir ${machineDirName} @ ${dirPath}: ${(err as Error).message}`
-				)
+			logger.warn(
+				`Cannot watch remote machine dir ${machineDirName} @ ${dirPath}: ${(err as Error).message}`
 			);
 		}
 	}
@@ -361,6 +372,8 @@ export class FileWatcher
 		{
 			const currentState = this.remoteDebounceState.get(source);
 			this.remoteDebounceState.delete(source);
+			// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting incremental ingest and checkpoint safety from partial or invalid state.
+
 
 			if (!currentState || currentState.filePaths.size === 0)
 			{
@@ -426,26 +439,18 @@ export class FileWatcher
 						return;
 					}
 
-					console.log(
-						chalk.gray(
-							`[FileWatcher] Trigger: ${harnessName} ${event} ${decision.normalizedFile}`
-						)
-					);
+					logger.debug(`Trigger: ${harnessName} ${event} ${decision.normalizedFile}`);
 
 					this.scheduleHarnessIngest(harnessName, p, debounceMs);
 				}
 			);
 
 			this.watchers.push({ type: "harness", harnessName, path: p, watcher });
-			console.log(chalk.blue(`[FileWatcher] Watching ${harnessName} @ ${p}`));
+			logger.info(`Watching ${harnessName} @ ${p}`);
 		}
 		catch (err)
 		{
-			console.warn(
-				chalk.yellow(
-					`[FileWatcher] Cannot watch ${harnessName} @ ${p}: ${(err as Error).message}`
-				)
-			);
+			logger.warn(`Cannot watch ${harnessName} @ ${p}: ${(err as Error).message}`);
 		}
 	}
 
@@ -468,6 +473,8 @@ export class FileWatcher
 		}
 
 		const ext = extname(basename(normalizedFile)).toLowerCase();
+		// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting incremental ingest and checkpoint safety from partial or invalid state.
+
 		if (extensions.length > 0 && !extensions.includes(ext))
 		{
 			return { accept: false, reason: "extension-mismatch", normalizedFile };
@@ -478,7 +485,8 @@ export class FileWatcher
 			if (!normalizedFile.startsWith("chatsessions/"))
 			{
 				return { accept: false, reason: "outside-chatsessions", normalizedFile };
-			}
+			}			// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting incremental ingest and checkpoint safety from partial or invalid state.
+
 
 			if (normalizedFile.endsWith(".tmp") || normalizedFile.endsWith(".lock"))
 			{
@@ -574,6 +582,8 @@ export class FileWatcher
 		// Use an async IIFE so the loop can await each ingest without blocking the event loop.
 		(async () =>
 		{
+			// Business logic: this iteration walks every relevant item so incremental ingest and checkpoint safety reflects the complete source set instead of a partial snapshot.
+
 			while (this.ingestQueue.length > 0)
 			{
 				const item = this.ingestQueue.shift()!;
@@ -597,11 +607,7 @@ export class FileWatcher
 				catch (err)
 				{
 					const label = item.type === "harness" ? item.harnessName : `remote:${item.source}`;
-					console.warn(
-						chalk.yellow(
-							`[FileWatcher] Ingest error for ${label}: ${(err as Error).message}`
-						)
-					);
+					logger.warn(`Ingest error for ${label}: ${(err as Error).message}`);
 				}
 			}
 

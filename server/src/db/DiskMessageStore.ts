@@ -1,7 +1,17 @@
+/**
+ * DiskMessageStore — on-disk SQLite persistence for AgentMessage rows.
+ *
+ * Architecture: server/zz-reach2/architecture/archi-context-core-level0.md
+ * Logging: server/zz-reach2/upgrades/2026-06/r2wl-winston-logging.md
+ */
+
 import { Database } from "bun:sqlite";
 import { readFileSync } from "fs";
+import { getLogger } from "../logging/logger.js";
 import { BaseMessageStore } from "./BaseMessageStore.js";
 import { AgentMessage } from "../models/AgentMessage.js";
+
+const logger = getLogger("db:DiskMessageStore");
 
 /**
  * On-disk SQLite store. Data persists across restarts.
@@ -11,6 +21,10 @@ import { AgentMessage } from "../models/AgentMessage.js";
  */
 export class DiskMessageStore extends BaseMessageStore
 {
+	/**
+	 * Opens or creates the on-disk SQLite database with WAL tuning pragmas.
+	 * @param dbPath - Absolute path to the SQLite database file.
+	 */
 	constructor(dbPath: string)
 	{
 		const db = new Database(dbPath, { create: true });
@@ -22,7 +36,7 @@ export class DiskMessageStore extends BaseMessageStore
 		db.run("PRAGMA busy_timeout = 5000"); // wait up to 5s on lock contention
 
 		super(db);
-		console.log(`[MessageDB] On-disk database: ${dbPath}`);
+		logger.info(`On-disk database: ${dbPath}`);
 	}
 
 	/**
@@ -47,6 +61,8 @@ export class DiskMessageStore extends BaseMessageStore
 		// Wrap all inserts in a single transaction for batch-insert performance.
 		const insertAll = this.db.transaction(() =>
 		{
+			// Business logic: this iteration walks every relevant item so local database consistency reflects the complete source set instead of a partial snapshot.
+
 			for (const filePath of files)
 			{
 				try
@@ -63,7 +79,8 @@ export class DiskMessageStore extends BaseMessageStore
 					{
 						skipped += 1;
 						continue;
-					}
+					}					// Business logic: this iteration walks every relevant item so local database consistency reflects the complete source set instead of a partial snapshot.
+
 
 					for (const row of raw)
 					{
@@ -80,7 +97,7 @@ export class DiskMessageStore extends BaseMessageStore
 
 		insertAll();
 
-		console.log(`[MessageDB] Loaded ${loaded} new messages (${skipped} sessions already in DB skipped).`);
+		logger.info(`Loaded ${loaded} new messages (${skipped} sessions already in DB skipped).`);
 		return loaded;
 	}
 
@@ -92,6 +109,8 @@ export class DiskMessageStore extends BaseMessageStore
 		let inserted = 0;
 		const insertBatch = this.db.transaction(() =>
 		{
+			// Business logic: this iteration walks every relevant item so local database consistency reflects the complete source set instead of a partial snapshot.
+
 			for (const message of messages)
 			{
 				if (this.insertMessage(message))

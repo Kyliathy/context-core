@@ -2,6 +2,11 @@
 /**
  * ContextCore CLI (`cxccli`)
  *
+ * Logging: server/zz-reach2/upgrades/2026-06/r2wl-winston-logging.md (T59-T60)
+ * Startup ingest follow-up: server/zz-reach2/upgrades/2026-06/r2so2-startup-optimization2.md
+ * Intentional console exception: all table/JSON/prompt/validation output stays on console
+ * because it is user-facing command UI consumed by humans or --json callers.
+ *
  * Implemented in this phase:
  * - Commander command surface + clack interactive prompts
  * - VS Code workspace metadata resolution in list rows
@@ -37,12 +42,16 @@ import {
 	type HarnessScanner,
 	type HarnessScannerCandidate,
 } from "./cli/discovery.js";
+import { GlobalSettingsStore } from "./settings/GlobalSettingsStore.js";
+import { hashHarnessPaths } from "./ingest/IngestConfig.js";
 
 type CliFlags = {
 	machine?: string;
 	json: boolean;
 	yes: boolean;
 	backup: boolean;
+	allMachines: boolean;
+	global: boolean;
 };
 
 type CliListRow = {
@@ -141,13 +150,24 @@ const HARNESS_COLORS: Record<string, ChalkInstance> = {
 	unknown: chalk.gray,
 };
 
+/**
+ * Handles isRecord behavior for this CXC module.
+ * @param value - Value consumed by isRecord.
+ * @returns Result produced by isRecord.
+ */
 function isRecord(value: unknown): value is Record<string, unknown>
 {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/**
+ * Detects host state used by detectMachineName.
+ * @returns Result produced by detectMachineName.
+ */
 function detectMachineName(): string
 {
+	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting operator configuration flows from partial or invalid state.
+
 	if (process.platform === "win32" && process.env.COMPUTERNAME)
 	{
 		return process.env.COMPUTERNAME;
@@ -155,20 +175,37 @@ function detectMachineName(): string
 	return osHostname();
 }
 
+/**
+ * Returns the value managed by getHarnessSortIndex.
+ * @param harnessName - Harness name or harness data used by getHarnessSortIndex.
+ * @returns Result produced by getHarnessSortIndex.
+ */
 function getHarnessSortIndex(harnessName: string): number
 {
 	const idx = HARNESS_ORDER.indexOf(harnessName as (typeof HARNESS_ORDER)[number]);
 	return idx === -1 ? Number.MAX_SAFE_INTEGER : idx;
 }
 
+/**
+ * Returns the value managed by getHarnessColor.
+ * @param harnessName - Harness name or harness data used by getHarnessColor.
+ * @returns Result produced by getHarnessColor.
+ */
 function getHarnessColor(harnessName: string): ChalkInstance
 {
 	return HARNESS_COLORS[harnessName] ?? HARNESS_COLORS.unknown;
 }
 
+/**
+ * Parses input into the shape expected by parseRowNumber.
+ * @param row - Value consumed by parseRowNumber.
+ * @returns Result produced by parseRowNumber.
+ */
 function parseRowNumber(row: string): number
 {
 	const parsed = Number.parseInt(row, 10);
+	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting operator configuration flows from partial or invalid state.
+
 	if (!Number.isInteger(parsed) || parsed < 1)
 	{
 		throw new Error(`Invalid row number "${row}".`);
@@ -176,6 +213,11 @@ function parseRowNumber(row: string): number
 	return parsed;
 }
 
+/**
+ * Loads data needed by loadCcConfig from the configured CXC source.
+ * @param ccJsonPath - Path used by loadCcConfig to locate the relevant CXC resource.
+ * @returns Result produced by loadCcConfig.
+ */
 function loadCcConfig(ccJsonPath: string): CcConfig
 {
 	if (!existsSync(ccJsonPath))
@@ -196,7 +238,8 @@ function loadCcConfig(ccJsonPath: string): CcConfig
 	if (!isRecord(parsed))
 	{
 		throw new Error("Invalid cc.json: expected top-level JSON object.");
-	}
+	}	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting operator configuration flows from partial or invalid state.
+
 	if (typeof parsed.storage !== "string" || parsed.storage.trim() === "")
 	{
 		throw new Error("Invalid cc.json: `storage` must be a non-empty string.");
@@ -211,7 +254,8 @@ function loadCcConfig(ccJsonPath: string): CcConfig
 		if (!isRecord(machine))
 		{
 			throw new Error(`Invalid cc.json: machines[${idx}] must be an object.`);
-		}
+		}		// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting operator configuration flows from partial or invalid state.
+
 		if (typeof machine.machine !== "string" || machine.machine.trim() === "")
 		{
 			throw new Error(`Invalid cc.json: machines[${idx}].machine must be a non-empty string.`);
@@ -230,6 +274,12 @@ function loadCcConfig(ccJsonPath: string): CcConfig
 	};
 }
 
+/**
+ * Handles promptMachinePick behavior for this CXC module.
+ * @param machines - Value consumed by promptMachinePick.
+ * @param options - Options that control promptMachinePick.
+ * @returns Result produced by promptMachinePick.
+ */
 async function promptMachinePick(
 	machines: CcMachine[],
 	options?: {
@@ -259,6 +309,8 @@ async function promptMachinePick(
 	}
 
 	const idx = Number.parseInt(String(picked), 10);
+	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting operator configuration flows from partial or invalid state.
+
 	if (!Number.isInteger(idx) || idx < 0 || idx >= machines.length)
 	{
 		return null;
@@ -266,6 +318,13 @@ async function promptMachinePick(
 	return machines[idx];
 }
 
+/**
+ * Handles selectMachine behavior for this CXC module.
+ * @param config - Configuration object used by selectMachine.
+ * @param machineName - Value consumed by selectMachine.
+ * @param options - Options that control selectMachine.
+ * @returns Result produced by selectMachine.
+ */
 async function selectMachine(config: CcConfig, machineName?: string, options?: SelectMachineOptions): Promise<CcMachine>
 {
 	if (config.machines.length === 0)
@@ -325,6 +384,11 @@ async function selectMachine(config: CcConfig, machineName?: string, options?: S
 	return picked;
 }
 
+/**
+ * Reads data for readHarnessPaths without changing unrelated CXC state.
+ * @param harnessConfig - Configuration object used by readHarnessPaths.
+ * @returns Result produced by readHarnessPaths.
+ */
 function readHarnessPaths(harnessConfig: unknown): string[]
 {
 	if (!isRecord(harnessConfig)) return [];
@@ -332,6 +396,12 @@ function readHarnessPaths(harnessConfig: unknown): string[]
 	return harnessConfig.paths.filter((value): value is string => typeof value === "string" && value.trim() !== "");
 }
 
+/**
+ * Handles computeRowFields behavior for this CXC module.
+ * @param harness - Harness name or harness data used by computeRowFields.
+ * @param configuredPath - Path used by computeRowFields to locate the relevant CXC resource.
+ * @returns Result produced by computeRowFields.
+ */
 function computeRowFields(harness: string, configuredPath: string): Omit<CliListRow, "row" | "machine" | "harness">
 {
 	const exists = existsSync(configuredPath);
@@ -365,9 +435,16 @@ function computeRowFields(harness: string, configuredPath: string): Omit<CliList
 	};
 }
 
+/**
+ * Builds the value produced by buildMachineRowRefs.
+ * @param machine - Value consumed by buildMachineRowRefs.
+ * @returns Result produced by buildMachineRowRefs.
+ */
 function buildMachineRowRefs(machine: CcMachine): CliRowRef[]
 {
 	const refs: Array<Omit<CliRowRef, "row">> = [];
+	// Business logic: this iteration walks every relevant item so operator configuration flows reflects the complete source set instead of a partial snapshot.
+
 
 	for (const [harness, harnessConfig] of Object.entries(machine.harnesses))
 	{
@@ -376,6 +453,8 @@ function buildMachineRowRefs(machine: CcMachine): CliRowRef[]
 			continue;
 		}
 		const paths = readHarnessPaths(harnessConfig);
+		// Business logic: this iteration walks every relevant item so operator configuration flows reflects the complete source set instead of a partial snapshot.
+
 		for (let idx = 0; idx < paths.length; idx += 1)
 		{
 			refs.push({
@@ -398,11 +477,22 @@ function buildMachineRowRefs(machine: CcMachine): CliRowRef[]
 	return refs.map((ref, idx) => ({ ...ref, row: idx + 1 }));
 }
 
+/**
+ * Handles flattenMachineRows behavior for this CXC module.
+ * @param machine - Value consumed by flattenMachineRows.
+ * @returns Result produced by flattenMachineRows.
+ */
 function flattenMachineRows(machine: CcMachine): CliListRow[]
 {
 	return buildMachineRowRefs(machine).map(({ harnessPathIndex: _discard, ...row }) => row);
 }
 
+/**
+ * Resolves the value needed by resolveRowTarget.
+ * @param machine - Value consumed by resolveRowTarget.
+ * @param rowNumber - Value consumed by resolveRowTarget.
+ * @returns Result produced by resolveRowTarget.
+ */
 function resolveRowTarget(machine: CcMachine, rowNumber: number): CliRowRef
 {
 	const rows = buildMachineRowRefs(machine);
@@ -414,6 +504,13 @@ function resolveRowTarget(machine: CcMachine, rowNumber: number): CliRowRef
 	return target;
 }
 
+/**
+ * Handles updateMachineConfig behavior for this CXC module.
+ * @param config - Configuration object used by updateMachineConfig.
+ * @param machineName - Value consumed by updateMachineConfig.
+ * @param updateFn - Value consumed by updateMachineConfig.
+ * @returns Result produced by updateMachineConfig.
+ */
 function updateMachineConfig(
 	config: CcConfig,
 	machineName: string,
@@ -426,6 +523,13 @@ function updateMachineConfig(
 	return { ...config, machines };
 }
 
+/**
+ * Handles applyEditPathByRow behavior for this CXC module.
+ * @param machine - Value consumed by applyEditPathByRow.
+ * @param rowNumber - Value consumed by applyEditPathByRow.
+ * @param newPath - Path used by applyEditPathByRow to locate the relevant CXC resource.
+ * @returns Result produced by applyEditPathByRow.
+ */
 function applyEditPathByRow(machine: CcMachine, rowNumber: number, newPath: string): CcMachine
 {
 	const target = resolveRowTarget(machine, rowNumber);
@@ -436,6 +540,8 @@ function applyEditPathByRow(machine: CcMachine, rowNumber: number, newPath: stri
 	}
 
 	const currentPaths = readHarnessPaths(harnessConfig);
+	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting operator configuration flows from partial or invalid state.
+
 	if (target.harnessPathIndex < 0 || target.harnessPathIndex >= currentPaths.length)
 	{
 		throw new Error("Resolved row path index is out of range.");
@@ -456,6 +562,13 @@ function applyEditPathByRow(machine: CcMachine, rowNumber: number, newPath: stri
 	};
 }
 
+/**
+ * Handles applyDeletePathByRow behavior for this CXC module.
+ * @param machine - Value consumed by applyDeletePathByRow.
+ * @param rowNumber - Value consumed by applyDeletePathByRow.
+ * @param options - Options that control applyDeletePathByRow.
+ * @returns Result produced by applyDeletePathByRow.
+ */
 function applyDeletePathByRow(
 	machine: CcMachine,
 	rowNumber: number,
@@ -470,6 +583,8 @@ function applyDeletePathByRow(
 	}
 
 	const currentPaths = readHarnessPaths(harnessConfig);
+	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting operator configuration flows from partial or invalid state.
+
 	if (target.harnessPathIndex < 0 || target.harnessPathIndex >= currentPaths.length)
 	{
 		throw new Error("Resolved row path index is out of range.");
@@ -479,6 +594,8 @@ function applyDeletePathByRow(
 	const nextHarnesses = { ...machine.harnesses };
 
 	let removedEmptyHarnessBlock = false;
+	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting operator configuration flows from partial or invalid state.
+
 	if (nextPaths.length === 0 && options.removeEmptyHarnessBlock)
 	{
 		delete nextHarnesses[target.harness];
@@ -502,8 +619,15 @@ function applyDeletePathByRow(
 	};
 }
 
+/**
+ * Creates the value or resource produced by createBackupIfNeeded.
+ * @param ccJsonPath - Path used by createBackupIfNeeded to locate the relevant CXC resource.
+ * @param backupEnabled - Value consumed by createBackupIfNeeded.
+ */
 function createBackupIfNeeded(ccJsonPath: string, backupEnabled: boolean): void
 {
+	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting operator configuration flows from partial or invalid state.
+
 	if (!backupEnabled || !existsSync(ccJsonPath))
 	{
 		return;
@@ -511,6 +635,12 @@ function createBackupIfNeeded(ccJsonPath: string, backupEnabled: boolean): void
 	copyFileSync(ccJsonPath, `${ccJsonPath}.bak`);
 }
 
+/**
+ * Writes data for writeCcConfig using the existing CXC storage contract.
+ * @param ccJsonPath - Path used by writeCcConfig to locate the relevant CXC resource.
+ * @param config - Configuration object used by writeCcConfig.
+ * @param options - Options that control writeCcConfig.
+ */
 function writeCcConfig(ccJsonPath: string, config: CcConfig, options?: WriteOptions): void
 {
 	const output = `${JSON.stringify(config, null, "\t")}\n`;
@@ -564,11 +694,24 @@ function writeCcConfig(ccJsonPath: string, config: CcConfig, options?: WriteOpti
 	}
 }
 
+/**
+ * Handles clampWidth behavior for this CXC module.
+ * @param value - Value consumed by clampWidth.
+ * @param min - Value consumed by clampWidth.
+ * @param max - Value consumed by clampWidth.
+ * @returns Result produced by clampWidth.
+ */
 function clampWidth(value: number, min: number, max: number): number
 {
 	return Math.max(min, Math.min(max, value));
 }
 
+/**
+ * Handles truncate behavior for this CXC module.
+ * @param value - Value consumed by truncate.
+ * @param width - Value consumed by truncate.
+ * @returns Result produced by truncate.
+ */
 function truncate(value: string, width: number): string
 {
 	if (value.length <= width) return value.padEnd(width, " ");
@@ -576,6 +719,11 @@ function truncate(value: string, width: number): string
 	return `${value.slice(0, width - 3)}...`;
 }
 
+/**
+ * Handles renderListRows behavior for this CXC module.
+ * @param rows - Value consumed by renderListRows.
+ * @param options - Options that control renderListRows.
+ */
 function renderListRows(rows: CliListRow[], options?: ListRenderOptions): void
 {
 	if (rows.length === 0)
@@ -618,6 +766,8 @@ function renderListRows(rows: CliListRow[], options?: ListRenderOptions): void
 		"Exists";
 	console.log(chalk.bold(header));
 	console.log(chalk.dim("-".repeat(header.length)));
+	// Business logic: this iteration walks every relevant item so operator configuration flows reflects the complete source set instead of a partial snapshot.
+
 
 	for (const row of rows)
 	{
@@ -647,11 +797,22 @@ function renderListRows(rows: CliListRow[], options?: ListRenderOptions): void
 	}
 }
 
+/**
+ * Handles canonicalizePath behavior for this CXC module.
+ * @param path - Path used by canonicalizePath to locate the relevant CXC resource.
+ * @returns Result produced by canonicalizePath.
+ */
 function canonicalizePath(path: string): string
 {
 	return path.trim().replace(/[\\/]+$/, "").toLowerCase();
 }
 
+/**
+ * Builds the value produced by buildCandidateRows.
+ * @param candidates - Value consumed by buildCandidateRows.
+ * @param scanners - Value consumed by buildCandidateRows.
+ * @returns Result produced by buildCandidateRows.
+ */
 function buildCandidateRows(
 	candidates: HarnessScannerCandidate[],
 	scanners: HarnessScanner[] = DEFAULT_HARNESS_SCANNERS
@@ -682,9 +843,16 @@ function buildCandidateRows(
 	});
 }
 
+/**
+ * Handles collectConfiguredPathKeys behavior for this CXC module.
+ * @param machine - Value consumed by collectConfiguredPathKeys.
+ * @returns Result produced by collectConfiguredPathKeys.
+ */
 function collectConfiguredPathKeys(machine: CcMachine): Set<string>
 {
 	const configured = new Set<string>();
+	// Business logic: this iteration walks every relevant item so operator configuration flows reflects the complete source set instead of a partial snapshot.
+
 	for (const [harness, harnessConfig] of Object.entries(machine.harnesses))
 	{
 		if (RESERVED_HARNESS_KEYS.has(harness))
@@ -692,6 +860,8 @@ function collectConfiguredPathKeys(machine: CcMachine): Set<string>
 			continue;
 		}
 		const paths = readHarnessPaths(harnessConfig);
+		// Business logic: this iteration walks every relevant item so operator configuration flows reflects the complete source set instead of a partial snapshot.
+
 		for (const path of paths)
 		{
 			configured.add(`${harness}::${canonicalizePath(path)}`);
@@ -700,6 +870,13 @@ function collectConfiguredPathKeys(machine: CcMachine): Set<string>
 	return configured;
 }
 
+/**
+ * Builds the value produced by buildAddCandidateRows.
+ * @param machine - Value consumed by buildAddCandidateRows.
+ * @param candidates - Value consumed by buildAddCandidateRows.
+ * @param scanners - Value consumed by buildAddCandidateRows.
+ * @returns Result produced by buildAddCandidateRows.
+ */
 function buildAddCandidateRows(
 	machine: CcMachine,
 	candidates: HarnessScannerCandidate[],
@@ -711,6 +888,8 @@ function buildAddCandidateRows(
 	const uniqueCandidates = new Map<string, CliCandidateRow>();
 
 	let skippedScannerDuplicates = 0;
+	// Business logic: this iteration walks every relevant item so operator configuration flows reflects the complete source set instead of a partial snapshot.
+
 	for (const row of rawRows)
 	{
 		const key = `${row.harness}::${canonicalizePath(row.candidatePath)}`;
@@ -724,6 +903,8 @@ function buildAddCandidateRows(
 
 	let skippedAlreadyConfigured = 0;
 	const filteredRows: CliCandidateRow[] = [];
+	// Business logic: this iteration walks every relevant item so operator configuration flows reflects the complete source set instead of a partial snapshot.
+
 	for (const [key, row] of uniqueCandidates.entries())
 	{
 		if (existingKeys.has(key))
@@ -744,6 +925,11 @@ function buildAddCandidateRows(
 	};
 }
 
+/**
+ * Handles renderCandidateRows behavior for this CXC module.
+ * @param rows - Value consumed by renderCandidateRows.
+ * @param options - Options that control renderCandidateRows.
+ */
 function renderCandidateRows(rows: CliCandidateRow[], options?: CandidateRenderOptions): void
 {
 	if (rows.length === 0)
@@ -790,6 +976,8 @@ function renderCandidateRows(rows: CliCandidateRow[], options?: CandidateRenderO
 		"Exists";
 	console.log(chalk.bold(header));
 	console.log(chalk.dim("-".repeat(header.length)));
+	// Business logic: this iteration walks every relevant item so operator configuration flows reflects the complete source set instead of a partial snapshot.
+
 
 	for (const row of rows)
 	{
@@ -823,6 +1011,12 @@ function renderCandidateRows(rows: CliCandidateRow[], options?: CandidateRenderO
 	}
 }
 
+/**
+ * Parses input into the shape expected by parseSelectionSpec.
+ * @param spec - Value consumed by parseSelectionSpec.
+ * @param maxRow - Value consumed by parseSelectionSpec.
+ * @returns Result produced by parseSelectionSpec.
+ */
 function parseSelectionSpec(spec: string, maxRow: number): number[]
 {
 	const chosen = new Set<number>();
@@ -831,7 +1025,8 @@ function parseSelectionSpec(spec: string, maxRow: number): number[]
 	if (tokens.length === 0)
 	{
 		throw new Error("Selection is empty.");
-	}
+	}	// Business logic: this iteration walks every relevant item so operator configuration flows reflects the complete source set instead of a partial snapshot.
+
 
 	for (const token of tokens)
 	{
@@ -840,14 +1035,20 @@ function parseSelectionSpec(spec: string, maxRow: number): number[]
 		{
 			const start = Number.parseInt(rangeMatch[1], 10);
 			const end = Number.parseInt(rangeMatch[2], 10);
+			// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting operator configuration flows from partial or invalid state.
+
 			if (!Number.isInteger(start) || !Number.isInteger(end))
 			{
 				throw new Error(`Invalid range token "${token}".`);
 			}
 			const low = Math.min(start, end);
 			const high = Math.max(start, end);
+			// Business logic: this iteration walks every relevant item so operator configuration flows reflects the complete source set instead of a partial snapshot.
+
 			for (let value = low; value <= high; value += 1)
 			{
+				// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting operator configuration flows from partial or invalid state.
+
 				if (value < 1 || value > maxRow)
 				{
 					throw new Error(`Selection row ${value} is out of range (1-${maxRow}).`);
@@ -861,7 +1062,8 @@ function parseSelectionSpec(spec: string, maxRow: number): number[]
 		if (!Number.isInteger(value))
 		{
 			throw new Error(`Invalid selection token "${token}".`);
-		}
+		}		// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting operator configuration flows from partial or invalid state.
+
 		if (value < 1 || value > maxRow)
 		{
 			throw new Error(`Selection row ${value} is out of range (1-${maxRow}).`);
@@ -872,6 +1074,11 @@ function parseSelectionSpec(spec: string, maxRow: number): number[]
 	return [...chosen].sort((a, b) => a - b);
 }
 
+/**
+ * Handles promptCandidateSelection behavior for this CXC module.
+ * @param rows - Value consumed by promptCandidateSelection.
+ * @returns Result produced by promptCandidateSelection.
+ */
 async function promptCandidateSelection(rows: CliCandidateRow[]): Promise<number[] | null>
 {
 	if (!process.stdin.isTTY)
@@ -896,6 +1103,9 @@ async function promptCandidateSelection(rows: CliCandidateRow[]): Promise<number
 	const selectedRows = new Set<number>();
 	let warning: string | null = null;
 
+	/**
+	 * Handles renderSelectionFrame behavior for this CXC module.
+	 */
 	const renderSelectionFrame = (): void =>
 	{
 		stdout.write("\x1b[2J\x1b[H");
@@ -921,6 +1131,10 @@ async function promptCandidateSelection(rows: CliCandidateRow[]): Promise<number
 	{
 		let settled = false;
 
+		/**
+		 * Handles finish behavior for this CXC module.
+		 * @param value - Value consumed by finish.
+		 */
 		const finish = (value: number[] | null): void =>
 		{
 			if (settled)
@@ -941,8 +1155,15 @@ async function promptCandidateSelection(rows: CliCandidateRow[]): Promise<number
 			resolve(value);
 		};
 
+		/**
+		 * Handles onKeypress behavior for this CXC module.
+		 * @param input - Value consumed by onKeypress.
+		 * @param key - Value consumed by onKeypress.
+		 */
 		const onKeypress = (input: string, key: KeypressLike): void =>
 		{
+			// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting operator configuration flows from partial or invalid state.
+
 			if (key?.ctrl && key.name === "c")
 			{
 				finish(null);
@@ -990,6 +1211,8 @@ async function promptCandidateSelection(rows: CliCandidateRow[]): Promise<number
 				}
 				else
 				{
+					// Business logic: this iteration walks every relevant item so operator configuration flows reflects the complete source set instead of a partial snapshot.
+
 					for (const row of rows)
 					{
 						selectedRows.add(row.row);
@@ -998,7 +1221,8 @@ async function promptCandidateSelection(rows: CliCandidateRow[]): Promise<number
 				warning = null;
 				renderSelectionFrame();
 				return;
-			}
+			}			// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting operator configuration flows from partial or invalid state.
+
 
 			if (key?.name === "return" || key?.name === "enter")
 			{
@@ -1011,7 +1235,8 @@ async function promptCandidateSelection(rows: CliCandidateRow[]): Promise<number
 
 				finish([...selectedRows].sort((a, b) => a - b));
 				return;
-			}
+			}			// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting operator configuration flows from partial or invalid state.
+
 
 			if (key?.name === "escape" || token === "q" || token === "x")
 			{
@@ -1031,6 +1256,12 @@ async function promptCandidateSelection(rows: CliCandidateRow[]): Promise<number
 	});
 }
 
+/**
+ * Handles applyAddCandidates behavior for this CXC module.
+ * @param machine - Value consumed by applyAddCandidates.
+ * @param candidates - Value consumed by applyAddCandidates.
+ * @returns Result produced by applyAddCandidates.
+ */
 function applyAddCandidates(machine: CcMachine, candidates: CliCandidateRow[]): {
 	machine: CcMachine;
 	added: number;
@@ -1040,6 +1271,8 @@ function applyAddCandidates(machine: CcMachine, candidates: CliCandidateRow[]): 
 	const nextHarnesses = { ...machine.harnesses };
 	let added = 0;
 	let skippedDuplicates = 0;
+	// Business logic: this iteration walks every relevant item so operator configuration flows reflects the complete source set instead of a partial snapshot.
+
 
 	for (const candidate of candidates)
 	{
@@ -1073,6 +1306,11 @@ function applyAddCandidates(machine: CcMachine, candidates: CliCandidateRow[]): 
 	};
 }
 
+/**
+ * Handles printValidation behavior for this CXC module.
+ * @param message - Message data processed by printValidation.
+ * @returns Result produced by printValidation.
+ */
 function printValidation(message: string): number
 {
 	console.error(chalk.red(`Validation error: ${message}`));
@@ -1080,18 +1318,33 @@ function printValidation(message: string): number
 	return EXIT_VALIDATION;
 }
 
+/**
+ * Reads global and subcommand options into a normalized flags object.
+ * @param command - Commander command instance handling the current invocation.
+ * @returns Normalized CLI flags used by command handlers.
+ */
 function flagsFromCommand(command: Command): CliFlags
 {
 	const withGlobals = (command as Command & { optsWithGlobals?: () => unknown }).optsWithGlobals?.();
 	const raw = isRecord(withGlobals) ? withGlobals : command.opts();
 	return {
+		// Business logic: blank machine values must fall back to hostname selection so
+		// ingest status/reset commands do not accidentally target a made-up machine key.
 		machine: typeof raw.machine === "string" && raw.machine.trim() !== "" ? raw.machine : undefined,
 		json: raw.json === true,
 		yes: raw.yes === true,
 		backup: raw.backup === true || process.env.CXCCLI_BACKUP === "1",
+		allMachines: raw.allMachines === true,
+		global: raw.global === true,
 	};
 }
 
+/**
+ * Handles promptTextValue behavior for this CXC module.
+ * @param message - Message data processed by promptTextValue.
+ * @param initialValue - Value consumed by promptTextValue.
+ * @returns Result produced by promptTextValue.
+ */
 async function promptTextValue(message: string, initialValue: string): Promise<string | null>
 {
 	if (!process.stdin.isTTY)
@@ -1103,8 +1356,16 @@ async function promptTextValue(message: string, initialValue: string): Promise<s
 		message,
 		initialValue,
 		defaultValue: initialValue,
+		/**
+		 * Handles validate behavior for this CXC module.
+		 * @param input - Value consumed by validate.
+		 * @returns Result produced by validate.
+		 */
+
 		validate: (input) =>
 		{
+			// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting operator configuration flows from partial or invalid state.
+
 			if (!input || !input.trim())
 			{
 				return "Path cannot be empty.";
@@ -1120,6 +1381,12 @@ async function promptTextValue(message: string, initialValue: string): Promise<s
 	return String(value).trim();
 }
 
+/**
+ * Handles promptConfirm behavior for this CXC module.
+ * @param message - Message data processed by promptConfirm.
+ * @param initialValue - Value consumed by promptConfirm.
+ * @returns Result produced by promptConfirm.
+ */
 async function promptConfirm(message: string, initialValue = false): Promise<boolean | null>
 {
 	if (!process.stdin.isTTY)
@@ -1139,6 +1406,11 @@ async function promptConfirm(message: string, initialValue = false): Promise<boo
 	return accepted;
 }
 
+/**
+ * Resolves the value needed by resolveInteractiveActionToken.
+ * @param input - Value consumed by resolveInteractiveActionToken.
+ * @returns Result produced by resolveInteractiveActionToken.
+ */
 function resolveInteractiveActionToken(input: string): InteractiveAction | "menu" | null
 {
 	const token = input.trim().toLowerCase();
@@ -1151,7 +1423,11 @@ function resolveInteractiveActionToken(input: string): InteractiveAction | "menu
 	if (first === "l") return "list";
 	if (first === "a") return "add";
 	if (first === "e") return "edit";
+	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting operator configuration flows from partial or invalid state.
+
 	if (first === "d" || first === "r") return "delete";
+	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting operator configuration flows from partial or invalid state.
+
 	if (first === "q" || first === "x") return "quit";
 	if (first === "m") return "menu";
 	return null;
@@ -1162,6 +1438,10 @@ type KeypressLike = {
 	ctrl?: boolean;
 };
 
+/**
+ * Reads data for readImmediateInteractiveAction without changing unrelated CXC state.
+ * @returns Result produced by readImmediateInteractiveAction.
+ */
 async function readImmediateInteractiveAction(): Promise<InteractiveAction | "menu" | "quit">
 {
 	if (!process.stdin.isTTY)
@@ -1180,6 +1460,10 @@ async function readImmediateInteractiveAction(): Promise<InteractiveAction | "me
 		const canSetRawMode = typeof ttyStdin.setRawMode === "function";
 		let settled = false;
 
+		/**
+		 * Handles finish behavior for this CXC module.
+		 * @param result - Value consumed by finish.
+		 */
 		const finish = (result: InteractiveAction | "menu" | "quit"): void =>
 		{
 			if (settled)
@@ -1195,13 +1479,21 @@ async function readImmediateInteractiveAction(): Promise<InteractiveAction | "me
 			resolve(result);
 		};
 
+		/**
+		 * Handles onKeypress behavior for this CXC module.
+		 * @param input - Value consumed by onKeypress.
+		 * @param key - Value consumed by onKeypress.
+		 */
 		const onKeypress = (input: string, key: KeypressLike): void =>
 		{
+			// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting operator configuration flows from partial or invalid state.
+
 			if (key?.ctrl && key.name === "c")
 			{
 				finish("quit");
 				return;
-			}
+			}			// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting operator configuration flows from partial or invalid state.
+
 			if (
 				key?.name === "return" ||
 				key?.name === "enter" ||
@@ -1236,6 +1528,10 @@ async function readImmediateInteractiveAction(): Promise<InteractiveAction | "me
 	});
 }
 
+/**
+ * Handles promptInteractiveAction behavior for this CXC module.
+ * @returns Result produced by promptInteractiveAction.
+ */
 async function promptInteractiveAction(): Promise<InteractiveAction | null>
 {
 	if (!process.stdin.isTTY)
@@ -1272,6 +1568,11 @@ async function promptInteractiveAction(): Promise<InteractiveAction | null>
 	return action;
 }
 
+/**
+ * Handles promptRowForAction behavior for this CXC module.
+ * @param action - Value consumed by promptRowForAction.
+ * @returns Result produced by promptRowForAction.
+ */
 async function promptRowForAction(action: "edit" | "delete"): Promise<string | null>
 {
 	if (!process.stdin.isTTY)
@@ -1282,8 +1583,16 @@ async function promptRowForAction(action: "edit" | "delete"): Promise<string | n
 	const rowValue = await text({
 		message: `Row number to ${action}`,
 		placeholder: "e.g. 12",
+		/**
+		 * Handles validate behavior for this CXC module.
+		 * @param value - Value consumed by validate.
+		 * @returns Result produced by validate.
+		 */
+
 		validate: (value) =>
 		{
+			// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting operator configuration flows from partial or invalid state.
+
 			if (!value || !value.trim())
 			{
 				return "Row number is required.";
@@ -1307,6 +1616,11 @@ async function promptRowForAction(action: "edit" | "delete"): Promise<string | n
 	return String(rowValue).trim();
 }
 
+/**
+ * Handles promptRowSelectForDelete behavior for this CXC module.
+ * @param flags - Value consumed by promptRowSelectForDelete.
+ * @returns Result produced by promptRowSelectForDelete.
+ */
 async function promptRowSelectForDelete(flags: CliFlags): Promise<string | null>
 {
 	if (!process.stdin.isTTY)
@@ -1337,6 +1651,9 @@ async function promptRowSelectForDelete(flags: CliFlags): Promise<string | null>
 		const canSetRawMode = typeof ttyStdin.setRawMode === "function";
 		let selectedIndex = 0;
 
+		/**
+		 * Handles renderSelectionFrame behavior for this CXC module.
+		 */
 		const renderSelectionFrame = (): void =>
 		{
 			stdout.write("\x1b[2J\x1b[H");
@@ -1350,6 +1667,10 @@ async function promptRowSelectForDelete(flags: CliFlags): Promise<string | null>
 		{
 			let settled = false;
 
+			/**
+			 * Handles finish behavior for this CXC module.
+			 * @param value - Value consumed by finish.
+			 */
 			const finish = (value: string | null): void =>
 			{
 				if (settled)
@@ -1370,8 +1691,15 @@ async function promptRowSelectForDelete(flags: CliFlags): Promise<string | null>
 				resolve(value);
 			};
 
+			/**
+			 * Handles onKeypress behavior for this CXC module.
+			 * @param input - Value consumed by onKeypress.
+			 * @param key - Value consumed by onKeypress.
+			 */
 			const onKeypress = (input: string, key: KeypressLike): void =>
 			{
+				// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting operator configuration flows from partial or invalid state.
+
 				if (key?.ctrl && key.name === "c")
 				{
 					finish(null);
@@ -1390,7 +1718,8 @@ async function promptRowSelectForDelete(flags: CliFlags): Promise<string | null>
 					selectedIndex = (selectedIndex + 1) % rows.length;
 					renderSelectionFrame();
 					return;
-				}
+				}				// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting operator configuration flows from partial or invalid state.
+
 
 				if (key?.name === "return" || key?.name === "enter")
 				{
@@ -1399,6 +1728,8 @@ async function promptRowSelectForDelete(flags: CliFlags): Promise<string | null>
 				}
 
 				const token = input.trim().toLowerCase();
+				// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting operator configuration flows from partial or invalid state.
+
 				if (key?.name === "escape" || token === "q" || token === "x")
 				{
 					finish(null);
@@ -1422,8 +1753,15 @@ async function promptRowSelectForDelete(flags: CliFlags): Promise<string | null>
 	}
 }
 
+/**
+ * Handles runInteractiveMode behavior for this CXC module.
+ * @param flags - Value consumed by runInteractiveMode.
+ * @returns Result produced by runInteractiveMode.
+ */
 async function runInteractiveMode(flags: CliFlags): Promise<number>
 {
+	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting operator configuration flows from partial or invalid state.
+
 	if (!process.stdin.isTTY || !process.stdout.isTTY)
 	{
 		// Non-interactive environments should not hang waiting for prompts.
@@ -1462,10 +1800,14 @@ async function runInteractiveMode(flags: CliFlags): Promise<number>
 
 	// Show current state immediately so interactive mode is useful at first prompt.
 	await runList(shellFlags);
+	// Business logic: this iteration walks every relevant item so operator configuration flows reflects the complete source set instead of a partial snapshot.
+
 
 	while (true)
 	{
 		const action = await promptInteractiveAction();
+		// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting operator configuration flows from partial or invalid state.
+
 		if (!action || action === "quit")
 		{
 			outro("Bye.");
@@ -1517,8 +1859,15 @@ async function runInteractiveMode(flags: CliFlags): Promise<number>
 	}
 }
 
+/**
+ * Handles runDefaultCommand behavior for this CXC module.
+ * @param flags - Value consumed by runDefaultCommand.
+ * @returns Result produced by runDefaultCommand.
+ */
 async function runDefaultCommand(flags: CliFlags): Promise<number>
 {
+	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting operator configuration flows from partial or invalid state.
+
 	if (process.stdin.isTTY && process.stdout.isTTY && !flags.json)
 	{
 		return runInteractiveMode(flags);
@@ -1526,6 +1875,11 @@ async function runDefaultCommand(flags: CliFlags): Promise<number>
 	return runList(flags);
 }
 
+/**
+ * Handles runList behavior for this CXC module.
+ * @param flags - Value consumed by runList.
+ * @returns Result produced by runList.
+ */
 async function runList(flags: CliFlags): Promise<number>
 {
 	if (flags.yes)
@@ -1549,6 +1903,157 @@ async function runList(flags: CliFlags): Promise<number>
 	return EXIT_SUCCESS;
 }
 
+/**
+ * Prints machine-scoped ingest bookmark and local DB fingerprint status.
+ * @param flags - CLI flags including selected machine, JSON mode, and all-machine view.
+ * @returns Process exit code.
+ */
+async function runIngestStatus(flags: CliFlags): Promise<number>
+{
+	try
+	{
+		const ccJsonPath = join(process.cwd(), "cc.json");
+		const config = loadCcConfig(ccJsonPath);
+		const machine = await selectMachine(config, flags.machine);
+		const store = new GlobalSettingsStore(config.storage, machine.machine);
+		store.load();
+		const rows = Object.entries(machine.harnesses)
+			.filter(([harness]) => !RESERVED_HARNESS_KEYS.has(harness))
+			.map(([harness, harnessConfig]) =>
+			{
+				const paths = readHarnessPaths(harnessConfig);
+				const bookmark = store.getHarnessBookmark(harness);
+				return {
+					harness,
+					paths,
+					sourcePathHash: hashHarnessPaths({ paths }),
+					bookmarkMode: bookmark?.mode ?? null,
+					lastSuccessfulIngestAt: bookmark?.lastSuccessfulIngestAt ?? null,
+					parserEpoch: bookmark?.parserEpoch ?? null,
+					rowids: bookmark?.rowids ?? null,
+					progress: bookmark?.progress ?? null,
+					manifestPath: bookmark?.manifestPath ?? null,
+				};
+			});
+		const payload = {
+			machine: machine.machine,
+			storage: config.storage,
+			activeMachine: store.getActiveMachineName(),
+			runInProgress: store.isRunInProgress(),
+			dbFingerprint: store.getDbFingerprint(),
+			harnesses: rows,
+			machines: flags.allMachines ? store.getAllMachineStates() : undefined,
+		};
+
+		if (flags.json)
+		{
+			console.log(JSON.stringify(payload, null, "\t"));
+			return EXIT_SUCCESS;
+		}
+
+		console.log(chalk.bold(`Ingest status: ${machine.machine}`));
+		console.log(`Storage: ${config.storage}`);
+		console.log(`Active machine state: ${store.getActiveMachineName()}`);
+		console.log(`Run in progress: ${store.isRunInProgress() ? chalk.yellow("yes") : chalk.green("no")}`);
+		const fingerprint = store.getDbFingerprint();
+		console.log(`DB fingerprint: ${fingerprint ? `${fingerprint.messageCount} messages, ${fingerprint.sessionCount} sessions` : "missing"}`);
+		// Business logic: this iteration walks every relevant item so operator configuration flows reflects the complete source set instead of a partial snapshot.
+
+		for (const row of rows)
+		{
+			console.log(
+				`${chalk.bold(row.harness)} mode=${row.bookmarkMode ?? "none"} ` +
+				`last=${row.lastSuccessfulIngestAt ?? "never"} hash=${row.sourcePathHash} ` +
+				`rowids=${row.rowids ? JSON.stringify(row.rowids) : "-"} ` +
+				`progress=${row.progress ? JSON.stringify(row.progress) : "-"} manifest=${row.manifestPath ?? "-"}`
+			);
+		}
+		if (flags.allMachines)
+		{
+			console.log(chalk.bold("All machine ingest states:"));
+			// Business logic: this diagnostic intentionally reads all machine objects,
+			// but it does not mutate them; active-machine status remains the default view.
+			for (const [machineName, state] of Object.entries(store.getAllMachineStates()))
+			{
+				console.log(
+					`${machineName}: run=${state.runInProgress ? "yes" : "no"} ` +
+					`harnesses=${Object.keys(state.harnesses ?? {}).join(", ") || "-"}`
+				);
+			}
+		}
+		return EXIT_SUCCESS;
+	}
+	catch (err: unknown)
+	{
+		return printValidation(err instanceof Error ? err.message : String(err));
+	}
+}
+
+/**
+ * Resets active-machine ingest state, one harness bookmark, or all machine state when explicit.
+ * @param flags - CLI flags including selected machine and explicit global reset.
+ * @param harnessName - Optional harness bookmark to reset within the selected machine.
+ * @returns Process exit code.
+ */
+async function runResetIngest(flags: CliFlags, harnessName?: string): Promise<number>
+{
+	try
+	{
+		const ccJsonPath = join(process.cwd(), "cc.json");
+		const config = loadCcConfig(ccJsonPath);
+		const machine = await selectMachine(config, flags.machine);
+		const store = new GlobalSettingsStore(config.storage, machine.machine);
+		store.load();
+
+		if (flags.global)
+		{
+			if (!flags.yes)
+			{
+				const ok = await promptConfirm("Reset ingest bookmarks for ALL machines?", false);
+				if (!ok)
+				{
+					return printValidation("Reset cancelled.");
+				}
+			}
+			store.resetEveryMachineIngestBookmarks();
+			console.log(chalk.green("Reset ingest bookmarks for all machines."));
+			return EXIT_SUCCESS;
+		}
+
+		// Business logic: harness-scoped reset must stay inside the selected machine's
+		// ingest object so one operator action cannot erase another machine's bookmark.
+		if (harnessName && !RESERVED_HARNESS_KEYS.has(harnessName))
+		{
+			store.resetHarnessBookmark(harnessName);
+			console.log(chalk.green(`Reset ingest bookmark for ${harnessName} on ${machine.machine}.`));
+			return EXIT_SUCCESS;
+		}
+
+		if (!flags.yes)
+		{
+			const ok = await promptConfirm(`Reset all ingest bookmarks for ${machine.machine}?`, false);
+			if (!ok)
+			{
+				return printValidation("Reset cancelled.");
+			}
+		}
+		store.resetAllIngestBookmarks();
+		console.log(chalk.green(`Reset all ingest bookmarks for ${machine.machine}.`));
+		return EXIT_SUCCESS;
+	}
+	catch (err: unknown)
+	{
+		return printValidation(err instanceof Error ? err.message : String(err));
+	}
+}
+
+/**
+ * Handles runAdd behavior for this CXC module.
+ * @param flags - Value consumed by runAdd.
+ * @param selectionSpec - Value consumed by runAdd.
+ * @param options - Options that control runAdd.
+ * @returns Result produced by runAdd.
+ */
 async function runAdd(flags: CliFlags, selectionSpec?: string, options?: RunAddOptions): Promise<number>
 {
 	if (flags.json)
@@ -1573,6 +2078,8 @@ async function runAdd(flags: CliFlags, selectionSpec?: string, options?: RunAddO
 		if (candidateRows.length === 0)
 		{
 			console.log(chalk.yellow("No new paths to add for the selected machine."));
+			// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting operator configuration flows from partial or invalid state.
+
 			if (candidateBuild.skippedAlreadyConfigured > 0 || candidateBuild.skippedScannerDuplicates > 0)
 			{
 				console.log(
@@ -1588,6 +2095,8 @@ async function runAdd(flags: CliFlags, selectionSpec?: string, options?: RunAddO
 		renderCandidateRows(candidateRows);
 
 		let selectedRowNumbers: number[] | null = null;
+		// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting operator configuration flows from partial or invalid state.
+
 		if (selectionSpec && selectionSpec.trim())
 		{
 			selectedRowNumbers = parseSelectionSpec(selectionSpec, candidateRows.length);
@@ -1595,10 +2104,13 @@ async function runAdd(flags: CliFlags, selectionSpec?: string, options?: RunAddO
 		else
 		{
 			selectedRowNumbers = await promptCandidateSelection(candidateRows);
-		}
+		}		// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting operator configuration flows from partial or invalid state.
+
 
 		if (!selectedRowNumbers || selectedRowNumbers.length === 0)
 		{
+			// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting operator configuration flows from partial or invalid state.
+
 			if (!process.stdin.isTTY && (!selectionSpec || !selectionSpec.trim()))
 			{
 				return printValidation("Non-interactive add requires --select <rows> (e.g. 1,3-5).");
@@ -1660,6 +2172,13 @@ async function runAdd(flags: CliFlags, selectionSpec?: string, options?: RunAddO
 	}
 }
 
+/**
+ * Handles runEdit behavior for this CXC module.
+ * @param rowArg - Value consumed by runEdit.
+ * @param flags - Value consumed by runEdit.
+ * @param explicitPath - Path used by runEdit to locate the relevant CXC resource.
+ * @returns Result produced by runEdit.
+ */
 async function runEdit(rowArg: string, flags: CliFlags, explicitPath?: string): Promise<number>
 {
 	if (flags.json)
@@ -1705,6 +2224,12 @@ async function runEdit(rowArg: string, flags: CliFlags, explicitPath?: string): 
 	}
 }
 
+/**
+ * Handles runDelete behavior for this CXC module.
+ * @param rowArg - Value consumed by runDelete.
+ * @param flags - Value consumed by runDelete.
+ * @returns Result produced by runDelete.
+ */
 async function runDelete(rowArg: string, flags: CliFlags): Promise<number>
 {
 	if (flags.json)
@@ -1742,6 +2267,8 @@ async function runDelete(rowArg: string, flags: CliFlags): Promise<number>
 		const wouldBecomeEmpty = currentPaths.length === 1;
 
 		let removeEmptyHarnessBlock = false;
+		// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting operator configuration flows from partial or invalid state.
+
 		if (wouldBecomeEmpty && !flags.yes)
 		{
 			const removeBlock = await promptConfirm(
@@ -1769,6 +2296,11 @@ async function runDelete(rowArg: string, flags: CliFlags): Promise<number>
 	}
 }
 
+/**
+ * Creates the value or resource produced by createProgram.
+ * @param setRunner - Value consumed by createProgram.
+ * @returns Result produced by createProgram.
+ */
 function createProgram(setRunner: (runner: Promise<number>) => void): Command
 {
 	const program = new Command();
@@ -1792,6 +2324,26 @@ function createProgram(setRunner: (runner: Promise<number>) => void): Command
 		.action(function (this: Command)
 		{
 			setRunner(runList(flagsFromCommand(this)));
+		});
+
+	program
+		.command("ingest-status")
+		.description("Print ingest bookmark, rowid, manifest, and DB fingerprint status")
+		.option("--all-machines", "Include every machine ingest object from synced settings")
+		.action(function (this: Command)
+		{
+			setRunner(runIngestStatus(flagsFromCommand(this)));
+		});
+
+	program
+		.command("reset-ingest")
+		.description("Reset ingest bookmarks without deleting DB or storage")
+		.option("--harness <name>", "Reset only one harness bookmark")
+		.option("--global", "Reset ingest state for every machine")
+		.action(function (this: Command)
+		{
+			const options = this.opts() as { harness?: string };
+			setRunner(runResetIngest(flagsFromCommand(this), options.harness));
 		});
 
 	program
@@ -1835,9 +2387,19 @@ function createProgram(setRunner: (runner: Promise<number>) => void): Command
 	return program;
 }
 
+/**
+ * Handles main behavior for this CXC module.
+ * @param argv - Value consumed by main.
+ * @returns Result produced by main.
+ */
 async function main(argv = process.argv): Promise<number>
 {
 	let runner: Promise<number> | null = null;
+
+	/**
+	 * Updates the value managed by setRunner.
+	 * @param next - Value consumed by setRunner.
+	 */
 	const setRunner = (next: Promise<number>): void =>
 	{
 		runner = next;

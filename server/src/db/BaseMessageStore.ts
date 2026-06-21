@@ -1,8 +1,18 @@
+/**
+ * BaseMessageStore — shared SQLite schema and query layer for AgentMessage persistence.
+ *
+ * Architecture: server/zz-reach2/architecture/archi-context-core-level0.md
+ * Logging: server/zz-reach2/upgrades/2026-06/r2wl-winston-logging.md
+ */
+
 import { Database } from "bun:sqlite";
 import { existsSync, readdirSync, readFileSync } from "fs";
 import { join } from "path";
+import { getLogger } from "../logging/logger.js";
 import { AgentMessage } from "../models/AgentMessage.js";
 import type { IMessageStore, MessageQueryFilters, MessageQueryResult, SessionSummary } from "./IMessageStore.js";
+
+const logger = getLogger("MessageDB");
 
 /**
  * Abstract base for in-memory and on-disk SQLite message stores.
@@ -13,11 +23,22 @@ export abstract class BaseMessageStore implements IMessageStore
 {
 	protected readonly db: Database;
 
+	/**
+	 * Creates an instance with the dependencies needed by this CXC component.
+	 * @param db - Database dependency used by constructor.
+	 */
+
+
 	protected constructor(db: Database)
 	{
 		this.db = db;
 		this.createSchema();
 	}
+
+	/**
+	 * Creates the value or resource produced by createSchema.
+	 */
+
 
 	// ─── Schema ─────────────────────────────────────────────────────────────────
 
@@ -77,6 +98,8 @@ export abstract class BaseMessageStore implements IMessageStore
 	 */
 	protected insertMessage(message: AgentMessage): boolean
 	{
+		// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting local database consistency from partial or invalid state.
+
 		if (!message.sessionId || !message.id)
 		{
 			return false;
@@ -113,6 +136,11 @@ export abstract class BaseMessageStore implements IMessageStore
 		return (result.changes as number) > 0;
 	}
 
+	/**
+	 * Handles close behavior for this CXC module.
+	 */
+
+
 	// ─── IMessageStore ───────────────────────────────────────────────────────────
 
 	close(): void
@@ -120,9 +148,18 @@ export abstract class BaseMessageStore implements IMessageStore
 		this.db.close();
 	}
 
+	/**
+	 * Handles addMessages behavior for this CXC module.
+	 * @param messages - Message data processed by addMessages.
+	 * @returns Result produced by addMessages.
+	 */
+
+
 	addMessages(messages: Array<AgentMessage>): number
 	{
 		let inserted = 0;
+		// Business logic: this iteration walks every relevant item so local database consistency reflects the complete source set instead of a partial snapshot.
+
 		for (const message of messages)
 		{
 			if (this.insertMessage(message))
@@ -145,6 +182,13 @@ export abstract class BaseMessageStore implements IMessageStore
 			return files;
 		}
 
+		/**
+		 * Handles shouldSkipDirectory behavior for this CXC module.
+		 * @param name - Value consumed by shouldSkipDirectory.
+		 * @returns Result produced by shouldSkipDirectory.
+		 */
+
+
 		const shouldSkipDirectory = (name: string): boolean =>
 		{
 			if (!name)
@@ -157,6 +201,8 @@ export abstract class BaseMessageStore implements IMessageStore
 		};
 
 		const stack = [root];
+		// Business logic: this iteration walks every relevant item so local database consistency reflects the complete source set instead of a partial snapshot.
+
 		while (stack.length > 0)
 		{
 			const current = stack.pop() as string;
@@ -167,7 +213,8 @@ export abstract class BaseMessageStore implements IMessageStore
 			} catch
 			{
 				continue;
-			}
+			}			// Business logic: this iteration walks every relevant item so local database consistency reflects the complete source set instead of a partial snapshot.
+
 
 			for (const entry of entries)
 			{
@@ -179,7 +226,8 @@ export abstract class BaseMessageStore implements IMessageStore
 						continue;
 					}
 					stack.push(fullPath);
-				} else if (entry.isFile() && entry.name.endsWith(".json"))
+				} else				// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting local database consistency from partial or invalid state.
+ if (entry.isFile() && entry.name.endsWith(".json"))
 				{
 					files.push(fullPath);
 				}
@@ -189,16 +237,25 @@ export abstract class BaseMessageStore implements IMessageStore
 		return files;
 	}
 
+	/**
+	 * Loads all JSON session files under a storage root into the database.
+	 * @param storagePath - Root directory containing harness session JSON artifacts.
+	 * @returns Number of message rows attempted during load (including duplicates ignored by INSERT OR IGNORE).
+	 */
 	loadFromStorage(storagePath: string): number
 	{
 		const files = this.collectJsonFiles(storagePath);
 		let loaded = 0;
+		// Business logic: this iteration walks every relevant item so local database consistency reflects the complete source set instead of a partial snapshot.
+
 
 		for (const filePath of files)
 		{
 			try
 			{
 				const raw = JSON.parse(readFileSync(filePath, "utf-8")) as Array<unknown>;
+				// Business logic: this iteration walks every relevant item so local database consistency reflects the complete source set instead of a partial snapshot.
+
 				for (const row of raw)
 				{
 					const message = AgentMessage.deserialize(row);
@@ -211,9 +268,16 @@ export abstract class BaseMessageStore implements IMessageStore
 			}
 		}
 
-		console.log(`[MessageDB] Loaded ${loaded} messages from storage.`);
+		logger.info(`Loaded ${loaded} messages from storage.`);
 		return loaded;
 	}
+
+	/**
+	 * Handles mapRowToMessage behavior for this CXC module.
+	 * @param row - Value consumed by mapRowToMessage.
+	 * @returns Result produced by mapRowToMessage.
+	 */
+
 
 	// ─── Row mapping ─────────────────────────────────────────────────────────────
 
@@ -243,6 +307,13 @@ export abstract class BaseMessageStore implements IMessageStore
 		});
 	}
 
+	/**
+	 * Returns the value managed by getById.
+	 * @param id - Value consumed by getById.
+	 * @returns Result produced by getById.
+	 */
+
+
 	// ─── Queries ─────────────────────────────────────────────────────────────────
 
 	getById(id: string): AgentMessage | null
@@ -255,6 +326,13 @@ export abstract class BaseMessageStore implements IMessageStore
 		return this.mapRowToMessage(row);
 	}
 
+	/**
+	 * Returns the value managed by getBySessionId.
+	 * @param sessionId - Session identifier or session data used by getBySessionId.
+	 * @returns Result produced by getBySessionId.
+	 */
+
+
 	getBySessionId(sessionId: string): Array<AgentMessage>
 	{
 		const rows = this.db
@@ -262,6 +340,12 @@ export abstract class BaseMessageStore implements IMessageStore
 			.all(sessionId) as Array<Record<string, unknown>>;
 		return rows.map((row) => this.mapRowToMessage(row));
 	}
+
+	/**
+	 * Handles listSessions behavior for this CXC module.
+	 * @returns Result produced by listSessions.
+	 */
+
 
 	listSessions(): Array<SessionSummary>
 	{
@@ -281,6 +365,12 @@ export abstract class BaseMessageStore implements IMessageStore
 			.all() as Array<SessionSummary>;
 	}
 
+	/**
+	 * Returns the value managed by getAllMessages.
+	 * @returns Result produced by getAllMessages.
+	 */
+
+
 	getAllMessages(): Array<AgentMessage>
 	{
 		const rows = this.db
@@ -289,12 +379,24 @@ export abstract class BaseMessageStore implements IMessageStore
 		return rows.map((row) => this.mapRowToMessage(row));
 	}
 
+	/**
+	 * Returns the value managed by getHarnessCounts.
+	 * @returns Result produced by getHarnessCounts.
+	 */
+
+
 	getHarnessCounts(): Array<{ harness: string; count: number }>
 	{
 		return this.db
 			.query("SELECT harness, COUNT(*) as count FROM AgentMessages GROUP BY harness ORDER BY count DESC")
 			.all() as Array<{ harness: string; count: number }>;
 	}
+
+	/**
+	 * Returns the value managed by getHarnessDateRanges.
+	 * @returns Result produced by getHarnessDateRanges.
+	 */
+
 
 	getHarnessDateRanges(): Array<{ harness: string; earliest: string; latest: string; count: number }>
 	{
@@ -311,6 +413,12 @@ export abstract class BaseMessageStore implements IMessageStore
 			.all() as Array<{ harness: string; earliest: string; latest: string; count: number }>;
 	}
 
+	/**
+	 * Returns the value managed by getProjectsByHarness.
+	 * @returns Result produced by getProjectsByHarness.
+	 */
+
+
 	getProjectsByHarness(): Array<{ harness: string; projects: Array<string> }>
 	{
 		const rows = this.db
@@ -320,10 +428,14 @@ export abstract class BaseMessageStore implements IMessageStore
 			.all() as Array<{ harness: string; project: string }>;
 
 		const map = new Map<string, Array<string>>();
+		// Business logic: this iteration walks every relevant item so local database consistency reflects the complete source set instead of a partial snapshot.
+
 		for (const row of rows)
 		{
 			const harness = typeof row.harness === "string" ? row.harness.trim() : "";
 			const project = typeof row.project === "string" ? row.project.trim() : "";
+			// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting local database consistency from partial or invalid state.
+
 
 			if (!harness || !project) continue;
 
@@ -340,11 +452,24 @@ export abstract class BaseMessageStore implements IMessageStore
 		return Array.from(map.entries()).map(([harness, projects]) => ({ harness, projects }));
 	}
 
+	/**
+	 * Returns the value managed by getMessageCount.
+	 * @returns Result produced by getMessageCount.
+	 */
+
+
 	getMessageCount(): number
 	{
 		const row = this.db.query("SELECT COUNT(*) as total FROM AgentMessages").get() as { total: number };
 		return Number(row?.total ?? 0);
 	}
+
+	/**
+	 * Handles queryMessages behavior for this CXC module.
+	 * @param filters - Value consumed by queryMessages.
+	 * @returns Result produced by queryMessages.
+	 */
+
 
 	queryMessages(filters: MessageQueryFilters): MessageQueryResult
 	{

@@ -1,4 +1,14 @@
+/**
+ * ContextServer – Express API bootstrap for ContextCore.
+ *
+ * Architecture: server/zz-reach2/architecture/archi-context-core-level0.md
+ * Logging: server/zz-reach2/upgrades/2026-06/r2wl-winston-logging.md
+ */
+
 import express from "express";
+import { getLogger } from "../logging/logger.js";
+
+const logger = getLogger("server:ContextServer");
 import cors from "cors";
 import type { Server } from "http";
 import { resolve, dirname } from "path";
@@ -72,7 +82,7 @@ export async function startServer(
 			logMessage += ` | body: ${JSON.stringify(req.body)}`;
 		}
 
-		console.log(logMessage);
+		logger.debug(logMessage);
 		next();
 	});
 
@@ -99,11 +109,19 @@ export async function startServer(
 
 	const visualizerDist = resolve(dirname(fileURLToPath(import.meta.url)), "../../../visualizer/dist");
 	app.use(express.static(visualizerDist, {
+		/**
+		 * Updates the value managed by setHeaders.
+		 * @param res - Value consumed by setHeaders.
+		 * @param filePath - Path used by setHeaders to locate the relevant CXC resource.
+		 * @returns Result produced by setHeaders.
+		 */
 		setHeaders(res, filePath)
 		{
 			// Service worker files must never be aggressively cached — browsers re-check
 			// on navigation, but a stale sw.js delays update detection.
 			const base = filePath.replace(/\\/g, "/").split("/").pop() ?? "";
+			// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting HTTP API behavior from partial or invalid state.
+
 			if (base === "sw.js" || base.startsWith("workbox-"))
 			{
 				res.setHeader("Cache-Control", "no-cache");
@@ -115,7 +133,10 @@ export async function startServer(
 	const maxPort = port + 10;
 	let currentPort = port;
 	const { server, actualPort } = await new Promise<{ server: Server; actualPort: number }>((resolve, reject) =>
-	{
+{
+		/**
+		 * Handles tryBind behavior for this CXC module.
+		 */
 		function tryBind(): void
 		{
 			const s = app.listen(currentPort, () =>
@@ -124,9 +145,11 @@ export async function startServer(
 			});
 			s.once("error", (err: NodeJS.ErrnoException) =>
 			{
+				// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting HTTP API behavior from partial or invalid state.
+
 				if (err.code === "EADDRINUSE" && currentPort < maxPort)
 				{
-					console.warn(`[Server] Port ${currentPort} in use, trying ${currentPort + 1}...`);
+					logger.warn(`Port ${currentPort} in use, trying ${currentPort + 1}...`);
 					currentPort++;
 					tryBind();
 				}
@@ -145,9 +168,9 @@ export async function startServer(
 
 	if (actualPort !== port)
 	{
-		console.log(`[Server] Preferred port ${port} was in use; bound to ${actualPort} instead.`);
+		logger.info(`Preferred port ${port} was in use; bound to ${actualPort} instead.`);
 	}
-	console.log(`[Server] ContextCore API listening on http://localhost:${actualPort}`);
+	logger.info(`ContextCore API listening on http://localhost:${actualPort}`);
 
 	const maybeRef = server as unknown as { ref?: () => void };
 	if (typeof maybeRef.ref === "function")

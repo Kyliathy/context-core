@@ -1,19 +1,21 @@
 /**
  * ContextCore – Cursor IDE harness: workspace inference + project mapping layer.
  * All functions that map workspace paths to project labels using rule sets.
+ *
+ * Architecture: server/zz-reach2/architecture/archi-context-core-level0.md
+ * Logging: server/zz-reach2/upgrades/2026-06/r2wl-winston-logging.md
  */
 
 import { Database } from "bun:sqlite";
 import { basename, dirname, extname } from "path";
-import chalk from "chalk";
+import { getLogger } from "../logging/logger.js";
 import { getHostname } from "../config.js";
 import { CCSettings } from "../settings/CCSettings.js";
 import { sanitizeFilename } from "../utils/pathHelpers.js";
 import {
-	CUR,
-	CUR_LINE,
 	CURSOR_PROGRESS_EVERY,
 	logCursorProgress,
+	readCursorKvPage,
 	toDatabaseText,
 	extractContextPaths,
 	extractSessionHintsFromKey,
@@ -22,6 +24,8 @@ import {
 	type CursorKVRow,
 	type CursorBubbleRecord,
 } from "./cursor-query.js";
+
+const logger = getLogger("harness:cursor-matcher");
 
 // ---------------------------------------------------------------------------
 // Types
@@ -154,6 +158,8 @@ function getFirstDirAfterPrefix(sourcePath: string, matchedPrefix: string): stri
  */
 function asCursorProjectMappingRule(value: unknown): CursorProjectMappingRule | null
 {
+	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 	if (!value || typeof value !== "object")
 	{
 		return null;
@@ -172,6 +178,8 @@ function asCursorProjectMappingRule(value: unknown): CursorProjectMappingRule | 
 			: typeof candidate.newPath === "string"
 				? candidate.newPath
 				: "";
+	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 	if (!pathValue.trim() || !rawNewProjectName.trim())
 	{
 		return null;
@@ -188,15 +196,20 @@ function asCursorProjectMappingRule(value: unknown): CursorProjectMappingRule | 
  */
 function asCursorProjectNameMappingRule(value: unknown): CursorProjectNameMappingRule | null
 {
+	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 	if (!value || typeof value !== "object")
 	{
 		return null;
 	}
 	const candidate = value as Record<string, unknown>;
+	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 	if (typeof candidate.projectName !== "string" || typeof candidate.newProjectName !== "string")
 	{
 		return null;
-	}
+	}	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 	if (!candidate.projectName.trim() || !candidate.newProjectName.trim())
 	{
 		return null;
@@ -213,6 +226,8 @@ function asCursorProjectNameMappingRule(value: unknown): CursorProjectNameMappin
  */
 function asCursorGenericProjectMappingRule(value: unknown): CursorGenericProjectMappingRule | null
 {
+	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 	if (!value || typeof value !== "object")
 	{
 		return null;
@@ -221,10 +236,13 @@ function asCursorGenericProjectMappingRule(value: unknown): CursorGenericProject
 	const pathValue = typeof candidate.path === "string" ? candidate.path
 		: typeof candidate.paths === "string" ? candidate.paths
 		: null;
+	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 	if (!pathValue || typeof candidate.rule !== "string")
 	{
 		return null;
-	}
+	}	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 	if (!pathValue.trim() || !candidate.rule.trim())
 	{
 		return null;
@@ -273,12 +291,12 @@ export function loadCursorProjectRuleSet(): CursorProjectRuleSet
 		const droppedExplicit = explicitRaw.length - explicitRules.length - projectNameRules.length;
 		if (droppedExplicit > 0)
 		{
-			console.warn(`${CUR} ${chalk.red(`⚠ ${droppedExplicit} projectMappingRules entry(ies) dropped — check that each has a "path" or "paths" key`)}`);
+			logger.warn(`⚠ ${droppedExplicit} projectMappingRules entry(ies) dropped — check that each has a "path" or "paths" key`);
 		}
 		const droppedGeneric = genericSource.length - genericRules.length;
 		if (droppedGeneric > 0)
 		{
-			console.warn(`${CUR} ${chalk.red(`⚠ ${droppedGeneric} genericProjectMappingRules entry(ies) dropped — check that each has a "path" or "paths" key`)}`);
+			logger.warn(`⚠ ${droppedGeneric} genericProjectMappingRules entry(ies) dropped — check that each has a "path" or "paths" key`);
 		}
 
 		return {
@@ -304,6 +322,8 @@ export function loadCursorProjectRuleSet(): CursorProjectRuleSet
  */
 function remapCursorProjectName(project: string, ruleSet: CursorProjectRuleSet): string
 {
+	// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 	for (const rule of ruleSet.projectNameMappingRules)
 	{
 		if (rule.projectName.toLowerCase() === project.toLowerCase())
@@ -338,7 +358,8 @@ export function normalizePathCandidate(raw: string): string | null
 	} catch
 	{
 		decoded = withoutFileScheme;
-	}
+	}	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 	if (!decoded.includes("\\") && !decoded.includes("/"))
 	{
 		return null;
@@ -406,12 +427,16 @@ export function deriveCommonDirectoryPath(paths: Array<string>): string | null
 
 	const split = normalized.map((item) => splitPathSegments(item));
 	const shortest = split.reduce((best, current) => Math.min(best, current.length), Number.MAX_SAFE_INTEGER);
+	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 	if (shortest === 0 || shortest === Number.MAX_SAFE_INTEGER)
 	{
 		return null;
 	}
 
 	const common: Array<string> = [];
+	// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 	for (let index = 0; index < shortest; index += 1)
 	{
 		const first = split[0][index]?.toLowerCase();
@@ -504,9 +529,13 @@ function findProjectRootFromDirectory(startDirectory: string): string
 	const delimiter = startDirectory.includes("\\") ? "\\" : "/";
 	const segments = startDirectory.split(/[\\/]+/).filter(Boolean);
 	let trimmed = [...segments];
+	// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 
 	for (let i = 0; i < trimmed.length; i += 1)
 	{
+		// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 		if (PROJECT_BOUNDARY_MARKERS.has(trimmed[i].toLowerCase()) && i > 0)
 		{
 			trimmed = trimmed.slice(0, i);
@@ -517,6 +546,8 @@ function findProjectRootFromDirectory(startDirectory: string): string
 	if (trimmed.length > 0)
 	{
 		const last = trimmed[trimmed.length - 1].toLowerCase();
+		// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 		if (PROJECT_TRAILING_NOISE.has(last) && trimmed.length > 1)
 		{
 			trimmed = trimmed.slice(0, -1);
@@ -593,12 +624,14 @@ export function isLowSignalWorkspaceCandidate(candidate: string): boolean
 	if (["jsonl", "shape", "schema", "symbol", "chat"].includes(bareToken))
 	{
 		return true;
-	}
+	}	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 
 	if (/^[a-z0-9+/_=-]+$/i.test(normalized) && /[=+]/.test(normalized) && !/^[a-z]:\//i.test(normalized))
 	{
 		return true;
-	}
+	}	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 
 	if (normalized.startsWith("/") && normalized.split("/").filter(Boolean).length === 1)
 	{
@@ -637,6 +670,8 @@ export function resolveCursorProjectFromWorkspacePath(
 
 	//<First pass: explicit remaps (indexOf match) always win.
 	const normalizedRulePath = normalizeRulePath(normalized);
+	// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 	for (const rule of ruleSet.projectMappingRules)
 	{
 		if (normalizedRulePath.indexOf(normalizeRulePath(rule.path)) !== -1)
@@ -647,7 +682,8 @@ export function resolveCursorProjectFromWorkspacePath(
 				mode: "rule",
 			};
 		}
-	}
+	}	// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 
 	//<Second pass: generic rules (currently byFirstDir).
 	for (const rule of ruleSet.genericProjectMappingRules)
@@ -699,10 +735,14 @@ export function buildCursorGenericRuleSuggestions(paths: Array<string>): Array<C
 {
 	const basePrefixes = ["Codez\\Nexus", "Codez"];
 	const prefixSet = new Set<string>();
+	// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 
 	for (const rawPath of paths)
 	{
 		const normalized = rawPath.replace(/[\\/]+/g, "\\").replace(/^[\\]+/, "");
+		// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 		for (const base of basePrefixes)
 		{
 			if (normalizeRulePath(normalized).indexOf(normalizeRulePath(base)) !== -1)
@@ -733,12 +773,15 @@ export function collectWorkspaceHints(value: unknown, out: Set<string>): void
 {
 	if (Array.isArray(value))
 	{
+		// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 		for (const item of value)
 		{
 			collectWorkspaceHints(item, out);
 		}
 		return;
-	}
+	}	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 
 	if (!value || typeof value !== "object")
 	{
@@ -754,9 +797,13 @@ export function collectWorkspaceHints(value: unknown, out: Set<string>): void
 	}
 
 	const obj = value as Record<string, unknown>;
+	// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 	for (const [rawKey, nested] of Object.entries(obj))
 	{
 		const key = rawKey.toLowerCase();
+		// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 		if (
 			typeof nested === "string" &&
 			(key.includes("workspace") ||
@@ -787,7 +834,8 @@ export function chooseBestWorkspacePath(hints: Map<string, number>): string | nu
 	if (ordered.length === 0)
 	{
 		return null;
-	}
+	}	// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 
 	for (const [path] of ordered)
 	{
@@ -795,7 +843,8 @@ export function chooseBestWorkspacePath(hints: Map<string, number>): string | nu
 		{
 			return normalizeWorkspaceRoot(path);
 		}
-	}
+	}	// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 
 	for (const [path] of ordered)
 	{
@@ -818,6 +867,8 @@ export function chooseBestWorkspacePath(hints: Map<string, number>): string | nu
  */
 export function extractProjectLayoutsForSession(payload: unknown): Array<CursorProjectLayout>
 {
+	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 	if (!payload || typeof payload !== "object")
 	{
 		return [];
@@ -826,9 +877,13 @@ export function extractProjectLayoutsForSession(payload: unknown): Array<CursorP
 	const obj = payload as Record<string, unknown>;
 	const layouts = Array.isArray(obj.projectLayouts) ? obj.projectLayouts : [];
 	const results: Array<CursorProjectLayout> = [];
+	// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 
 	for (const layoutNode of layouts)
 	{
+		// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 		if (!layoutNode || typeof layoutNode !== "object")
 		{
 			continue;
@@ -864,6 +919,8 @@ export function extractProjectLayoutsForSession(payload: unknown): Array<CursorP
  */
 export function extractComposerFileUris(payload: unknown): Array<string>
 {
+	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 	if (!payload || typeof payload !== "object")
 	{
 		return [];
@@ -871,9 +928,13 @@ export function extractComposerFileUris(payload: unknown): Array<string>
 
 	const obj = payload as Record<string, unknown>;
 	const out = new Set<string>();
+	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 
 	if (obj.originalFileStates && typeof obj.originalFileStates === "object")
 	{
+		// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 		for (const key of Object.keys(obj.originalFileStates as Record<string, unknown>))
 		{
 			const parsed = parseFileUriToPath(key);
@@ -886,6 +947,8 @@ export function extractComposerFileUris(payload: unknown): Array<string>
 
 	if (Array.isArray(obj.allAttachedFileCodeChunksUris))
 	{
+		// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 		for (const uri of obj.allAttachedFileCodeChunksUris)
 		{
 			if (typeof uri !== "string")
@@ -935,6 +998,8 @@ export function deriveWorkspaceRootFromFileUris(fileUris: Array<string>): string
 	}
 
 	const byDirectory = new Map<string, number>();
+	// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 	for (const directory of directories)
 	{
 		const normalized = normalizeWorkspaceRoot(directory);
@@ -957,12 +1022,16 @@ export function buildComposerWorkspaceMap(composerDataBySession: Map<string, unk
 {
 	const result = new Map<string, string>();
 	let processed = 0;
+	// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 	for (const [sessionId, payload] of composerDataBySession.entries())
 	{
 		processed += 1;
+		// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 		if (processed % CURSOR_PROGRESS_EVERY === 0 || processed === composerDataBySession.size)
 		{
-			console.log(`${CUR}${chalk.dim("[composer-workspace-map]")} ${processed}/${composerDataBySession.size}`);
+			logger.debug(`[composer-workspace-map] ${processed}/${composerDataBySession.size}`);
 		}
 		const paths = extractComposerFileUris(payload);
 		const workspaceRoot = deriveWorkspaceRootFromFileUris(paths);
@@ -982,12 +1051,16 @@ export function buildProjectLayoutWorkspaceMap(projectLayoutsBySession: Map<stri
 {
 	const result = new Map<string, string>();
 	let processed = 0;
+	// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 	for (const [sessionId, layouts] of projectLayoutsBySession.entries())
 	{
 		processed += 1;
+		// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 		if (processed % CURSOR_PROGRESS_EVERY === 0 || processed === projectLayoutsBySession.size)
 		{
-			console.log(`${CUR}${chalk.dim("[project-layout-map]")} ${processed}/${projectLayoutsBySession.size}`);
+			logger.debug(`[project-layout-map] ${processed}/${projectLayoutsBySession.size}`);
 		}
 
 		const absPaths = Array.from(
@@ -1003,6 +1076,8 @@ export function buildProjectLayoutWorkspaceMap(projectLayoutsBySession: Map<stri
 		}
 
 		const commonParent = deriveCommonDirectoryPath(absPaths);
+		// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 		if (commonParent && splitPathSegments(commonParent).length > 1)
 		{
 			result.set(sessionId, normalizeWorkspaceRoot(commonParent));
@@ -1042,6 +1117,433 @@ export function queryCursorSessionEvidence(
 		matchingKeys: Number(matchingRow?.count ?? 0),
 		workspaceLikeKeys: Number(workspaceRow?.count ?? 0),
 	};
+}
+
+/**
+ * Handles addSessionWorkspaceHints behavior for this CXC module.
+ * @param sessionHintCounts - Session identifier or session data used by addSessionWorkspaceHints.
+ * @param sessionId - Session identifier or session data used by addSessionWorkspaceHints.
+ * @param pathHints - Path used by addSessionWorkspaceHints to locate the relevant CXC resource.
+ */
+
+
+function addSessionWorkspaceHints(
+	sessionHintCounts: Map<string, Map<string, number>>,
+	sessionId: string,
+	pathHints: Set<string>
+): void
+{
+	if (pathHints.size === 0)
+	{
+		return;
+	}
+	const counter = sessionHintCounts.get(sessionId) ?? new Map<string, number>();
+	// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
+	for (const pathHint of pathHints)
+	{
+		const normalizedRoot = normalizeWorkspaceRoot(pathHint);
+		counter.set(normalizedRoot, (counter.get(normalizedRoot) ?? 0) + 1);
+	}
+	sessionHintCounts.set(sessionId, counter);
+}
+
+/**
+ * Parses input into the shape expected by parseCursorKvPayload.
+ * @param value - Value consumed by parseCursorKvPayload.
+ * @returns Result produced by parseCursorKvPayload.
+ */
+
+
+function parseCursorKvPayload(value: unknown): unknown
+{
+	const rawValue = toDatabaseText(value);
+	if (!rawValue)
+	{
+		return null;
+	}
+	try
+	{
+		return JSON.parse(rawValue);
+	}
+	catch
+	{
+		return rawValue;
+	}
+}
+
+/**
+ * Handles finalizeWorkspaceInference behavior for this CXC module.
+ * @param knownSessions - Session identifier or session data used by finalizeWorkspaceInference.
+ * @param bubbleContextBySession - Session identifier or session data used by finalizeWorkspaceInference.
+ * @param sessionHintCounts - Session identifier or session data used by finalizeWorkspaceInference.
+ * @param composerDataBySession - Session identifier or session data used by finalizeWorkspaceInference.
+ * @param projectLayoutsBySession - Session identifier or session data used by finalizeWorkspaceInference.
+ * @param ruleSet - Value consumed by finalizeWorkspaceInference.
+ * @param unresolvedFamilies - Value consumed by finalizeWorkspaceInference.
+ * @param bubbleRowCount - Numeric value used by finalizeWorkspaceInference.
+ * @param metadataRowCount - Numeric value used by finalizeWorkspaceInference.
+ * @returns Result produced by finalizeWorkspaceInference.
+ */
+
+
+function finalizeWorkspaceInference(
+	knownSessions: Set<string>,
+	bubbleContextBySession: Map<string, Array<string>>,
+	sessionHintCounts: Map<string, Map<string, number>>,
+	composerDataBySession: Map<string, unknown>,
+	projectLayoutsBySession: Map<string, Array<CursorProjectLayout>>,
+	ruleSet: CursorProjectRuleSet,
+	unresolvedFamilies: Map<string, number>,
+	bubbleRowCount: number,
+	metadataRowCount: number
+): CursorWorkspaceInference
+{
+	const autoDerivedBySession = new Map<
+		string,
+		{
+			path: string;
+			derivedProject: string;
+			source: CursorWorkspaceSource;
+			topWorkspaceCandidates: Array<string>;
+			contextSamples: Array<string>;
+		}
+	>();
+	const miscSessionPaths = new Map<string, string>();
+	const miscSourceBySession = new Map<string, CursorWorkspaceSource>();
+	const sourceCounts = {
+		projectLayouts: 0,
+		composerFileUris: 0,
+		bubbleHeuristics: 0,
+		unresolved: 0,
+	};
+	const projectLayoutWorkspaceMap = buildProjectLayoutWorkspaceMap(projectLayoutsBySession);
+	const composerWorkspaceMap = buildComposerWorkspaceMap(composerDataBySession);
+	const projectBySession = new Map<string, string>();
+	const knownSessionList = Array.from(knownSessions);
+	// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
+
+	for (let index = 0; index < knownSessionList.length; index += 1)
+	{
+		const sessionId = knownSessionList[index];
+		logCursorProgress("workspace-sessions", index, knownSessionList.length);
+		const sessionCounter = sessionHintCounts.get(sessionId) ?? new Map<string, number>();
+		// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
+		for (const contextPath of bubbleContextBySession.get(sessionId) ?? [])
+		{
+			const normalized = normalizePathCandidate(contextPath);
+			if (!normalized)
+			{
+				continue;
+			}
+			const normalizedRoot = normalizeWorkspaceRoot(normalized);
+			sessionCounter.set(normalizedRoot, (sessionCounter.get(normalizedRoot) ?? 0) + 1);
+		}
+
+		const byProjectLayout = projectLayoutWorkspaceMap.get(sessionId) ?? null;
+		const byComposer = composerWorkspaceMap.get(sessionId) ?? null;
+		const byBubbleHint = chooseBestWorkspacePath(sessionCounter);
+		const topWorkspaceCandidates = Array.from(sessionCounter.entries())
+			.sort((a, b) => b[1] - a[1])
+			.slice(0, 4)
+			.map(([candidate, count]) => `${candidate} (${count})`);
+		const contextSamples = Array.from(
+			new Set(
+				(bubbleContextBySession.get(sessionId) ?? [])
+					.map((value) => value.trim())
+					.filter(Boolean)
+			)
+		)
+			.sort((a, b) => b.length - a.length)
+			.slice(0, 4);
+
+		let workspacePath: string | null = null;
+		let workspaceSource: CursorWorkspaceSource = "unresolved";
+		if (byProjectLayout)
+		{
+			workspacePath = byProjectLayout;
+			workspaceSource = "projectLayouts";
+		}
+		else if (byComposer)
+		{
+			workspacePath = byComposer;
+			workspaceSource = "composerFileUris";
+		}
+		else if (byBubbleHint)
+		{
+			workspacePath = byBubbleHint;
+			workspaceSource = "bubbleHeuristics";
+		}
+
+		if (workspacePath)
+		{
+			sourceCounts[workspaceSource] += 1;
+			const resolution = resolveCursorProjectFromWorkspacePath(workspacePath, ruleSet);
+			projectBySession.set(sessionId, resolution.project);
+			if (resolution.mode === "auto-derived")
+			{
+				autoDerivedBySession.set(sessionId, {
+					path: workspacePath,
+					derivedProject: resolution.project,
+					source: workspaceSource,
+					topWorkspaceCandidates,
+					contextSamples,
+				});
+			}
+			if (resolution.mode === "misc")
+			{
+				miscSessionPaths.set(sessionId, workspacePath);
+				miscSourceBySession.set(sessionId, workspaceSource);
+			}
+		}
+		else
+		{
+			sourceCounts.unresolved += 1;
+			miscSessionPaths.set(sessionId, "(no workspace path found)");
+			miscSourceBySession.set(sessionId, "unresolved");
+			projectBySession.set(sessionId, MISC_CURSOR_PROJECT);
+		}
+	}
+	logCursorProgress("workspace-sessions", knownSessionList.length, knownSessionList.length);
+
+	const fallbackGlobal = Array.from(knownSessions).filter((sessionId) => !projectBySession.has(sessionId)).length;
+	const unresolvedFamilyList = Array.from(unresolvedFamilies.entries())
+		.sort((a, b) => b[1] - a[1])
+		.slice(0, 5)
+		.map(([family]) => family);
+
+	return {
+		projectBySession,
+		autoDerivedBySession,
+		miscSessionPaths,
+		miscSourceBySession,
+		sourceCounts,
+		sessionsResolved: projectBySession.size,
+		fallbackGlobal,
+		unresolvedFamilies: unresolvedFamilyList,
+		bubbleKeyCount: bubbleRowCount,
+		metadataKeyCount: metadataRowCount,
+	};
+}
+
+/**
+ * Handles inferCursorWorkspacePagedFallback behavior for this CXC module.
+ * @param db - Database dependency used by inferCursorWorkspacePagedFallback.
+ * @param sessionIds - Session identifier or session data used by inferCursorWorkspacePagedFallback.
+ * @param bubbleContextBySession - Session identifier or session data used by inferCursorWorkspacePagedFallback.
+ * @param ruleSet - Value consumed by inferCursorWorkspacePagedFallback.
+ * @returns Result produced by inferCursorWorkspacePagedFallback.
+ */
+
+
+export function inferCursorWorkspacePagedFallback(
+	db: Database,
+	sessionIds: Set<string>,
+	bubbleContextBySession: Map<string, Array<string>>,
+	ruleSet: CursorProjectRuleSet
+): CursorWorkspaceInference
+{
+	const sessionHintCounts = new Map<string, Map<string, number>>();
+	const unresolvedFamilies = new Map<string, number>();
+	const composerDataBySession = new Map<string, unknown>();
+	const projectLayoutsBySession = new Map<string, Array<CursorProjectLayout>>();
+	let lastRowId = 0;
+	let bubbleRowCount = 0;
+	let metadataRowCount = 0;
+	// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
+
+	while (true)
+	{
+		const rows = readCursorKvPage(db, lastRowId, CURSOR_PROGRESS_EVERY, "1=1");
+		if (rows.length === 0)
+		{
+			break;
+		}
+
+		let relevantRows = 0;
+		// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
+		for (const row of rows)
+		{
+			const rowKey = typeof row.key === "string" ? row.key : "";
+			if (!rowKey)
+			{
+				continue;
+			}
+			if (rowKey.startsWith("bubbleId:"))
+			{
+				bubbleRowCount += 1;
+			}
+			if (/(workspace|session|chat|composer|conversation|folder|root|path)/i.test(rowKey))
+			{
+				metadataRowCount += 1;
+			}
+
+			const hints = extractSessionHintsFromKey(rowKey).filter((sessionId) => sessionIds.has(sessionId));
+			const directSession = rowKey.startsWith("composerData:")
+				? rowKey.slice("composerData:".length).trim()
+				: rowKey.startsWith("messageRequestContext:")
+					? rowKey.split(":")[1]?.trim() ?? ""
+					: "";
+			// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
+			if (directSession && sessionIds.has(directSession) && !hints.includes(directSession))
+			{
+				hints.push(directSession);
+			}			// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
+			if (hints.length === 0 && !/(workspace|composer|folder|root|path)/i.test(rowKey))
+			{
+				continue;
+			}
+
+			const parsed = parseCursorKvPayload(row.value);
+			if (parsed === null)
+			{
+				continue;
+			}
+			relevantRows += 1;
+			// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
+
+			if (rowKey.startsWith("composerData:") && directSession && sessionIds.has(directSession))
+			{
+				composerDataBySession.set(directSession, parsed);
+			}			// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
+			if (rowKey.startsWith("messageRequestContext:") && directSession && sessionIds.has(directSession))
+			{
+				const existingLayouts = projectLayoutsBySession.get(directSession) ?? [];
+				existingLayouts.push(...extractProjectLayoutsForSession(parsed));
+				projectLayoutsBySession.set(directSession, existingLayouts);
+			}
+
+			const pathHints = new Set<string>();
+			collectWorkspaceHints(parsed, pathHints);
+			// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
+			for (const hint of extractContextPaths(toDatabaseText(row.value)))
+			{
+				const normalized = normalizePathCandidate(hint);
+				if (normalized)
+				{
+					pathHints.add(normalized);
+				}
+			}
+			if (pathHints.size === 0)
+			{
+				unresolvedFamilies.set(cursorKeyFamily(rowKey), (unresolvedFamilies.get(cursorKeyFamily(rowKey)) ?? 0) + 1);
+				continue;
+			}			// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
+			for (const sessionId of hints)
+			{
+				addSessionWorkspaceHints(sessionHintCounts, sessionId, pathHints);
+			}
+		}
+
+		lastRowId = rows[rows.length - 1].rowid;
+		logger.debug(
+			`[workspace-page] rowid=${rows[0].rowid}..${lastRowId} selected=${rows.length} relevant=${relevantRows}`
+		);
+	}
+
+	return finalizeWorkspaceInference(
+		sessionIds,
+		bubbleContextBySession,
+		sessionHintCounts,
+		composerDataBySession,
+		projectLayoutsBySession,
+		ruleSet,
+		unresolvedFamilies,
+		bubbleRowCount,
+		metadataRowCount
+	);
+}
+
+/**
+ * Handles inferCursorWorkspaceForSessions behavior for this CXC module.
+ * @param db - Database dependency used by inferCursorWorkspaceForSessions.
+ * @param sessionIds - Session identifier or session data used by inferCursorWorkspaceForSessions.
+ * @param bubbleContextBySession - Session identifier or session data used by inferCursorWorkspaceForSessions.
+ * @param ruleSet - Value consumed by inferCursorWorkspaceForSessions.
+ * @returns Result produced by inferCursorWorkspaceForSessions.
+ */
+
+
+export function inferCursorWorkspaceForSessions(
+	db: Database,
+	sessionIds: Set<string>,
+	bubbleContextBySession: Map<string, Array<string>>,
+	ruleSet: CursorProjectRuleSet
+): CursorWorkspaceInference
+{
+	const sessionHintCounts = new Map<string, Map<string, number>>();
+	const unresolvedFamilies = new Map<string, number>();
+	const composerDataBySession = new Map<string, unknown>();
+	const projectLayoutsBySession = new Map<string, Array<CursorProjectLayout>>();
+	// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
+
+	for (const sessionId of sessionIds)
+	{
+		const composerRow = db
+			.query<CursorKVRow, [string]>("SELECT key, value FROM cursorDiskKV WHERE key = ?")
+			.get(`composerData:${sessionId}`);
+		if (composerRow)
+		{
+			const parsed = parseCursorKvPayload(composerRow.value);
+			if (parsed !== null)
+			{
+				composerDataBySession.set(sessionId, parsed);
+				const pathHints = new Set<string>();
+				collectWorkspaceHints(parsed, pathHints);
+				addSessionWorkspaceHints(sessionHintCounts, sessionId, pathHints);
+			}
+		}
+
+		const contextRows = db
+			.query<CursorKVRow, [string]>("SELECT key, value FROM cursorDiskKV WHERE key LIKE ?")
+			.all(`messageRequestContext:${sessionId}:%`);
+		// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
+		for (const row of contextRows)
+		{
+			const parsed = parseCursorKvPayload(row.value);
+			if (parsed === null)
+			{
+				continue;
+			}
+			const existingLayouts = projectLayoutsBySession.get(sessionId) ?? [];
+			existingLayouts.push(...extractProjectLayoutsForSession(parsed));
+			projectLayoutsBySession.set(sessionId, existingLayouts);
+			const pathHints = new Set<string>();
+			collectWorkspaceHints(parsed, pathHints);
+			addSessionWorkspaceHints(sessionHintCounts, sessionId, pathHints);
+		}
+	}
+
+	const preliminary = finalizeWorkspaceInference(
+		sessionIds,
+		bubbleContextBySession,
+		sessionHintCounts,
+		composerDataBySession,
+		projectLayoutsBySession,
+		ruleSet,
+		unresolvedFamilies,
+		0,
+		composerDataBySession.size + projectLayoutsBySession.size
+	);
+
+	if (preliminary.sourceCounts.unresolved === 0)
+	{
+		return preliminary;
+	}
+
+	return inferCursorWorkspacePagedFallback(db, sessionIds, bubbleContextBySession, ruleSet);
 }
 
 // ---------------------------------------------------------------------------
@@ -1085,6 +1587,8 @@ export function inferCursorWorkspaceBySession(
 	};
 	const composerDataBySession = new Map<string, unknown>();
 	const projectLayoutsBySession = new Map<string, Array<CursorProjectLayout>>();
+	// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 
 	for (const bubble of bubbleMessages)
 	{
@@ -1096,9 +1600,11 @@ export function inferCursorWorkspaceBySession(
 	const allRows = db.query<CursorKVRow, []>("SELECT key, value FROM cursorDiskKV").all();
 	let bubbleRowCount = 0;
 	let metadataRowCount = 0;
-	console.log(
-		`${CUR}${chalk.dim("[workspace-infer]")} allRows=${allRows.length}, sessions=${knownSessions.size}`
+	logger.debug(
+		`[workspace-infer] allRows=${allRows.length}, sessions=${knownSessions.size}`
 	);
+	// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 
 	for (let rowIndex = 0; rowIndex < allRows.length; rowIndex += 1)
 	{
@@ -1165,6 +1671,8 @@ export function inferCursorWorkspaceBySession(
 
 		const pathHints = new Set<string>();
 		collectWorkspaceHints(parsed, pathHints);
+		// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 		for (const hint of extractContextPaths(rawValue))
 		{
 			const normalized = normalizePathCandidate(hint);
@@ -1177,11 +1685,14 @@ export function inferCursorWorkspaceBySession(
 		{
 			unresolvedFamilies.set(cursorKeyFamily(rowKey), (unresolvedFamilies.get(cursorKeyFamily(rowKey)) ?? 0) + 1);
 			continue;
-		}
+		}		// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 
 		for (const sessionId of sessionHints)
 		{
 			const counter = sessionHintCounts.get(sessionId) ?? new Map<string, number>();
+			// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 			for (const pathHint of pathHints)
 			{
 				const normalizedRoot = normalizeWorkspaceRoot(pathHint);
@@ -1197,11 +1708,15 @@ export function inferCursorWorkspaceBySession(
 
 	const projectBySession = new Map<string, string>();
 	const knownSessionList = Array.from(knownSessions);
+	// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 	for (let index = 0; index < knownSessionList.length; index += 1)
 	{
 		const sessionId = knownSessionList[index];
 		logCursorProgress("workspace-sessions", index, knownSessionList.length);
 		const sessionCounter = sessionHintCounts.get(sessionId) ?? new Map<string, number>();
+		// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 		for (const contextPath of bubbleContextBySession.get(sessionId) ?? [])
 		{
 			const normalized = normalizePathCandidate(contextPath);
@@ -1287,13 +1802,13 @@ export function inferCursorWorkspaceBySession(
 		if (unresolvedSession)
 		{
 			const evidence = queryCursorSessionEvidence(db, unresolvedSession);
-			console.log(
-				`${CUR} Session evidence for unresolved ${chalk.dim(unresolvedSession)}: matchingKeys=${evidence.matchingKeys}, workspaceLikeKeys=${evidence.workspaceLikeKeys}`
+			logger.info(
+				`Session evidence for unresolved ${unresolvedSession}: matchingKeys=${evidence.matchingKeys}, workspaceLikeKeys=${evidence.workspaceLikeKeys}`
 			);
 		}
 	}
-	console.log(
-		`${CUR}${chalk.dim("[workspace-infer]")} done in ${chalk.green((Date.now() - startMs) + "ms")}, projectCache=${PROJECT_ROOT_CACHE.size}, normalizeCache=${WORKSPACE_NORMALIZE_CACHE.size}`
+	logger.debug(
+		`[workspace-infer] done in ${Date.now() - startMs}ms, projectCache=${PROJECT_ROOT_CACHE.size}, normalizeCache=${WORKSPACE_NORMALIZE_CACHE.size}`
 	);
 
 	return {

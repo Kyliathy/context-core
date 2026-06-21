@@ -684,7 +684,19 @@ flowchart TD
 
 ---
 
-## 12. Future Considerations
+## 12. Ingest Checkpoint Semantics
+
+The FileWatcher and startup ingest paths share the same persistence rule: source checkpoints advance only after the corresponding message batch has been written to JSON storage and inserted into the Context Core DB.
+
+For Cursor watcher events, the pipeline reads from the stored `cursorDiskKV` rowid, persists the delta batch, and then commits the new rowid bookmark. If persistence reports a fatal or session-level error, the bookmark is left untouched so the next watcher event or restart can retry from the previous durable point.
+
+For OpenCode watcher events, `.db-wal` and `.db-shm` files remain ignored, while changes to the resolved `opencode.db` use table rowid checkpoints for `session`, `message`, and `part`. Only affected sessions are reprocessed, and those rowids commit after affected-session persistence succeeds.
+
+The sequential watcher queue still protects the local DB from concurrent ingest writes. Startup ingest completes before FileWatcher starts, so startup bookmarks and watcher bookmarks use the same durability model.
+
+---
+
+## 13. Future Considerations
 
 1. **Watcher health checks**: `fs.watch()` can silently die on some platforms (network drives, OS inotify limits). A periodic health check (e.g., every 60s) could verify watchers are still active and re-create dead ones.
 

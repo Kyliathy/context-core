@@ -3,6 +3,8 @@
  * Launch ContextCore with a raised JSC heap ceiling.
  * Spawns a child Bun process so BUN_JSC_forceRAMSize is set before JSC starts.
  * Needed because npm on Windows (cmd.exe) cannot use VAR=value command syntax.
+ *
+ * Logging audit: server/zz-reach2/upgrades/2026-06/r2wl-winston-logging.md (T64 — stdio inherit, no Winston wrapper)
  */
 
 import { join } from "path";

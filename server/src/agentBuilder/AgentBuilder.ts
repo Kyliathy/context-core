@@ -1,4 +1,14 @@
+/**
+ * AgentBuilder – indexes content sources and manages agent file lifecycle.
+ *
+ * Architecture: server/zz-reach2/architecture/archi-context-core-level0.md
+ * Logging: server/zz-reach2/upgrades/2026-06/r2wl-winston-logging.md
+ */
+
 import { readdirSync, statSync, readFileSync, writeFileSync, existsSync, mkdirSync, renameSync, unlinkSync } from "fs";
+import { getLogger } from "../logging/logger.js";
+
+const logger = getLogger("agentBuilder:AgentBuilder");
 import { join, relative, dirname } from "path";
 import type { MachineConfig, DataSourceEntry } from "../types.js";
 import { toCanonicalAgentDefinition } from "../agentPublisher/canonical.js";
@@ -181,6 +191,13 @@ const CODEX_ENTRY_END = "<!-- /CXC-CODEX-ENTRY -->";
 const CODEX_COLLECTION_VERSION = 2 as const;
 const CODEX_COLLECTION_GENERATOR = "ContextCore AgentBuilder";
 
+/**
+ * Formats data for formatBackupTimestamp.
+ * @param date - Value consumed by formatBackupTimestamp.
+ * @returns Result produced by formatBackupTimestamp.
+ */
+
+
 function formatBackupTimestamp(date: Date): string
 {
 	const y = String(date.getFullYear());
@@ -212,11 +229,25 @@ type CodexAgentCollection = {
 	agents: CodexAgentEntry[];
 };
 
+/**
+ * Handles normalizeList behavior for this CXC module.
+ * @param values - Value consumed by normalizeList.
+ * @returns Result produced by normalizeList.
+ */
+
+
 function normalizeList(values: unknown): string[]
 {
 	if (!Array.isArray(values)) return [];
 	return values.filter((v): v is string => typeof v === "string").map((v) => v.trim()).filter(Boolean);
 }
+
+/**
+ * Handles slugifyId behavior for this CXC module.
+ * @param raw - Value consumed by slugifyId.
+ * @returns Result produced by slugifyId.
+ */
+
 
 function slugifyId(raw: string): string
 {
@@ -227,6 +258,14 @@ function slugifyId(raw: string): string
 	return normalized || "codex-agent";
 }
 
+/**
+ * Handles makeUniqueCodexEntryId behavior for this CXC module.
+ * @param existingIds - Value consumed by makeUniqueCodexEntryId.
+ * @param base - Value consumed by makeUniqueCodexEntryId.
+ * @returns Result produced by makeUniqueCodexEntryId.
+ */
+
+
 function makeUniqueCodexEntryId(existingIds: Set<string>, base: string): string
 {
 	const seed = slugifyId(base);
@@ -236,6 +275,8 @@ function makeUniqueCodexEntryId(existingIds: Set<string>, base: string): string
 		return seed;
 	}
 	let suffix = 2;
+	// Business logic: this iteration walks every relevant item so agent builder artifact integrity reflects the complete source set instead of a partial snapshot.
+
 	while (existingIds.has(`${seed}-${suffix}`))
 	{
 		suffix++;
@@ -244,6 +285,14 @@ function makeUniqueCodexEntryId(existingIds: Set<string>, base: string): string
 	existingIds.add(id);
 	return id;
 }
+
+/**
+ * Handles normalizeCodexEntry behavior for this CXC module.
+ * @param input - Value consumed by normalizeCodexEntry.
+ * @param fallbackProjectName - Value consumed by normalizeCodexEntry.
+ * @returns Result produced by normalizeCodexEntry.
+ */
+
 
 function normalizeCodexEntry(input: {
 	id: string;
@@ -271,6 +320,13 @@ function normalizeCodexEntry(input: {
 	};
 }
 
+/**
+ * Handles toCodexCollection behavior for this CXC module.
+ * @param agents - Value consumed by toCodexCollection.
+ * @returns Result produced by toCodexCollection.
+ */
+
+
 function toCodexCollection(agents: CodexAgentEntry[]): CodexAgentCollection
 {
 	return {
@@ -281,6 +337,14 @@ function toCodexCollection(agents: CodexAgentEntry[]): CodexAgentCollection
 		agents,
 	};
 }
+
+/**
+ * Handles toCodexEntryFromInput behavior for this CXC module.
+ * @param input - Value consumed by toCodexEntryFromInput.
+ * @param id - Value consumed by toCodexEntryFromInput.
+ * @returns Result produced by toCodexEntryFromInput.
+ */
+
 
 function toCodexEntryFromInput(input: CreateAgentInput, id: string): CodexAgentEntry
 {
@@ -297,6 +361,14 @@ function toCodexEntryFromInput(input: CreateAgentInput, id: string): CodexAgentE
 	};
 }
 
+/**
+ * Parses input into the shape expected by parseCodexCollectionFromJson.
+ * @param jsonContent - Value consumed by parseCodexCollectionFromJson.
+ * @param fallbackProjectName - Value consumed by parseCodexCollectionFromJson.
+ * @returns Result produced by parseCodexCollectionFromJson.
+ */
+
+
 function parseCodexCollectionFromJson(jsonContent: string, fallbackProjectName: string): CodexAgentCollection | null
 {
 	let parsed: unknown;
@@ -306,7 +378,8 @@ function parseCodexCollectionFromJson(jsonContent: string, fallbackProjectName: 
 	} catch
 	{
 		return null;
-	}
+	}	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting agent builder artifact integrity from partial or invalid state.
+
 
 	// v2: { version: 2, platform: "codex", agents: [...] }
 	if (parsed && typeof parsed === "object" && Array.isArray((parsed as { agents?: unknown }).agents))
@@ -341,7 +414,8 @@ function parseCodexCollectionFromJson(jsonContent: string, fallbackProjectName: 
 			updatedAt: typeof obj.updatedAt === "string" && obj.updatedAt.trim() !== "" ? obj.updatedAt : new Date().toISOString(),
 			agents,
 		};
-	}
+	}	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting agent builder artifact integrity from partial or invalid state.
+
 
 	// Legacy v1: CreateAgentInput-like payload
 	if (parsed && typeof parsed === "object")
@@ -365,6 +439,13 @@ function parseCodexCollectionFromJson(jsonContent: string, fallbackProjectName: 
 
 	return null;
 }
+
+/**
+ * Builds the value produced by buildCodexEntryMarkdown.
+ * @param entry - Value consumed by buildCodexEntryMarkdown.
+ * @returns Result produced by buildCodexEntryMarkdown.
+ */
+
 
 function buildCodexEntryMarkdown(entry: CodexAgentEntry): string
 {
@@ -394,6 +475,13 @@ function buildCodexEntryMarkdown(entry: CodexAgentEntry): string
 	].join("\n");
 }
 
+/**
+ * Builds the value produced by buildCodexCollectionMarkdown.
+ * @param collection - Value consumed by buildCodexCollectionMarkdown.
+ * @returns Result produced by buildCodexCollectionMarkdown.
+ */
+
+
 function buildCodexCollectionMarkdown(collection: CodexAgentCollection): string
 {
 	const ordered = [...collection.agents].sort((a, b) => a.agentName.localeCompare(b.agentName));
@@ -406,21 +494,35 @@ function buildCodexCollectionMarkdown(collection: CodexAgentCollection): string
 	].join("\n");
 }
 
+/**
+ * Parses input into the shape expected by parseCodexCollectionFromMarkdown.
+ * @param content - Value consumed by parseCodexCollectionFromMarkdown.
+ * @param sourceName - Value consumed by parseCodexCollectionFromMarkdown.
+ * @returns Result produced by parseCodexCollectionFromMarkdown.
+ */
+
+
 function parseCodexCollectionFromMarkdown(content: string, sourceName: string): CodexAgentCollection | null
 {
 	const lines = content.split("\n");
 	const entries: CodexAgentEntry[] = [];
 	const usedIds = new Set<string>();
+	// Business logic: this iteration walks every relevant item so agent builder artifact integrity reflects the complete source set instead of a partial snapshot.
+
 
 	for (let i = 0; i < lines.length; i++)
 	{
 		const raw = lines[i]?.trim() ?? "";
+		// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting agent builder artifact integrity from partial or invalid state.
+
 		if (!raw.startsWith(CODEX_ENTRY_BEGIN_PREFIX) || !raw.endsWith("-->")) continue;
 
 		const idRaw = raw.slice(CODEX_ENTRY_BEGIN_PREFIX.length, -"-->".length).trim();
 		const id = makeUniqueCodexEntryId(usedIds, idRaw || "codex-agent");
 
 		const blockLines: string[] = [];
+		// Business logic: this iteration walks every relevant item so agent builder artifact integrity reflects the complete source set instead of a partial snapshot.
+
 		for (let j = i + 1; j < lines.length; j++)
 		{
 			const line = lines[j] ?? "";
@@ -454,6 +556,8 @@ function parseCodexCollectionFromMarkdown(content: string, sourceName: string): 
 
 	// Legacy single-frontmatter Codex markdown fallback.
 	const legacy = reconstructAgentInput(content, sourceName, `/tmp/${CODEX_AGENTS_FILE}`);
+	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting agent builder artifact integrity from partial or invalid state.
+
 	if (!legacy.agentName && !legacy.description && legacy.agentKnowledge.length === 0)
 	{
 		return null;
@@ -470,6 +574,14 @@ function parseCodexCollectionFromMarkdown(content: string, sourceName: string): 
 		updatedAt: new Date().toISOString(),
 	}]);
 }
+
+/**
+ * Loads data needed by loadCodexCollection from the configured CXC source.
+ * @param agentMdPath - Path used by loadCodexCollection to locate the relevant CXC resource.
+ * @param sourceName - Value consumed by loadCodexCollection.
+ * @returns Result produced by loadCodexCollection.
+ */
+
 
 function loadCodexCollection(agentMdPath: string, sourceName: string): CodexAgentCollection
 {
@@ -517,10 +629,13 @@ function collectFiles(dir: string): string[]
 	} catch
 	{
 		return results;
-	}
+	}	// Business logic: this iteration walks every relevant item so agent builder artifact integrity reflects the complete source set instead of a partial snapshot.
+
 
 	for (const entry of entries)
 	{
+		// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting agent builder artifact integrity from partial or invalid state.
+
 		// Skip hidden dirs except .github and .claude
 		if (entry.startsWith(".") && !ALLOWED_HIDDEN_DIRS.has(entry)) continue;
 		if (SKIP_DIRS.has(entry)) continue;
@@ -640,6 +755,8 @@ type FrontmatterBounds = { start: number; end: number };
 function getFrontmatterBounds(lines: string[]): FrontmatterBounds | null
 {
 	let start = -1;
+	// Business logic: this iteration walks every relevant item so agent builder artifact integrity reflects the complete source set instead of a partial snapshot.
+
 	for (let i = 0; i < lines.length; i++)
 	{
 		const line = lines[i]?.trim() ?? "";
@@ -647,11 +764,14 @@ function getFrontmatterBounds(lines: string[]): FrontmatterBounds | null
 		{
 			start = i;
 			break;
-		}
+		}		// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting agent builder artifact integrity from partial or invalid state.
+
 		if (line === "" || line.startsWith("<!--")) continue;
 		break;
 	}
 	if (start < 0) return null;
+	// Business logic: this iteration walks every relevant item so agent builder artifact integrity reflects the complete source set instead of a partial snapshot.
+
 
 	for (let i = start + 1; i < lines.length; i++)
 	{
@@ -670,6 +790,8 @@ function parseFrontmatter(content: string): Record<string, string>
 	const lines = content.split("\n");
 	const bounds = getFrontmatterBounds(lines);
 	if (!bounds) return result;
+	// Business logic: this iteration walks every relevant item so agent builder artifact integrity reflects the complete source set instead of a partial snapshot.
+
 
 	for (let i = bounds.start + 1; i < bounds.end; i++)
 	{
@@ -693,6 +815,8 @@ function parseToolsFromFrontmatter(content: string): string[]
 	const lines = content.split("\n");
 	const bounds = getFrontmatterBounds(lines);
 	if (!bounds) return [];
+	// Business logic: this iteration walks every relevant item so agent builder artifact integrity reflects the complete source set instead of a partial snapshot.
+
 
 	for (let i = bounds.start + 1; i < bounds.end; i++)
 	{
@@ -725,11 +849,15 @@ function parseKnowledgeLinks(content: string): string[]
 	const links: string[] = [];
 	const bounds = getFrontmatterBounds(lines);
 	const startIdx = bounds ? bounds.end + 1 : 0;
+	// Business logic: this iteration walks every relevant item so agent builder artifact integrity reflects the complete source set instead of a partial snapshot.
+
 
 	for (let i = startIdx; i < lines.length; i++)
 	{
 		const line = lines[i] ?? "";
 		const matches = line.matchAll(/\[[^\]]*\]\(([^)]+)\)/g);
+		// Business logic: this iteration walks every relevant item so agent builder artifact integrity reflects the complete source set instead of a partial snapshot.
+
 		for (const match of matches)
 		{
 			if (match[1]) links.push(match[1].trim());
@@ -794,10 +922,17 @@ function resolveCodexAgentPaths(source: DataSourceEntry): string[]
 {
 	const candidates: string[] = [];
 	const seen = new Set<string>();
+
+	/**
+	 * Handles add behavior for this CXC module.
+	 * @param value - Value consumed by add.
+	 */
 	const add = (value: string | undefined): void =>
 	{
 		if (!value) return;
 		const trimmed = value.trim();
+		// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting agent builder artifact integrity from partial or invalid state.
+
 		if (!trimmed || seen.has(trimmed)) return;
 		seen.add(trimmed);
 		candidates.push(trimmed);
@@ -805,12 +940,16 @@ function resolveCodexAgentPaths(source: DataSourceEntry): string[]
 
 	if (Array.isArray(source.codexAgentPaths))
 	{
+		// Business logic: this iteration walks every relevant item so agent builder artifact integrity reflects the complete source set instead of a partial snapshot.
+
 		for (const item of source.codexAgentPaths)
 		{
 			if (typeof item === "string") add(item);
 		}
 	}
 	add(source.codexAgentPath);
+	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting agent builder artifact integrity from partial or invalid state.
+
 
 	if (source.agentPath && source.agentPath.trim() !== "")
 	{
@@ -836,7 +975,8 @@ function resolveCodexAgentPath(source: DataSourceEntry, selectedDirectory?: stri
 	if (allowed.length === 0)
 	{
 		throw Object.assign(new Error(`Data source "${source.name}" has no resolvable Codex output path`), { status: 400 });
-	}
+	}	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting agent builder artifact integrity from partial or invalid state.
+
 
 	if (selectedDirectory && selectedDirectory.trim() !== "")
 	{
@@ -878,6 +1018,8 @@ function backupUnmanagedCodexAgentsFileIfNeeded(agentPath: string): void
 	const stamp = formatBackupTimestamp(new Date());
 	let backupPath = `${agentPath}.bak.${stamp}`;
 	let suffix = 1;
+	// Business logic: this iteration walks every relevant item so agent builder artifact integrity reflects the complete source set instead of a partial snapshot.
+
 	while (existsSync(backupPath))
 	{
 		backupPath = `${agentPath}.bak.${stamp}-${suffix}`;
@@ -885,7 +1027,7 @@ function backupUnmanagedCodexAgentsFileIfNeeded(agentPath: string): void
 	}
 
 	writeFileSync(backupPath, currentContent, "utf8");
-	console.log(`[AgentBuilder] Backed up unmanaged Codex AGENTS file: ${backupPath}`);
+	logger.debug(`Backed up unmanaged Codex AGENTS file: ${backupPath}`);
 }
 
 /**
@@ -942,6 +1084,13 @@ function formatGithubKnowledgeEntry(entry: string): string
 	return isFilePath(entry) ? `- [${entry}](${entry})` : `- ${entry}`;
 }
 
+/**
+ * Builds the value produced by buildClaudeAgentContent.
+ * @param input - Value consumed by buildClaudeAgentContent.
+ * @returns Result produced by buildClaudeAgentContent.
+ */
+
+
 function buildClaudeAgentContent(input: CreateAgentInput): string
 {
 	const knowledgeLines = input.agentKnowledge.length > 0
@@ -972,6 +1121,13 @@ export class AgentBuilder
 	private indexedFiles: IndexedFile[] = [];
 	private sources: DataSourceEntry[] = [];
 
+	/**
+	 * Creates an instance with the dependencies needed by this CXC component.
+	 * @param machineConfig - Configuration object used by constructor.
+	 * @param canonicalStore - Value consumed by constructor.
+	 */
+
+
 	constructor(
 		machineConfig: MachineConfig,
 		private readonly canonicalStore?: CanonicalAgentStore,
@@ -991,8 +1147,12 @@ export class AgentBuilder
 	{
 		if (!machineConfig.dataSources) return [];
 		const results: DataSourceEntry[] = [];
+		// Business logic: this iteration walks every relevant item so agent builder artifact integrity reflects the complete source set instead of a partial snapshot.
+
 		for (const entries of Object.values(machineConfig.dataSources))
 		{
+			// Business logic: this iteration walks every relevant item so agent builder artifact integrity reflects the complete source set instead of a partial snapshot.
+
 			for (const entry of entries)
 			{
 				if (entry.purpose === "AgentBuilder")
@@ -1013,11 +1173,15 @@ export class AgentBuilder
 		const seen = new Set<string>();
 		const indexByPath = new Map<string, number>();
 		this.indexedFiles = [];
+		// Business logic: this iteration walks every relevant item so agent builder artifact integrity reflects the complete source set instead of a partial snapshot.
+
 
 		for (const source of this.sources)
 		{
 			// Index content files from path
 			const contentFiles = collectFiles(source.path);
+			// Business logic: this iteration walks every relevant item so agent builder artifact integrity reflects the complete source set instead of a partial snapshot.
+
 			for (const absPath of contentFiles)
 			{
 				if (seen.has(absPath)) continue;
@@ -1041,20 +1205,26 @@ export class AgentBuilder
 
 			// Index agent files from agentPath, claudeAgentPath, and codexAgentPath/source.path.
 			const agentDirs = new Set<string>();
+			// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting agent builder artifact integrity from partial or invalid state.
+
 			if (source.agentPath && source.agentPath.trim() !== "") agentDirs.add(source.agentPath);
 			try
 			{
 				const claudeDir = resolveClaudeAgentPath(source);
 				if (claudeDir.trim() !== "") agentDirs.add(claudeDir);
-			} catch { /* no claudeAgentPath resolvable — skip */ }
+			} catch { /* no claudeAgentPath resolvable — skip */ }			// Business logic: this iteration walks every relevant item so agent builder artifact integrity reflects the complete source set instead of a partial snapshot.
+
 			for (const codexDir of resolveCodexAgentPaths(source))
 			{
 				if (codexDir.trim() !== "") agentDirs.add(codexDir);
-			}
+			}			// Business logic: this iteration walks every relevant item so agent builder artifact integrity reflects the complete source set instead of a partial snapshot.
+
 
 			for (const dir of agentDirs)
 			{
 				const agentFiles = collectFiles(dir);
+				// Business logic: this iteration walks every relevant item so agent builder artifact integrity reflects the complete source set instead of a partial snapshot.
+
 				for (const absPath of agentFiles)
 				{
 					if (!isAnyAgentDefinitionPath(absPath)) continue;
@@ -1066,6 +1236,8 @@ export class AgentBuilder
 						if (idx !== undefined)
 						{
 							const existing = this.indexedFiles[idx];
+							// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting agent builder artifact integrity from partial or invalid state.
+
 							if (existing && existing.origin !== "agent")
 							{
 								let stat;
@@ -1105,7 +1277,7 @@ export class AgentBuilder
 			}
 		}
 
-		console.log(`[AgentBuilder] Indexed ${this.indexedFiles.length} files across ${this.sources.length} sources`);
+		logger.info(`Indexed ${this.indexedFiles.length} files across ${this.sources.length} sources`);
 	}
 
 	/**
@@ -1118,10 +1290,14 @@ export class AgentBuilder
 		const nonAgentEntries = this.indexedFiles.filter((f) => f.origin !== "agent");
 		const agentEntriesByPath = new Map<string, IndexedFile>();
 		const uniqueAgentDirs = new Map<string, DataSourceEntry>();
+		// Business logic: this iteration walks every relevant item so agent builder artifact integrity reflects the complete source set instead of a partial snapshot.
+
 
 		for (const source of this.sources)
 		{
 			const dirs: string[] = [];
+			// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting agent builder artifact integrity from partial or invalid state.
+
 			if (source.agentPath && source.agentPath.trim() !== "")
 			{
 				dirs.push(source.agentPath);
@@ -1137,12 +1313,14 @@ export class AgentBuilder
 			} catch
 			{
 				// No resolvable Claude agent path for this source.
-			}
+			}			// Business logic: this iteration walks every relevant item so agent builder artifact integrity reflects the complete source set instead of a partial snapshot.
+
 
 			for (const codexDir of resolveCodexAgentPaths(source))
 			{
 				if (codexDir.trim() !== "") dirs.push(codexDir);
-			}
+			}			// Business logic: this iteration walks every relevant item so agent builder artifact integrity reflects the complete source set instead of a partial snapshot.
+
 
 			for (const dir of dirs)
 			{
@@ -1151,11 +1329,14 @@ export class AgentBuilder
 					uniqueAgentDirs.set(dir, source);
 				}
 			}
-		}
+		}		// Business logic: this iteration walks every relevant item so agent builder artifact integrity reflects the complete source set instead of a partial snapshot.
+
 
 		for (const [dir, source] of uniqueAgentDirs)
 		{
 			const files = collectFiles(dir);
+			// Business logic: this iteration walks every relevant item so agent builder artifact integrity reflects the complete source set instead of a partial snapshot.
+
 			for (const absPath of files)
 			{
 				if (!isAnyAgentDefinitionPath(absPath)) continue;
@@ -1326,6 +1507,8 @@ export class AgentBuilder
 			const existingIds = new Set(existingCollection.agents.map((a) => a.id));
 
 			let nextId: string;
+			// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting agent builder artifact integrity from partial or invalid state.
+
 			if (input.codexEntryId && input.codexEntryId.trim() !== "")
 			{
 				nextId = slugifyId(input.codexEntryId);
@@ -1387,7 +1570,7 @@ export class AgentBuilder
 			excerpt: content.slice(0, 1000),
 		});
 
-		console.log(`[AgentBuilder] Created ${platform} agent files: ${mdAbsPath}, ${jsonAbsPath}`);
+		logger.info(`Created ${platform} agent files: ${mdAbsPath}, ${jsonAbsPath}`);
 		return { created: true, path: mdAbsPath, agentName, codexEntryId: createdCodexEntryId };
 	}
 
@@ -1412,14 +1595,20 @@ export class AgentBuilder
 			contentFingerprint: string;
 		};
 		const flat: FlatEntry[] = [];
+		// Business logic: this iteration walks every relevant item so agent builder artifact integrity reflects the complete source set instead of a partial snapshot.
+
 
 		for (const entry of mdEntries)
 		{
+			// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting agent builder artifact integrity from partial or invalid state.
+
 			if (isCodexAgentsMdPath(entry.absolutePath) || isCodexOverrideMdPath(entry.absolutePath))
 			{
 				const codexCollection = loadCodexCollection(entry.absolutePath, entry.sourceName);
 				if (codexCollection.agents.length > 0)
 				{
+					// Business logic: this iteration walks every relevant item so agent builder artifact integrity reflects the complete source set instead of a partial snapshot.
+
 					for (const codexEntry of codexCollection.agents)
 					{
 						flat.push({
@@ -1464,7 +1653,8 @@ export class AgentBuilder
 				{
 					// Fall through to frontmatter parsing.
 				}
-			}
+			}			// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting agent builder artifact integrity from partial or invalid state.
+
 
 			if (!description && !hint)
 			{
@@ -1499,6 +1689,8 @@ export class AgentBuilder
 
 		// Step 2: Group by agent name and consolidate across platforms.
 		const grouped = new Map<string, FlatEntry[]>();
+		// Business logic: this iteration walks every relevant item so agent builder artifact integrity reflects the complete source set instead of a partial snapshot.
+
 		for (const fe of flat)
 		{
 			const existing = grouped.get(fe.name);
@@ -1507,6 +1699,8 @@ export class AgentBuilder
 		}
 
 		const agents: AgentListEntry[] = [];
+		// Business logic: this iteration walks every relevant item so agent builder artifact integrity reflects the complete source set instead of a partial snapshot.
+
 		for (const [name, entries] of grouped)
 		{
 			// Pick primary: the platform variant with the biggest dataLength.
@@ -1547,6 +1741,8 @@ export class AgentBuilder
 	getAgent(agentPath: string, codexEntryId?: string): GetAgentResponse
 	{
 		this.refreshAgentEntriesFromDisk();
+		// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting agent builder artifact integrity from partial or invalid state.
+
 
 		if (!agentPath || !isAnyAgentDefinitionPath(agentPath))
 		{
@@ -1591,7 +1787,8 @@ export class AgentBuilder
 				{
 					collection = null;
 				}
-			}
+			}			// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting agent builder artifact integrity from partial or invalid state.
+
 
 			if (!collection || collection.agents.length === 0)
 			{
@@ -1602,6 +1799,8 @@ export class AgentBuilder
 			const selected = requestedId
 				? collection.agents.find((entry) => entry.id === requestedId)
 				: collection.agents.length === 1 ? collection.agents[0] : null;
+			// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting agent builder artifact integrity from partial or invalid state.
+
 
 			if (!selected && !requestedId && collection.agents.length > 1)
 			{
@@ -1728,6 +1927,8 @@ export class AgentBuilder
 
 		// Build per-source summaries for sources that have at least one matching file
 		const sourceMap = new Map<string, PrepareSource>();
+		// Business logic: this iteration walks every relevant item so agent builder artifact integrity reflects the complete source set instead of a partial snapshot.
+
 		for (const file of files)
 		{
 			if (!sourceMap.has(file.sourceName))
@@ -1776,7 +1977,7 @@ export class AgentBuilder
 		};
 
 		writeFileSync(filePath, JSON.stringify(payload, null, 2), "utf8");
-		console.log(`[AgentBuilder] Template written: ${filePath}`);
+		logger.debug(`Template written: ${filePath}`);
 
 		return { created: true, templateName: input.templateName, path: filePath };
 	}
@@ -1805,15 +2006,19 @@ export class AgentBuilder
 		}
 
 		const templates: CreateTemplateInput[] = [];
+		// Business logic: this iteration walks every relevant item so agent builder artifact integrity reflects the complete source set instead of a partial snapshot.
+
 		for (const fileName of fileNames)
 		{
 			const filePath = join(templatesDir, fileName);
 			try
 			{
 				const parsed = JSON.parse(readFileSync(filePath, "utf8")) as Record<string, unknown>;
+				// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting agent builder artifact integrity from partial or invalid state.
+
 				if (typeof parsed.templateName !== "string" || !parsed.templateName)
 				{
-					console.warn(`[AgentBuilder] Skipping malformed template (missing templateName): ${filePath}`);
+					logger.warn(`Skipping malformed template (missing templateName): ${filePath}`);
 					continue;
 				}
 				templates.push({
@@ -1829,7 +2034,7 @@ export class AgentBuilder
 				});
 			} catch
 			{
-				console.warn(`[AgentBuilder] Skipping malformed template JSON: ${filePath}`);
+				logger.warn(`Skipping malformed template JSON: ${filePath}`);
 			}
 		}
 
@@ -1868,6 +2073,8 @@ export class AgentBuilder
 		const markdownArtifacts = artifacts.filter((a) => !a.isCompanionJson);
 		const paths = new Set(markdownArtifacts.map((a) => a.absolutePath));
 		this.indexedFiles = this.indexedFiles.filter((f) => !paths.has(f.absolutePath));
+		// Business logic: this iteration walks every relevant item so agent builder artifact integrity reflects the complete source set instead of a partial snapshot.
+
 
 		for (const artifact of markdownArtifacts)
 		{

@@ -2,6 +2,11 @@
 /**
  * ContextCore Interactive Setup Script
  *
+ * Architecture: server/zz-reach2/architecture/archi-context-core-level0.md
+ * Logging: server/zz-reach2/upgrades/2026-06/r2wl-winston-logging.md (T61)
+ * Intentional console exception: wizard display output stays on console (interactive UI).
+ * Fatal startup errors use console.error for immediate operator visibility.
+ *
  * Discovers IDE chat data on the host machine and generates a machine config
  * block in cc.json. Run with: bun run setup
  */
@@ -68,10 +73,20 @@ type ContextCoreConfig = {
 
 let rl: readline.Interface;
 
+/**
+ * Handles initReadline behavior for this CXC module.
+ */
+
+
 function initReadline(): void
 {
 	rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 }
+
+/**
+ * Handles closeReadline behavior for this CXC module.
+ */
+
 
 function closeReadline(): void
 {
@@ -122,6 +137,11 @@ async function promptYesNo(question: string, defaultYes = true): Promise<boolean
 	});
 }
 
+/**
+ * Handles printVersionNotice behavior for this CXC module.
+ */
+
+
 // ─── Version Notice ───────────────────────────────────────────────────────────
 
 function printVersionNotice(): void
@@ -140,6 +160,8 @@ function printVersionNotice(): void
 	];
 	const width = Math.max(...lines.map((l) => l.length));
 	console.log(chalk.cyan("┌" + "─".repeat(width + 2) + "┐"));
+	// Business logic: this iteration walks every relevant item so operator configuration flows reflects the complete source set instead of a partial snapshot.
+
 	for (const line of lines)
 	{
 		console.log(chalk.cyan("│ ") + chalk.cyan(line.padEnd(width)) + chalk.cyan(" │"));
@@ -148,21 +170,43 @@ function printVersionNotice(): void
 	console.log();
 }
 
+/**
+ * Detects host state used by detectPlatform.
+ * @returns Result produced by detectPlatform.
+ */
+
+
 // ─── Platform & Identity Detection ───────────────────────────────────────────
 
 function detectPlatform(): Platform
 {
 	const p = process.platform;
+	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting operator configuration flows from partial or invalid state.
+
 	if (p === "win32" || p === "darwin" || p === "linux") return p;
 	return "linux";
 }
 
+/**
+ * Detects host state used by detectMachineName.
+ * @returns Result produced by detectMachineName.
+ */
+
+
 function detectMachineName(): string
 {
+	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting operator configuration flows from partial or invalid state.
+
 	if (process.platform === "win32" && process.env.COMPUTERNAME)
 		return process.env.COMPUTERNAME;
 	return hostname();
 }
+
+/**
+ * Detects host state used by detectUsername.
+ * @returns Result produced by detectUsername.
+ */
+
 
 function detectUsername(): string
 {
@@ -177,6 +221,13 @@ function withTrailingSlash(p: string): string
 	return sharedWithTrailingSlash(p);
 }
 
+/**
+ * Formats data for formatBytes.
+ * @param bytes - Value consumed by formatBytes.
+ * @returns Result produced by formatBytes.
+ */
+
+
 function formatBytes(bytes: number): string
 {
 	return sharedFormatBytes(bytes);
@@ -188,6 +239,14 @@ function dirName(p: string): string
 	return sharedDirName(p);
 }
 
+/**
+ * Returns the value managed by getClaudeCodeBasePath.
+ * @param username - Value consumed by getClaudeCodeBasePath.
+ * @param platform - Value consumed by getClaudeCodeBasePath.
+ * @returns Result produced by getClaudeCodeBasePath.
+ */
+
+
 // ─── Claude Code ──────────────────────────────────────────────────────────────
 
 function getClaudeCodeBasePath(username: string, platform: Platform): string
@@ -195,10 +254,25 @@ function getClaudeCodeBasePath(username: string, platform: Platform): string
 	return sharedGetClaudeCodeBasePath(username, platform);
 }
 
+/**
+ * Handles scanJsonlProjects behavior for this CXC module.
+ * @param basePath - Path used by scanJsonlProjects to locate the relevant CXC resource.
+ * @returns Result produced by scanJsonlProjects.
+ */
+
+
 function scanJsonlProjects(basePath: string): Array<{ path: string; count: number }>
 {
 	return sharedScanJsonlProjects(basePath);
 }
+
+/**
+ * Handles discoverClaudeCode behavior for this CXC module.
+ * @param username - Value consumed by discoverClaudeCode.
+ * @param platform - Value consumed by discoverClaudeCode.
+ * @returns Result produced by discoverClaudeCode.
+ */
+
 
 async function discoverClaudeCode(username: string, platform: Platform): Promise<string[]>
 {
@@ -225,6 +299,8 @@ async function discoverClaudeCode(username: string, platform: Platform): Promise
 
 		const plural = projects.length === 1;
 		console.log(chalk.green(`Found ${projects.length} project ${plural ? "directory" : "directories"} with .jsonl files:`));
+		// Business logic: this iteration walks every relevant item so operator configuration flows reflects the complete source set instead of a partial snapshot.
+
 		for (const p of projects)
 		{
 			console.log(`  ${chalk.green("✓")} ${dirName(p.path)}  ${chalk.dim(`(${p.count} session${p.count === 1 ? "" : "s"})`)}`);
@@ -246,12 +322,28 @@ async function discoverClaudeCode(username: string, platform: Platform): Promise
 	}
 }
 
+/**
+ * Returns the value managed by getCursorDbPath.
+ * @param username - Value consumed by getCursorDbPath.
+ * @param platform - Value consumed by getCursorDbPath.
+ * @returns Result produced by getCursorDbPath.
+ */
+
+
 // ─── Cursor ───────────────────────────────────────────────────────────────────
 
 function getCursorDbPath(username: string, platform: Platform): string
 {
 	return sharedGetCursorDbPath(username, platform);
 }
+
+/**
+ * Handles discoverCursor behavior for this CXC module.
+ * @param username - Value consumed by discoverCursor.
+ * @param platform - Value consumed by discoverCursor.
+ * @returns Result produced by discoverCursor.
+ */
+
 
 async function discoverCursor(username: string, platform: Platform): Promise<string | null>
 {
@@ -282,6 +374,14 @@ async function discoverCursor(username: string, platform: Platform): Promise<str
 	}
 }
 
+/**
+ * Returns the value managed by getVSCodeStoragePath.
+ * @param username - Value consumed by getVSCodeStoragePath.
+ * @param platform - Value consumed by getVSCodeStoragePath.
+ * @returns Result produced by getVSCodeStoragePath.
+ */
+
+
 // ─── VS Code ──────────────────────────────────────────────────────────────────
 
 function getVSCodeStoragePath(username: string, platform: Platform): string
@@ -289,10 +389,25 @@ function getVSCodeStoragePath(username: string, platform: Platform): string
 	return sharedGetVSCodeStoragePath(username, platform);
 }
 
+/**
+ * Handles scanChatSessionDirs behavior for this CXC module.
+ * @param basePath - Path used by scanChatSessionDirs to locate the relevant CXC resource.
+ * @returns Result produced by scanChatSessionDirs.
+ */
+
+
 function scanChatSessionDirs(basePath: string): string[]
 {
 	return sharedScanChatSessionDirs(basePath);
 }
+
+/**
+ * Handles discoverVSCode behavior for this CXC module.
+ * @param username - Value consumed by discoverVSCode.
+ * @param platform - Value consumed by discoverVSCode.
+ * @returns Result produced by discoverVSCode.
+ */
+
 
 async function discoverVSCode(username: string, platform: Platform): Promise<string[]>
 {
@@ -319,6 +434,8 @@ async function discoverVSCode(username: string, platform: Platform): Promise<str
 
 		const plural = dirs.length === 1;
 		console.log(chalk.green(`Found ${dirs.length} workspace ${plural ? "directory" : "directories"} with chatSessions/:`));
+		// Business logic: this iteration walks every relevant item so operator configuration flows reflects the complete source set instead of a partial snapshot.
+
 		for (const d of dirs)
 		{
 			console.log(`  ${chalk.green("✓")} ${chalk.dim(dirName(d))}`);
@@ -340,6 +457,14 @@ async function discoverVSCode(username: string, platform: Platform): Promise<str
 	}
 }
 
+/**
+ * Returns the value managed by getKiroAgentPaths.
+ * @param username - Value consumed by getKiroAgentPaths.
+ * @param platform - Value consumed by getKiroAgentPaths.
+ * @returns Result produced by getKiroAgentPaths.
+ */
+
+
 // ─── Kiro ─────────────────────────────────────────────────────────────────────
 
 function getKiroAgentPaths(username: string, platform: Platform): string[]
@@ -347,10 +472,23 @@ function getKiroAgentPaths(username: string, platform: Platform): string[]
 	return sharedGetKiroAgentPaths(username, platform);
 }
 
+/**
+ * Handles scanKiroHexDirs behavior for this CXC module.
+ * @param basePath - Path used by scanKiroHexDirs to locate the relevant CXC resource.
+ * @returns Result produced by scanKiroHexDirs.
+ */
+
+
 function scanKiroHexDirs(basePath: string): string[]
 {
 	return sharedScanKiroHexDirs(basePath);
 }
+
+/**
+ * Handles printKiroMappingAdvice behavior for this CXC module.
+ * @param basePath - Path used by printKiroMappingAdvice to locate the relevant CXC resource.
+ */
+
 
 function printKiroMappingAdvice(basePath: string): void
 {
@@ -381,6 +519,8 @@ function browseKiroUserMessages(dirPath: string): string[]
 	try
 	{
 		const files = readdirSync(dirPath).filter((f) => f.endsWith(".chat"));
+		// Business logic: this iteration walks every relevant item so operator configuration flows reflects the complete source set instead of a partial snapshot.
+
 		for (const file of files)
 		{
 			if (messages.length >= 3) break;
@@ -394,16 +534,22 @@ function browseKiroUserMessages(dirPath: string): string[]
 
 				// Skip system prompt: first human entry containing <identity>
 				let startIdx = 0;
+				// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting operator configuration flows from partial or invalid state.
+
 				if (
 					chat.length > 0 &&
 					chat[0].role === "human" &&
 					typeof chat[0].content === "string" &&
 					chat[0].content.includes("<identity>")
 				) startIdx = 1;
+				// Business logic: this iteration walks every relevant item so operator configuration flows reflects the complete source set instead of a partial snapshot.
+
 
 				for (let i = startIdx; i < chat.length && messages.length < 3; i++)
 				{
 					const entry = chat[i];
+					// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting operator configuration flows from partial or invalid state.
+
 					if (entry.role === "human" && typeof entry.content === "string" && entry.content.trim())
 					{
 						const text = entry.content.trim().replace(/\s+/g, " ");
@@ -418,9 +564,18 @@ function browseKiroUserMessages(dirPath: string): string[]
 	return messages;
 }
 
+/**
+ * Handles promptKiroMappings behavior for this CXC module.
+ * @param dirs - Value consumed by promptKiroMappings.
+ * @returns Result produced by promptKiroMappings.
+ */
+
+
 async function promptKiroMappings(dirs: string[]): Promise<ProjectMappingRule[]>
 {
 	const rules: ProjectMappingRule[] = [];
+	// Business logic: this iteration walks every relevant item so operator configuration flows reflects the complete source set instead of a partial snapshot.
+
 	for (const dirPath of dirs)
 	{
 		const hash = dirName(dirPath);
@@ -453,6 +608,14 @@ async function promptKiroMappings(dirs: string[]): Promise<ProjectMappingRule[]>
 	return rules;
 }
 
+/**
+ * Handles discoverKiro behavior for this CXC module.
+ * @param username - Value consumed by discoverKiro.
+ * @param platform - Value consumed by discoverKiro.
+ * @returns Result produced by discoverKiro.
+ */
+
+
 async function discoverKiro(username: string, platform: Platform): Promise<KiroDiscovery>
 {
 	console.log(chalk.bold("\n──── Kiro ────"));
@@ -461,6 +624,8 @@ async function discoverKiro(username: string, platform: Platform): Promise<KiroD
 	{
 		const candidates = getKiroAgentPaths(username, platform);
 		let basePath: string | null = null;
+		// Business logic: this iteration walks every relevant item so operator configuration flows reflects the complete source set instead of a partial snapshot.
+
 		for (const candidate of candidates)
 		{
 			console.log(chalk.dim(`Scanning: ${candidate}`));
@@ -487,6 +652,8 @@ async function discoverKiro(username: string, platform: Platform): Promise<KiroD
 
 		const plural = dirs.length === 1;
 		console.log(chalk.green(`Found ${dirs.length} session ${plural ? "directory" : "directories"} (hex hash):`));
+		// Business logic: this iteration walks every relevant item so operator configuration flows reflects the complete source set instead of a partial snapshot.
+
 		for (const d of dirs) console.log(`  ${chalk.dim("•")} ${dirName(d)}`);
 
 		const include = await promptYesNo(`Include all ${dirs.length} path${plural ? "" : "s"}?`);
@@ -511,12 +678,28 @@ async function discoverKiro(username: string, platform: Platform): Promise<KiroD
 	}
 }
 
+/**
+ * Returns the value managed by getOpenCodeStoragePaths.
+ * @param username - Value consumed by getOpenCodeStoragePaths.
+ * @param platform - Value consumed by getOpenCodeStoragePaths.
+ * @returns Result produced by getOpenCodeStoragePaths.
+ */
+
+
 // ─── OpenCode ─────────────────────────────────────────────────────────────────
 
 function getOpenCodeStoragePaths(username: string, platform: Platform): string[]
 {
 	return sharedGetOpenCodeStoragePaths(username, platform);
 }
+
+/**
+ * Handles discoverOpenCode behavior for this CXC module.
+ * @param username - Value consumed by discoverOpenCode.
+ * @param platform - Value consumed by discoverOpenCode.
+ * @returns Result produced by discoverOpenCode.
+ */
+
 
 async function discoverOpenCode(username: string, platform: Platform): Promise<string | null>
 {
@@ -526,6 +709,8 @@ async function discoverOpenCode(username: string, platform: Platform): Promise<s
 		const candidates = getOpenCodeStoragePaths(username, platform);
 		let dirPath: string | null = null;
 		let dbPath: string | null = null;
+		// Business logic: this iteration walks every relevant item so operator configuration flows reflects the complete source set instead of a partial snapshot.
+
 		for (const candidate of candidates)
 		{
 			const candidateDb = join(candidate.replace(/[\\/]+$/, ""), "opencode.db");
@@ -536,7 +721,8 @@ async function discoverOpenCode(username: string, platform: Platform): Promise<s
 				dbPath = candidateDb;
 				break;
 			}
-		}
+		}		// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting operator configuration flows from partial or invalid state.
+
 
 		if (!dirPath || !dbPath)
 		{
@@ -559,6 +745,12 @@ async function discoverOpenCode(username: string, platform: Platform): Promise<s
 	}
 }
 
+/**
+ * Handles promptGenericRules behavior for this CXC module.
+ * @returns Result produced by promptGenericRules.
+ */
+
+
 // ─── Generic Project Mapping Rules ────────────────────────────────────────────
 
 async function promptGenericRules(): Promise<GenericProjectMappingRule[]>
@@ -573,6 +765,8 @@ async function promptGenericRules(): Promise<GenericProjectMappingRule[]>
 
 	const rules: GenericProjectMappingRule[] = [];
 	let addMore = true;
+	// Business logic: this iteration walks every relevant item so operator configuration flows reflects the complete source set instead of a partial snapshot.
+
 	while (addMore)
 	{
 		const path = await promptUser("  Path prefix");
@@ -585,6 +779,12 @@ async function promptGenericRules(): Promise<GenericProjectMappingRule[]>
 	}
 	return rules;
 }
+
+/**
+ * Handles promptDataSources behavior for this CXC module.
+ * @returns Result produced by promptDataSources.
+ */
+
 
 // ─── Data Sources ────────────────────────────────────────────────────────────
 
@@ -616,6 +816,20 @@ async function promptDataSources(): Promise<DataSources>
 		],
 	};
 }
+
+/**
+ * Builds the value produced by buildMachineConfig.
+ * @param machineName - Value consumed by buildMachineConfig.
+ * @param claudePaths - Path used by buildMachineConfig to locate the relevant CXC resource.
+ * @param cursorPath - Path used by buildMachineConfig to locate the relevant CXC resource.
+ * @param vscodePaths - Path used by buildMachineConfig to locate the relevant CXC resource.
+ * @param kiro - Value consumed by buildMachineConfig.
+ * @param openCodePath - Path used by buildMachineConfig to locate the relevant CXC resource.
+ * @param genericRules - Value consumed by buildMachineConfig.
+ * @param dataSources - Value consumed by buildMachineConfig.
+ * @returns Result produced by buildMachineConfig.
+ */
+
 
 // ─── Config Assembly ──────────────────────────────────────────────────────────
 
@@ -661,6 +875,12 @@ function buildMachineConfig(
 	};
 }
 
+/**
+ * Handles ensureStorageDir behavior for this CXC module.
+ * @param storagePath - Path used by ensureStorageDir to locate the relevant CXC resource.
+ */
+
+
 // ─── Storage Dir ──────────────────────────────────────────────────────────────
 
 function ensureStorageDir(storagePath: string): void
@@ -683,6 +903,12 @@ function ensureStorageDir(storagePath: string): void
 		console.log(chalk.dim(`    Create it manually: mkdir "${storagePath}"`));
 	}
 }
+
+/**
+ * Handles ensureEnvFile behavior for this CXC module.
+ * @param baseDir - Value consumed by ensureEnvFile.
+ */
+
 
 function ensureEnvFile(baseDir: string): void
 {
@@ -713,6 +939,15 @@ function ensureEnvFile(baseDir: string): void
 	}
 }
 
+/**
+ * Writes data for writeConfig using the existing CXC storage contract.
+ * @param machineConfig - Configuration object used by writeConfig.
+ * @param storage - Storage dependency or path used by writeConfig.
+ * @param ccJsonPath - Path used by writeConfig to locate the relevant CXC resource.
+ * @returns Result produced by writeConfig.
+ */
+
+
 // ─── cc.json Write ────────────────────────────────────────────────────────────
 
 async function writeConfig(
@@ -741,7 +976,8 @@ async function writeConfig(
 			}
 			config = { storage, machines: [] };
 		}
-	}
+	}	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting operator configuration flows from partial or invalid state.
+
 
 	// Resolve storage field
 	if (config.storage && config.storage !== storage)
@@ -787,6 +1023,12 @@ async function writeConfig(
 		console.log(chalk.dim("    Check file permissions and try again."));
 	}
 }
+
+/**
+ * Handles main behavior for this CXC module.
+ * @returns Result produced by main.
+ */
+
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 

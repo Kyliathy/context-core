@@ -3,6 +3,9 @@
  * Keyed by sessionId; one 3072-dimensional vector per session.
  * Stored at {storage}/.settings/summary-embeddings.json.
  *
+ * Architecture: server/zz-reach2/architecture/archi-context-core-level0.md
+ * Logging: server/zz-reach2/upgrades/2026-06/r2wl-winston-logging.md
+ *
  * Lifecycle:
  *   1. After TopicSummarizer completes, call embedNewSummaries() once.
  *   2. Already-cached sessions are skipped (zero OpenAI calls for them).
@@ -21,6 +24,9 @@ import { existsSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
 import type { TopicEntry } from "../models/TopicEntry.js";
 import type { EmbeddingService } from "./EmbeddingService.js";
+import { getLogger } from "../logging/logger.js";
+
+const logger = getLogger("vector:SummaryEmbeddingCache");
 
 /** Statistics from the summary embedding pass. */
 export type SummaryEmbedPassStats = {
@@ -84,11 +90,11 @@ export class SummaryEmbeddingCache
 			const raw = readFileSync(this.filePath, "utf-8");
 			const parsed = JSON.parse(raw) as CacheFile;
 			this.cache = new Map(Object.entries(parsed));
-			console.log(`[SummaryEmbeddingCache] Loaded ${this.cache.size} cached embeddings from disk.`);
+			logger.info(`Loaded ${this.cache.size} cached embeddings from disk.`);
 		} catch (error)
 		{
-			console.warn(
-				`[SummaryEmbeddingCache] Failed to load cache: ${(error as Error).message}. Starting with empty cache.`
+			logger.warn(
+				`Failed to load cache: ${(error as Error).message}. Starting with empty cache.`
 			);
 			this.cache = new Map();
 		}
@@ -143,7 +149,7 @@ export class SummaryEmbeddingCache
 			const raw = readFileSync(this.syncedFilePath, "utf-8");
 			const parsed = JSON.parse(raw) as string[];
 			this.syncedSessionIds = new Set(parsed);
-			console.log(`[SummaryEmbeddingCache] Loaded ${this.syncedSessionIds.size} synced session IDs from disk.`);
+			logger.info(`Loaded ${this.syncedSessionIds.size} synced session IDs from disk.`);
 		} catch
 		{
 			this.syncedSessionIds = new Set();
@@ -173,6 +179,8 @@ export class SummaryEmbeddingCache
 	getUnsyncedSessionIds(): Set<string>
 	{
 		const unsynced = new Set<string>();
+		// Business logic: this iteration walks every relevant item so vector indexing consistency reflects the complete source set instead of a partial snapshot.
+
 		for (const sessionId of this.cache.keys())
 		{
 			if (!this.syncedSessionIds.has(sessionId))
@@ -219,10 +227,12 @@ export class SummaryEmbeddingCache
 		const toEmbed = pending.filter((e) => !this.has(e.sessionId));
 		const toSkip = pending.length - toEmbed.length;
 
-		console.log(
-			`[SummaryEmbeddingCache] Starting pass — ` +
+		logger.info(
+			`Starting pass — ` +
 			`toEmbed=${toEmbed.length}, alreadyCached=${toSkip} (total sessions with summaries: ${pending.length})`
 		);
+		// Business logic: this iteration walks every relevant item so vector indexing consistency reflects the complete source set instead of a partial snapshot.
+
 
 		for (let i = 0; i < pending.length; i++)
 		{
@@ -247,18 +257,19 @@ export class SummaryEmbeddingCache
 				// Progress log every 10 embeddings so the user can see activity
 				if (stats.summariesEmbedded % 10 === 0)
 				{
-					console.log(
-						`[SummaryEmbeddingCache] Progress: ${stats.summariesEmbedded}/${toEmbed.length} embedded...`
+					logger.debug(
+						`Progress: ${stats.summariesEmbedded}/${toEmbed.length} embedded...`
 					);
 				}
 			} catch (error)
 			{
 				// Per-session failure: log warning and continue — never abort the pass
-				console.warn(
-					`[SummaryEmbeddingCache] Failed to embed summary for session "${entry.sessionId}": ${(error as Error).message}`
+				logger.warn(
+					`Failed to embed summary for session "${entry.sessionId}": ${(error as Error).message}`
 				);
 				stats.summariesFailed += 1;
-			}
+			}			// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting vector indexing consistency from partial or invalid state.
+
 
 			// Rate limiting between embedding calls
 			if (i < pending.length - 1 && batchDelayMs > 0)
@@ -270,8 +281,8 @@ export class SummaryEmbeddingCache
 		// Persist updated cache to disk
 		this.save();
 
-		console.log(
-			`[SummaryEmbeddingCache] Pass complete — ` +
+		logger.info(
+			`Pass complete — ` +
 			`embedded=${stats.summariesEmbedded}, skipped=${stats.summariesSkipped}, failed=${stats.summariesFailed}`
 		);
 

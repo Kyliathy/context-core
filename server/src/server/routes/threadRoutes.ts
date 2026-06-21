@@ -1,4 +1,14 @@
+/**
+ * threadRoutes – Thread search and latest-thread API endpoints.
+ *
+ * Architecture: server/zz-reach2/architecture/archi-context-core-level0.md
+ * Logging: server/zz-reach2/upgrades/2026-06/r2wl-winston-logging.md
+ */
+
 import type { Express } from "express";
+import { getLogger } from "../../logging/logger.js";
+
+const logger = getLogger("server:threadRoutes");
 import type { RouteContext } from "../RouteContext.js";
 import { parseSearchQuery } from "../../search/queryParser.js";
 import { executeSearch } from "../../search/searchEngine.js";
@@ -14,6 +24,13 @@ import
 	messagesToResults,
 } from "../../search/fieldFilters.js";
 
+/**
+ * Handles register behavior for this CXC module.
+ * @param app - Value consumed by register.
+ * @param ctx - Value consumed by register.
+ */
+
+
 export function register(app: Express, ctx: RouteContext): void
 {
 	app.post("/api/threads", async (req, res) =>
@@ -28,6 +45,8 @@ export function register(app: Express, ctx: RouteContext): void
 		const fromEpoch = fromIso ? Date.parse(fromIso) : Number.NaN;
 
 		const hasFieldFilters = symbolsTerm !== "" || subjectTerm !== "";
+		// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting HTTP API behavior from partial or invalid state.
+
 
 		if (!searchTerms && !hasFieldFilters)
 		{
@@ -35,7 +54,7 @@ export function register(app: Express, ctx: RouteContext): void
 			const effectiveLimit = threadLimit > 0 ? threadLimit : 100;
 			const fromEpochForLatest = !Number.isNaN(fromEpoch) ? fromEpoch : undefined;
 			const threadResults = getLatestThreads(ctx.messageDB, effectiveLimit, ctx.topicStore, fromEpochForLatest);
-			console.log(`[Threads/POST] Empty search → latest ${effectiveLimit} threads (${threadResults.total} found)`);
+			logger.debug(`[Threads/POST] Empty search → latest ${effectiveLimit} threads (${threadResults.total} found)`);
 			res.json({
 				total: threadResults.total,
 				page: threadResults.page,
@@ -98,13 +117,13 @@ export function register(app: Express, ctx: RouteContext): void
 					if (subjectTerm)
 						messages = filterMessagesBySubject(messages, subjectTerm);
 
-					console.log(`[Threads/POST] Field-only search: symbols="${symbolsTerm}" subject="${subjectTerm}" → ${messages.length} messages`);
+					logger.debug(`[Threads/POST] Field-only search: symbols="${symbolsTerm}" subject="${subjectTerm}" → ${messages.length} messages`);
 					searchResults = messagesToResults(messages, symbolsTerm, subjectTerm);
 				}
 				else
 				{
 					const parsedQuery = parseSearchQuery(searchTerms);
-					console.log(
+					logger.debug(
 						`[Threads/POST] Parsed query: mode=${parsedQuery.mode}, tokens=${parsedQuery.tokens.length}, query="${searchTerms}", symbols="${symbolsTerm}", subject="${subjectTerm}", projects=${projectFilters.length}`
 					);
 
@@ -132,7 +151,8 @@ export function register(app: Express, ctx: RouteContext): void
 
 					if (subjectTerm)
 						searchResults = filterResultsBySubject(searchResults, subjectTerm);
-				}
+				}				// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting HTTP API behavior from partial or invalid state.
+
 
 				// Qdrant vector search — merge additional hits into searchResults
 				if ((searchTerms || subjectTerm) && ctx.vectorServices)
@@ -149,6 +169,8 @@ export function register(app: Express, ctx: RouteContext): void
 							: [];
 
 						const existingIds = new Set(searchResults.map((r) => r.message.id));
+						// Business logic: this iteration walks every relevant item so HTTP API behavior reflects the complete source set instead of a partial snapshot.
+
 						for (const hit of qdrantHits)
 						{
 							if (existingIds.has(hit.payload.messageId)) continue;
@@ -159,6 +181,8 @@ export function register(app: Express, ctx: RouteContext): void
 							if (!Number.isNaN(fromEpoch))
 							{
 								const v = Date.parse(String(message.dateTime));
+								// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting HTTP API behavior from partial or invalid state.
+
 								if (Number.isNaN(v) || v < fromEpoch) continue;
 							}
 
@@ -187,17 +211,19 @@ export function register(app: Express, ctx: RouteContext): void
 						}
 					} catch (error)
 					{
-						console.warn(`[Threads/POST] Qdrant search failed: ${(error as Error).message}`);
+						logger.warn(`[Threads/POST] Qdrant search failed: ${(error as Error).message}`);
 					}
 				}
 
 				const threadResults = aggregateToThreads(searchResults, ctx.messageDB, ctx.topicStore);
+				// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting HTTP API behavior from partial or invalid state.
+
 				if (threadLimit > 0 && threadResults.results.length > threadLimit)
 				{
 					threadResults.results = threadResults.results.slice(0, threadLimit);
 					threadResults.total = threadResults.results.length;
 				}
-				console.log(`[Threads/POST] Sending ${threadResults.total} threads${threadLimit > 0 ? ` (limit ${threadLimit})` : ""}`);
+				logger.debug(`[Threads/POST] Sending ${threadResults.total} threads${threadLimit > 0 ? ` (limit ${threadLimit})` : ""}`);
 
 				return {
 					total: threadResults.total,
@@ -221,11 +247,13 @@ export function register(app: Express, ctx: RouteContext): void
 
 			res.setHeader('X-Cache', cached ? 'HIT' : 'MISS');
 			if (cached)
-				console.log(`[Threads/POST] Cache HIT for "${searchTerms || `field:${symbolsTerm}|${subjectTerm}`}"`);
+				logger.debug(`[Threads/POST] Cache HIT for "${searchTerms || `field:${symbolsTerm}|${subjectTerm}`}"`);
 			res.json(responseData);
 		} catch (error)
 		{
-			console.error(`[Threads/POST] Error: ${(error as Error).message}`);
+			logger.error(`[Threads/POST] Error: ${(error as Error).message}`);
+			// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting HTTP API behavior from partial or invalid state.
+
 			if ((error as Error).message.includes("parse") || (error as Error).message.includes("unbalanced"))
 			{
 				res.status(400).json({ error: "Malformed query", details: (error as Error).message });
@@ -243,6 +271,8 @@ export function register(app: Express, ctx: RouteContext): void
 
 			// Parse limit parameter (default 100)
 			const limit = typeof body.limit === "number" ? body.limit : typeof body.limit === "string" ? Number(body.limit) : 100;
+			// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting HTTP API behavior from partial or invalid state.
+
 
 			if (isNaN(limit) || limit < 1)
 			{
@@ -262,10 +292,10 @@ export function register(app: Express, ctx: RouteContext): void
 
 			const { data: response, cached } = await withCache(cacheKey, () =>
 			{
-				console.log(`[LatestThreads] Fetching latest ${limit} threads${rawFromDate ? ` from ${rawFromDate}` : ""}`);
+				logger.debug(`[LatestThreads] Fetching latest ${limit} threads${rawFromDate ? ` from ${rawFromDate}` : ""}`);
 
 				const threadResults = getLatestThreads(ctx.messageDB, limit, ctx.topicStore, fromEpoch);
-				console.log(`[LatestThreads] Returning ${threadResults.total} threads`);
+				logger.debug(`[LatestThreads] Returning ${threadResults.total} threads`);
 
 				return {
 					total: threadResults.total,
@@ -289,11 +319,11 @@ export function register(app: Express, ctx: RouteContext): void
 
 			res.setHeader('X-Cache', cached ? 'HIT' : 'MISS');
 			if (cached)
-				console.log(`[LatestThreads] Cache HIT (lim:${limit}${rawFromDate ? ` from:${rawFromDate}` : ''})`);
+				logger.debug(`[LatestThreads] Cache HIT (lim:${limit}${rawFromDate ? ` from:${rawFromDate}` : ''})`);
 			res.json(response);
 		} catch (error)
 		{
-			console.error(`[LatestThreads] Error: ${(error as Error).message}`);
+			logger.error(`[LatestThreads] Error: ${(error as Error).message}`);
 			res.status(500).json({ error: "Failed to fetch latest threads" });
 		}
 	});

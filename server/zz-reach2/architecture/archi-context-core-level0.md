@@ -910,7 +910,29 @@ flowchart TD
 
 ---
 
-## 16. Conclusion
+## 16. Startup Ingest Bookmarks
+
+Startup ingestion is planned per harness before any source reader runs. The planner checks the global ingest state, the Context Core DB fingerprint, parser epoch, source path hash, and harness-specific progress bookmark.
+
+```mermaid
+flowchart TD
+    START["ContextCore.start()"] --> LOADDB["load existing cxc-db.sqlite"]
+    LOADDB --> FINGERPRINT["validate stored DB fingerprint"]
+    FINGERPRINT --> PLAN["planStartupHarness() per harness"]
+    PLAN --> SKIP["skip unchanged sources"]
+    PLAN --> DELTA["read rowid/file-manifest delta"]
+    PLAN --> FULL["batched full/recovery read"]
+    SKIP --> WATCH["start FileWatcher"]
+    DELTA --> PERSIST["persist batch, then commit bookmark"]
+    FULL --> PERSIST
+    PERSIST --> WATCH
+```
+
+Cursor and OpenCode use SQLite rowid bookmarks. File-based harnesses use external manifests under `.settings/ingest-manifests/` so `global-settings.json` remains small. A full or recovery read is still allowed, but Cursor and OpenCode must use the batched reader path and never materialize all source rows into one startup array.
+
+---
+
+## 17. Conclusion
 
 ContextCore is a well-structured MVP that successfully solves the core problem: unifying AI chat history from six different IDE formats into a single queryable store. The `AgentMessage` model is comprehensive, the harness reader pattern is cleanly extensible, and the dual-purpose storage (JSON files + in-memory SQLite) provides both durability and fast queries.
 
