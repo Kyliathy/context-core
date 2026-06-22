@@ -60,7 +60,7 @@ export class CanonicalAgentStore
 		writeFileAtomic(this.storePath, `${JSON.stringify(payload, null, 2)}\n`);
 	}
 
-	/** Upserts one canonical definition keyed by id. */
+	/** Upserts one canonical definition keyed by id; stamps savedAt metadata for Agent List. */
 	upsert(definition: CanonicalAgentDefinition): void
 	{
 		const stamped: CanonicalAgentDefinition = {
@@ -68,6 +68,7 @@ export class CanonicalAgentStore
 			metadata: {
 				...definition.metadata,
 				[CXC_CANONICAL_SOURCE_KEY]: CXC_CANONICAL_SOURCE_VALUE,
+				savedAt: definition.metadata?.savedAt ?? new Date().toISOString(),
 			},
 		};
 		const idx = this.definitions.findIndex((d) => d.id === stamped.id);

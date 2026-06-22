@@ -1,0 +1,104 @@
+.vault-manager-host {
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+	padding: 24px 28px;
+	max-width: 880px;
+	color: #cbd5e1;
+}
+
+.vault-manager-host-header h2 {
+	margin: 0;
+	font-size: 1.1rem;
+	font-weight: 600;
+}
+
+.vault-manager-host-subtitle {
+	margin: 4px 0 0;
+	font-size: 0.9rem;
+	color: #94a3b8;
+}
+
+.vault-manager-host-note {
+	font-size: 0.88rem;
+	color: #94a3b8;
+	margin: 8px 0 0;
+}
+
+.vault-manager-host-actions {
+	display: flex;
+	gap: 8px;
+}
+
+.vault-manager-host-add,
+.vault-manager-host-open {
+	align-self: flex-start;
+	background: #0d9488;
+	color: #f0fdfa;
+	border: 1px solid #14b8a6;
+	border-radius: 6px;
+	padding: 8px 14px;
+	cursor: pointer;
+	font: inherit;
+}
+
+.vault-manager-host-add:focus-visible,
+.vault-manager-host-open:focus-visible,
+.vault-manager-row:focus-visible {
+	outline: 2px solid #7c3aed;
+	outline-offset: 2px;
+}
+
+.vault-manager-empty {
+	padding: 16px 0;
+	color: #94a3b8;
+}
+
+.vault-manager-list {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+
+.vault-manager-row {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 4px;
+	width: 100%;
+	text-align: left;
+	padding: 12px 14px;
+	background: #111827;
+	border: 1px solid #334155;
+	border-radius: 8px;
+	color: #e2e8f0;
+	cursor: pointer;
+	font: inherit;
+}
+
+.vault-manager-row:hover {
+	background: #1e293b;
+	border-color: #475569;
+}
+
+.vault-manager-row-name {
+	font-weight: 600;
+	font-size: 0.95rem;
+}
+
+.vault-manager-row-meta {
+	font-size: 0.82rem;
+	color: #94a3b8;
+}
+
+.vault-manager-row-path {
+	font-size: 0.8rem;
+	color: #64748b;
+	max-width: 100%;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}

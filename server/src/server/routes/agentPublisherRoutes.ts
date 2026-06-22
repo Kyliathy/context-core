@@ -1,3 +1,10 @@
+/**
+ * Agent Publisher REST routes — preview, publish, drift, and publish status.
+ *
+ * Architecture: server/zz-reach2/architecture/agents/archi-agent-builder.md
+ * Upgrade: server/zz-reach2/upgrades/2026-06/r2ap-agent-publisher-2.md
+ */
+
 import type { Express } from "express";
 import type { RouteContext } from "../RouteContext.js";
 import type { CanonicalAgentDefinition, PublishTarget } from "../../agentPublisher/types.js";
@@ -9,11 +16,18 @@ function routeError(error: unknown): { status: number; message: string }
 	return { status, message: (error as Error).message || "Internal server error" };
 }
 
+/** Resolves live AgentPublisher from runtime or startup snapshot. */
+function resolveAgentPublisher(ctx: RouteContext)
+{
+	return ctx.agentBuilderRuntime?.getAgentPublisher() ?? ctx.agentPublisher;
+}
+
 export function register(app: Express, ctx: RouteContext): void
 {
 	app.get("/api/agent-publisher/platforms", (req, res) =>
 	{
-		if (!ctx.agentPublisher)
+		const agentPublisher = resolveAgentPublisher(ctx);
+		if (!agentPublisher)
 		{
 			res.status(404).json({ error: "AgentPublisher not available" });
 			return;
@@ -21,7 +35,7 @@ export function register(app: Express, ctx: RouteContext): void
 		const projectName = typeof req.query.projectName === "string" ? req.query.projectName.trim() : undefined;
 		try
 		{
-			res.json({ platforms: ctx.agentPublisher.getPlatforms(projectName || undefined) });
+			res.json({ platforms: agentPublisher.getPlatforms(projectName || undefined) });
 		} catch (error)
 		{
 			const { status, message } = routeError(error);
@@ -31,7 +45,8 @@ export function register(app: Express, ctx: RouteContext): void
 
 	app.get("/api/agent-publisher/tree", (req, res) =>
 	{
-		if (!ctx.agentPublisher)
+		const agentPublisher = resolveAgentPublisher(ctx);
+		if (!agentPublisher)
 		{
 			res.status(404).json({ error: "AgentPublisher not available" });
 			return;
@@ -44,7 +59,7 @@ export function register(app: Express, ctx: RouteContext): void
 		}
 		try
 		{
-			res.json({ tree: ctx.agentPublisher.getTree(projectName) });
+			res.json({ tree: agentPublisher.getTree(projectName) });
 		} catch (error)
 		{
 			const { status, message } = routeError(error);
@@ -54,7 +69,8 @@ export function register(app: Express, ctx: RouteContext): void
 
 	app.post("/api/agent-publisher/heat", (req, res) =>
 	{
-		if (!ctx.agentPublisher)
+		const agentPublisher = resolveAgentPublisher(ctx);
+		if (!agentPublisher)
 		{
 			res.status(404).json({ error: "AgentPublisher not available" });
 			return;
@@ -67,7 +83,7 @@ export function register(app: Express, ctx: RouteContext): void
 		}
 		try
 		{
-			res.json(ctx.agentPublisher.computeHeat(body.definition));
+			res.json(agentPublisher.computeHeat(body.definition));
 		} catch (error)
 		{
 			const { status, message } = routeError(error);
@@ -77,7 +93,8 @@ export function register(app: Express, ctx: RouteContext): void
 
 	app.post("/api/agent-publisher/preview", (req, res) =>
 	{
-		if (!ctx.agentPublisher)
+		const agentPublisher = resolveAgentPublisher(ctx);
+		if (!agentPublisher)
 		{
 			res.status(404).json({ error: "AgentPublisher not available" });
 			return;
@@ -95,7 +112,7 @@ export function register(app: Express, ctx: RouteContext): void
 		}
 		try
 		{
-			res.json(ctx.agentPublisher.preview(body.definition, body.targets));
+			res.json(agentPublisher.preview(body.definition, body.targets));
 		} catch (error)
 		{
 			const { status, message } = routeError(error);
@@ -105,7 +122,8 @@ export function register(app: Express, ctx: RouteContext): void
 
 	app.post("/api/agent-publisher/publish", (req, res) =>
 	{
-		if (!ctx.agentPublisher)
+		const agentPublisher = resolveAgentPublisher(ctx);
+		if (!agentPublisher)
 		{
 			res.status(404).json({ error: "AgentPublisher not available" });
 			return;
@@ -123,7 +141,7 @@ export function register(app: Express, ctx: RouteContext): void
 		}
 		try
 		{
-			const result = ctx.agentPublisher.publish(body.definition, body.targets);
+			const result = agentPublisher.publish(body.definition, body.targets);
 			const status = result.errors.length > 0 ? 400 : 201;
 			res.status(status).json(result);
 		} catch (error)
@@ -133,9 +151,10 @@ export function register(app: Express, ctx: RouteContext): void
 		}
 	});
 
-	app.get("/api/agent-publisher/drift", (req, res) =>
+	app.get("/api/agent-publisher/status", (req, res) =>
 	{
-		if (!ctx.agentPublisher)
+		const agentPublisher = resolveAgentPublisher(ctx);
+		if (!agentPublisher)
 		{
 			res.status(404).json({ error: "AgentPublisher not available" });
 			return;
@@ -148,7 +167,31 @@ export function register(app: Express, ctx: RouteContext): void
 		}
 		try
 		{
-			res.json(ctx.agentPublisher.detectDrift(canonicalId));
+			res.json(agentPublisher.getPublishStatus(canonicalId));
+		} catch (error)
+		{
+			const { status, message } = routeError(error);
+			res.status(status).json({ error: message });
+		}
+	});
+
+	app.get("/api/agent-publisher/drift", (req, res) =>
+	{
+		const agentPublisher = resolveAgentPublisher(ctx);
+		if (!agentPublisher)
+		{
+			res.status(404).json({ error: "AgentPublisher not available" });
+			return;
+		}
+		const canonicalId = typeof req.query.canonicalId === "string" ? req.query.canonicalId.trim() : "";
+		if (!canonicalId)
+		{
+			res.status(400).json({ error: "canonicalId query parameter is required" });
+			return;
+		}
+		try
+		{
+			res.json(agentPublisher.detectDrift(canonicalId));
 		} catch (error)
 		{
 			const { status, message } = routeError(error);
@@ -158,7 +201,8 @@ export function register(app: Express, ctx: RouteContext): void
 
 	app.post("/api/agent-publisher/drift", (req, res) =>
 	{
-		if (!ctx.agentPublisher)
+		const agentPublisher = resolveAgentPublisher(ctx);
+		if (!agentPublisher)
 		{
 			res.status(404).json({ error: "AgentPublisher not available" });
 			return;
@@ -172,7 +216,7 @@ export function register(app: Express, ctx: RouteContext): void
 		}
 		try
 		{
-			res.json(ctx.agentPublisher.detectDrift(canonicalId, body.definition));
+			res.json(agentPublisher.detectDrift(canonicalId, body.definition));
 		} catch (error)
 		{
 			const { status, message } = routeError(error);

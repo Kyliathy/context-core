@@ -317,6 +317,11 @@ describe("AgentPublisher integration", () =>
 			const reloaded = new CanonicalAgentStore(storage);
 			reloaded.load();
 			expect(reloaded.get(def.id)?.name).toBe("worker");
+			const artifacts = reloaded.get(def.id)?.publishedArtifacts ?? [];
+			expect(artifacts.length).toBe(1);
+			expect(artifacts[0]?.platform).toBe("cursor");
+			expect(artifacts[0]?.artifactKind).toBe("agent");
+			expect(artifacts[0]?.absolutePath).toContain("AGENTS.md");
 		}
 		finally
 		{
@@ -399,9 +404,10 @@ describe("AgentPublisher integration", () =>
 			expect(publishResult.errors).toEqual([]);
 			const listed = builder.list();
 			const worker = listed.agents.find((a) => a.name === "worker");
-			expect(worker?.platform).toBe("cursor");
-			expect(worker?.platforms.some((p) => p.platform === "cursor")).toBe(true);
-			expect(worker?.platforms.some((p) => p.platform === "codex")).toBe(false);
+			expect(worker?.canonicalId).toBe(def.id);
+			expect(worker?.unpublished).toBe(false);
+			expect(worker?.publishedTo.some((p) => p.platform === "cursor")).toBe(true);
+			expect(worker?.publishedTo.some((p) => p.platform === "codex")).toBe(false);
 		}
 		finally
 		{

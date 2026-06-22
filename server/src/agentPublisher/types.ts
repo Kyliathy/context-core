@@ -2,7 +2,7 @@
  * Agent Publisher shared types.
  *
  * Architecture: server/zz-reach2/architecture/agents/archi-agent-builder.md
- * Upgrade: server/zz-reach2/upgrades/2026-06/r2ab3-agent-builder-3.md
+ * Upgrade: server/zz-reach2/upgrades/2026-06/r2ab3-agent-builder-3.md, r2ap-agent-publisher-2.md
  */
 
 /** Supported publish target platforms. */
@@ -56,6 +56,18 @@ export interface CanonicalAgentDefinition
 	paths?: string[];
 	/** When true, Cursor skill is manual-invocation only (maps to disable-model-invocation). */
 	disableModelInvocation?: boolean;
+	/** Append-only publish history for Publisher "Already published" UI. */
+	publishedArtifacts?: CanonicalPublishedArtifact[];
+}
+
+/** One historical publish record stored on agent-definitions.json. */
+export interface CanonicalPublishedArtifact
+{
+	platform: PublishPlatform;
+	artifactKind: ArtifactKind;
+	absolutePath: string;
+	publishedAt: string;
+	linkStrategy?: LinkStrategy;
 }
 
 /** One publish destination selected in the Publisher UI. */
@@ -151,6 +163,16 @@ export interface DirHeatNode
 	children: DirHeatNode[];
 }
 
+/** Markdown source chip for Publisher placement UX (separate from directory heat tree). */
+export interface PlacementMdSource
+{
+	absolutePath: string;
+	displayPath: string;
+	inBasket: boolean;
+	isRelated: boolean;
+	directoryPaths: Array<{ absolutePath: string; hits: number }>;
+}
+
 /** Path heat analysis result for one project. */
 export interface PathHeatResult
 {
@@ -158,11 +180,14 @@ export interface PathHeatResult
 	projectRoot: string;
 	totalHits: number;
 	tree: DirHeatNode[];
+	/** @deprecated Prefer mdSources for placement; retained for older clients. */
 	topPaths: Array<{ path: string; hits: number }>;
 	suggestedOutputDir?: string;
 	droppedPathCount: number;
 	/** Absolute paths of knowledge basket files included in this analysis. */
 	knowledgeFilePaths?: string[];
+	/** Per-markdown-source placement attribution for chip UI. */
+	mdSources?: PlacementMdSource[];
 }
 
 /** Per-platform default directory contract returned by GET /platforms. */

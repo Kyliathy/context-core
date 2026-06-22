@@ -19,6 +19,7 @@ import type { QdrantService } from "../vector/QdrantService.js";
 import { initSearchIndex } from "../search/searchEngine.js";
 import type { TopicStore } from "../settings/TopicStore.js";
 import type { AgentBuilder } from "../agentBuilder/AgentBuilder.js";
+import type { AgentBuilderRuntime } from "../agentBuilder/AgentBuilderRuntime.js";
 import type { AgentPublisher } from "../agentPublisher/AgentPublisher.js";
 import type { ScopeStore } from "../settings/ScopeStore.js";
 import type { FavoriteStore } from "../settings/FavoriteStore.js";
@@ -50,6 +51,7 @@ export async function startServer(
 	topicStore?: TopicStore,
 	agentBuilder?: AgentBuilder,
 	agentPublisher?: AgentPublisher,
+	agentBuilderRuntime?: AgentBuilderRuntime,
 	scopeStore?: ScopeStore,
 	favoriteStore?: FavoriteStore,
 	summaryEmbeddingCache?: SummaryEmbeddingCache
@@ -93,6 +95,7 @@ export async function startServer(
 		favoriteStore,
 		agentBuilder,
 		agentPublisher,
+		agentBuilderRuntime,
 		summaryEmbeddingCache,
 		vectorServices,
 	};

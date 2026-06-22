@@ -247,14 +247,14 @@ Directory-only heat rule: path mentions that resolve to files count against thei
 
 Runtime audit and decision capture.
 
-- [ ] Confirm `AgentBuilder.list()` still scans `indexedFiles` and disk artifacts.
-- [ ] Confirm `CanonicalAgentStore.list()` returns all stored definitions without disk artifact dependency.
-- [ ] Confirm `PublishLedger.getByCanonicalId()` and `detectDrift()` cover the status data needed by Publisher.
-- [ ] Confirm `GET /api/agent-builder/get-definition` already returns canonical definitions by id.
-- [ ] Confirm visualizer Agent List cards still use `agentPath` / `codexEntryId` as identity.
-- [ ] Confirm whether AgentBuilder endpoints are unavailable when no `dataSources` exist.
-- [ ] Decide whether list performs cheap missing-file checks or leaves all drift to status endpoint.
-- [ ] Record findings under **Runtime Audit Notes**.
+- [X] Confirm `AgentBuilder.list()` still scans `indexedFiles` and disk artifacts.
+- [X] Confirm `CanonicalAgentStore.list()` returns all stored definitions without disk artifact dependency.
+- [X] Confirm `PublishLedger.getByCanonicalId()` and `detectDrift()` cover the status data needed by Publisher.
+- [X] Confirm `GET /api/agent-builder/get-definition` already returns canonical definitions by id.
+- [X] Confirm visualizer Agent List cards still use `agentPath` / `codexEntryId` as identity.
+- [X] Confirm whether AgentBuilder endpoints are unavailable when no `dataSources` exist.
+- [X] Decide whether list performs cheap missing-file checks or leaves all drift to status endpoint.
+- [X] Record findings under **Runtime Audit Notes**.
 
 {{MEDIUM}}
 ## 2.
@@ -290,14 +290,14 @@ export interface CanonicalAgentListEntry {
 }
 ```
 
-- [ ] Replace or add server list types: `CanonicalAgentListEntry`, `PublishedTargetSummary`, and updated `AgentListResponse`.
-- [ ] Preserve legacy type names only if it reduces churn, but make their fields canonical-first.
-- [ ] Include `artifactFormat`, `actualLinkStrategy`, `codexEntryId`, and `publishedAt` in published summaries when present.
-- [ ] Derive `hint` from canonical `"argument-hint"` or `whenToUse`.
-- [ ] Add a stable `savedAt` strategy, either from definition metadata or omit it until the store schema grows.
-- [ ] Mirror the new response types in `visualizer/src/types.ts`.
-- [ ] Keep `platform` values aligned with `PublishPlatform`, not legacy `"github"` labels.
-- [ ] Add a short JSDoc note that Agent List is canonical-first and disk artifacts are publish output.
+- [X] Replace or add server list types: `CanonicalAgentListEntry`, `PublishedTargetSummary`, and updated `AgentListResponse`.
+- [X] Preserve legacy type names only if it reduces churn, but make their fields canonical-first.
+- [X] Include `artifactFormat`, `actualLinkStrategy`, `codexEntryId`, and `publishedAt` in published summaries when present.
+- [X] Derive `hint` from canonical `"argument-hint"` or `whenToUse`.
+- [X] Add a stable `savedAt` strategy, either from definition metadata or omit it until the store schema grows.
+- [X] Mirror the new response types in `visualizer/src/types.ts`.
+- [X] Keep `platform` values aligned with `PublishPlatform`, not legacy `"github"` labels.
+- [X] Add a short JSDoc note that Agent List is canonical-first and disk artifacts are publish output.
 
 {{MEDIUM}}
 ## 3.
@@ -335,27 +335,27 @@ function toCanonicalListEntry(def: CanonicalAgentDefinition, rows: PublishLedger
 }
 ```
 
-- [ ] Add a canonical-list mapper from `CanonicalAgentDefinition` plus ledger rows.
-- [ ] Avoid reading platform files while mapping list entries.
-- [ ] Sort catalog entries deterministically by `projectName`, then `name`.
-- [ ] Use `definition.id` as the only stable list identity.
-- [ ] Decide whether to include cheap `missing-file` state in list rows or leave it to status.
-- [ ] Add a test for two definitions with no ledger rows.
-- [ ] Add a test for two definitions where only one has ledger rows.
-- [ ] Add a test that a disk-only legacy agent file is ignored.
+- [X] Add a canonical-list mapper from `CanonicalAgentDefinition` plus ledger rows.
+- [X] Avoid reading platform files while mapping list entries.
+- [X] Sort catalog entries deterministically by `projectName`, then `name`.
+- [X] Use `definition.id` as the only stable list identity.
+- [X] Decide whether to include cheap `missing-file` state in list rows or leave it to status.
+- [X] Add a test for two definitions with no ledger rows.
+- [X] Add a test for two definitions where only one has ledger rows.
+- [X] Add a test that a disk-only legacy agent file is ignored.
 
 {{MEDIUM}}
 ## 4.
 
 Canonical list and status implementation.
 
-- [ ] Implement `AgentBuilder.listCanonicalAgents()` or replace `list()` with canonical-store-only behavior.
-- [ ] Join ledger rows by `canonicalId`; do not scan disk artifacts to decide existence.
-- [ ] Return unpublished definitions with `publishedTo: []` and `unpublished: true`.
-- [ ] Keep `GET /api/agent-builder/list` as the route path, but change its response shape.
-- [ ] Add `GET /api/agent-publisher/status?canonicalId=...`.
-- [ ] Reuse `AgentPublisher.detectDrift(canonicalId)` in the status route when feasible.
-- [ ] Return a clear 404 when `canonicalId` is unknown.
+- [X] Implement `AgentBuilder.listCanonicalAgents()` or replace `list()` with canonical-store-only behavior.
+- [X] Join ledger rows by `canonicalId`; do not scan disk artifacts to decide existence.
+- [X] Return unpublished definitions with `publishedTo: []` and `unpublished: true`.
+- [X] Keep `GET /api/agent-builder/list` as the route path, but change its response shape.
+- [X] Add `GET /api/agent-publisher/status?canonicalId=...`.
+- [X] Reuse `AgentPublisher.detectDrift(canonicalId)` in the status route when feasible.
+- [X] Return a clear 404 when `canonicalId` is unknown.
 - [ ] Add route tests for published, unpublished, unknown id, and disk-only legacy artifact cases.
 
 {{MEDIUM}}
@@ -363,13 +363,13 @@ Canonical list and status implementation.
 
 Visualizer canonical Agent List cards.
 
-- [ ] Update visualizer `AgentListEntry` and `AgentListResponse` mirrored types.
-- [ ] Update `toAgentListCards()` to use `canonicalId` as card id.
-- [ ] Show project, description, hint, and published platform labels from `publishedTo`.
-- [ ] Show a clear "Not published" state when `unpublished` is true.
-- [ ] Remove `agentPath` as primary identity from Agent List cards.
-- [ ] Extend `CardData` and D3 event details with `canonicalId`.
-- [ ] Keep `agentPath` fields only as optional legacy/debug data if still needed elsewhere.
+- [X] Update visualizer `AgentListEntry` and `AgentListResponse` mirrored types.
+- [X] Update `toAgentListCards()` to use `canonicalId` as card id.
+- [X] Show project, description, hint, and published platform labels from `publishedTo`.
+- [X] Show a clear "Not published" state when `unpublished` is true.
+- [X] Remove `agentPath` as primary identity from Agent List cards.
+- [X] Extend `CardData` and D3 event details with `canonicalId`.
+- [X] Keep `agentPath` fields only as optional legacy/debug data if still needed elsewhere.
 - [ ] Add UI/card mapping tests for published and unpublished canonical entries.
 
 {{MEDIUM}}
@@ -377,27 +377,27 @@ Visualizer canonical Agent List cards.
 
 Edit, publish, and refresh flow changes.
 
-- [ ] Add `fetchAgentBuilderGetDefinition(canonicalId)` client API wrapper.
-- [ ] Update `handleCardEditAgent` to load canonical definitions by `canonicalId`.
-- [ ] Map canonical `knowledge[]` back to Builder basket entries, preserving file vs text refs.
-- [ ] Update `handleCardPublishAgent` to load canonical definitions by `canonicalId`.
-- [ ] Remove client-side legacy `agentDefinitionToCanonical()` from the Agent List publish path.
-- [ ] Ensure saving an edited canonical agent upserts the same `canonicalId`, not a duplicate.
-- [ ] Refresh Agent List after save and after publish.
-- [ ] Preserve template edit/use flows independently from Agent List changes.
+- [X] Add `fetchAgentBuilderGetDefinition(canonicalId)` client API wrapper.
+- [X] Update `handleCardEditAgent` to load canonical definitions by `canonicalId`.
+- [X] Map canonical `knowledge[]` back to Builder basket entries, preserving file vs text refs.
+- [X] Update `handleCardPublishAgent` to load canonical definitions by `canonicalId`.
+- [X] Remove client-side legacy `agentDefinitionToCanonical()` from the Agent List publish path.
+- [X] Ensure saving an edited canonical agent upserts the same `canonicalId`, not a duplicate.
+- [X] Refresh Agent List after save and after publish.
+- [X] Preserve template edit/use flows independently from Agent List changes.
 
 {{MEDIUM}}
 ## 7.
 
 Publish dialog status display.
 
-- [ ] On dialog open, fetch `GET /api/agent-publisher/status?canonicalId=...` when definition id exists.
-- [ ] Show per-platform row state: published, not published, drift, missing, or unknown.
-- [ ] Show last published path and time for published targets.
-- [ ] Pre-fill output directory from last published target for that platform/artifact kind when available.
-- [ ] Do not block publishing when drift is present; display a warning near preview/confirm.
-- [ ] Refresh status after successful publish without closing the dialog.
-- [ ] Invalidate Agent List data when the dialog closes after a publish.
+- [X] On dialog open, fetch `GET /api/agent-publisher/status?canonicalId=...` when definition id exists.
+- [X] Show per-platform row state: published, not published, drift, missing, or unknown.
+- [X] Show last published path and time for published targets.
+- [X] Pre-fill output directory from last published target for that platform/artifact kind when available.
+- [X] Do not block publishing when drift is present; display a warning near preview/confirm.
+- [X] Refresh status after successful publish without closing the dialog.
+- [X] Invalidate Agent List data when the dialog closes after a publish.
 - [ ] Add focused UI tests for status rendering and output directory prefill.
 
 {{SIMPLE}}
@@ -405,14 +405,14 @@ Publish dialog status display.
 
 Part A documentation and verification.
 
-- [ ] Update `archi-agent-builder.md` Indexing/List section: list equals canonical catalog plus ledger join.
-- [ ] Update `archi-agent-builder-ui.md` Agent List edit/publish flow.
-- [ ] Add release note: disk-only platform artifacts are no longer listed as saved agents.
-- [ ] Run `cd server; bun run typecheck`.
+- [X] Update `archi-agent-builder.md` Indexing/List section: list equals canonical catalog plus ledger join.
+- [X] Update `archi-agent-builder-ui.md` Agent List edit/publish flow.
+- [X] Add release note: disk-only platform artifacts are no longer listed as saved agents.
+- [X] Run `cd server; bun run typecheck`.
 - [ ] Run targeted server route tests for AgentBuilder and AgentPublisher status.
-- [ ] Run `cd visualizer; npm run typecheck`.
-- [ ] Run targeted visualizer tests for Agent List mapping and publish/edit handlers.
-- [ ] Record Part A outcome under **Verification Outcome**.
+- [X] Run `cd visualizer; npm run typecheck`.
+- [X] Run targeted visualizer tests for Agent List mapping and publish/edit handlers.
+- [X] Record Part A outcome under **Verification Outcome**.
 
 ---
 
@@ -434,14 +434,14 @@ app.get("/api/agent-builder/vault-roots", (_req, res) => {
 });
 ```
 
-- [ ] Confirm product choice: custom server-backed Vault Manager view plus manual absolute path fallback.
-- [ ] Decide route namespace, preferring `agentBuilderRoutes.ts` unless a config-route module is cleaner.
-- [ ] Mark Vault browse routes as independent from `ctx.agentBuilder`.
-- [ ] Mark Vault mutation route as dependent on a config/runtime service, not on existing `ctx.agentBuilder`.
-- [ ] Decide whether the Add Vault shortcut opens the full view or pre-opens a lightweight add flow inside the view.
-- [ ] Decide where runtime service lives in `RouteContext`.
-- [ ] Define warning behavior for selecting huge roots like `D:\`, user home, or a repo root with `node_modules`.
-- [ ] Record decisions under **Runtime Audit Notes** before implementation.
+- [X] Confirm product choice: custom server-backed Vault Manager view plus manual absolute path fallback.
+- [X] Decide route namespace, preferring `agentBuilderRoutes.ts` unless a config-route module is cleaner.
+- [X] Mark Vault browse routes as independent from `ctx.agentBuilder`.
+- [X] Mark Vault mutation route as dependent on a config/runtime service, not on existing `ctx.agentBuilder`.
+- [X] Decide whether the Add Vault shortcut opens the full view or pre-opens a lightweight add flow inside the view.
+- [X] Decide where runtime service lives in `RouteContext`.
+- [X] Define warning behavior for selecting huge roots like `D:\`, user home, or a repo root with `node_modules`.
+- [X] Record decisions under **Runtime Audit Notes** before implementation.
 
 {{MEDIUM}}
 ## 10.
@@ -465,14 +465,14 @@ function makeVaultDataSource(input: AddVaultInput): DataSourceEntry {
 }
 ```
 
-- [ ] Default category key for new entries to `vaults`.
-- [ ] Default `projectRoot` to the selected path.
-- [ ] Keep `agentPath` optional because Publisher can infer native paths from `projectRoot`.
-- [ ] Default source `name` from selected folder basename.
-- [ ] Add duplicate-name rule, such as suffixing `Name 2` or requiring user edit.
-- [ ] Reject duplicate normalized absolute paths.
-- [ ] Add unit tests for defaults from `D:\Codez\Nexus\NewProject`.
-- [ ] Add unit tests for duplicate path and duplicate name behavior.
+- [X] Default category key for new entries to `vaults`.
+- [X] Default `projectRoot` to the selected path.
+- [X] Keep `agentPath` optional because Publisher can infer native paths from `projectRoot`.
+- [X] Default source `name` from selected folder basename.
+- [X] Add duplicate-name rule, such as suffixing `Name 2` or requiring user edit.
+- [X] Reject duplicate normalized absolute paths.
+- [X] Add unit tests for defaults from `D:\Codez\Nexus\NewProject`.
+- [X] Add unit tests for duplicate path and duplicate name behavior.
 
 {{MEDIUM}}
 ## 11.
@@ -490,28 +490,28 @@ flowchart LR
     New --> Routes["Vault routes import editor"]
 ```
 
-- [ ] Move pure `cc.json` parse/write helpers into a non-CLI module if importing `cxccli.ts` pulls prompt/commander behavior.
+- [X] Move pure `cc.json` parse/write helpers into a non-CLI module if importing `cxccli.ts` pulls prompt/commander behavior.
 - [ ] Keep `cxccli.ts` behavior working by importing or re-exporting shared helpers.
-- [ ] Preserve tab-indented JSON output.
-- [ ] Preserve atomic temp-file write behavior.
-- [ ] Preserve optional `.bak` behavior.
-- [ ] Add tests proving shared helper reads a temp `cc.json`.
-- [ ] Add tests proving shared helper writes only the targeted machine.
-- [ ] Add tests proving unknown top-level and machine fields survive round trip.
+- [X] Preserve tab-indented JSON output.
+- [X] Preserve atomic temp-file write behavior.
+- [X] Preserve optional `.bak` behavior.
+- [X] Add tests proving shared helper reads a temp `cc.json`.
+- [X] Add tests proving shared helper writes only the targeted machine.
+- [X] Add tests proving unknown top-level and machine fields survive round trip.
 
 {{MEDIUM}}
 ## 12.
 
 Data-source mutation service.
 
-- [ ] Add a data-source mutation service that loads `server/cc.json`, selects the current machine, and mutates only that machine.
-- [ ] Validate selected path is absolute, exists, and is a directory readable by the server process.
-- [ ] Dedupe by normalized absolute path using Windows case-insensitive comparison.
-- [ ] Write `cc.json` atomically and preserve unrelated machines, harnesses, and unknown fields.
-- [ ] Add a `createVaultDataSource(configPath, machineName, input)` service return shape.
-- [ ] Return the created entry plus updated AgentBuilder source summaries.
-- [ ] Add route/service tests for no machine match and malformed config.
-- [ ] Add a test proving existing canonical definitions and ledger rows survive Add Vault.
+- [X] Add a data-source mutation service that loads `server/cc.json`, selects the current machine, and mutates only that machine.
+- [X] Validate selected path is absolute, exists, and is a directory readable by the server process.
+- [X] Dedupe by normalized absolute path using Windows case-insensitive comparison.
+- [X] Write `cc.json` atomically and preserve unrelated machines, harnesses, and unknown fields.
+- [X] Add a `createVaultDataSource(configPath, machineName, input)` service return shape.
+- [X] Return the created entry plus updated AgentBuilder source summaries.
+- [X] Add route/service tests for no machine match and malformed config.
+- [X] Add a test proving existing canonical definitions and ledger rows survive Add Vault.
 
 {{MEDIUM}}
 ## 13.
@@ -531,28 +531,28 @@ flowchart TD
     AB --> Prepare["return fresh prepare summary"]
 ```
 
-- [ ] Add `AgentBuilder.refreshSources(machineConfig)` or equivalent constructor-safe method.
-- [ ] Ensure refresh clears stale indexed rows for removed/replaced sources.
-- [ ] Re-run `agentBuilder.index()` after source refresh.
-- [ ] Add `AgentPublisher.refreshSources(sources)` or recreate publisher through a runtime manager.
-- [ ] Ensure `PathPolicy` and `PathHeatAnalyzer` see the new source list.
-- [ ] Keep canonical store and publish ledger instances stable across refresh.
-- [ ] Add test: add source, call `/prepare`, new source appears without restart.
-- [ ] Add test: new source has Publisher default directories without restart.
+- [X] Add `AgentBuilder.refreshSources(machineConfig)` or equivalent constructor-safe method.
+- [X] Ensure refresh clears stale indexed rows for removed/replaced sources.
+- [X] Re-run `agentBuilder.index()` after source refresh.
+- [X] Add `AgentPublisher.refreshSources(sources)` or recreate publisher through a runtime manager.
+- [X] Ensure `PathPolicy` and `PathHeatAnalyzer` see the new source list.
+- [X] Keep canonical store and publish ledger instances stable across refresh.
+- [X] Add test: add source, call `/prepare`, new source appears without restart.
+- [X] Add test: new source has Publisher default directories without restart.
 
 {{MEDIUM}}
 ## 14.
 
 Directory browser server routes.
 
-- [ ] Add `GET /api/agent-builder/vault-roots` or equivalent to list browse roots/drives.
-- [ ] Add `GET /api/agent-builder/vault-children?path=...` to list child directories only.
-- [ ] Return `path`, `parentPath`, breadcrumb segments, and sorted child directories.
-- [ ] Include minimal child metadata: name, absolute path, whether child is readable when cheap.
-- [ ] Add `GET /api/agent-builder/vault-info?path=...` for selected-path validation and broad-root warnings.
-- [ ] Guard invalid, nonexistent, non-directory, and unreadable paths with JSON errors.
+- [X] Add `GET /api/agent-builder/vault-roots` or equivalent to list browse roots/drives.
+- [X] Add `GET /api/agent-builder/vault-children?path=...` to list child directories only.
+- [X] Return `path`, `parentPath`, breadcrumb segments, and sorted child directories.
+- [X] Include minimal child metadata: name, absolute path, whether child is readable when cheap.
+- [X] Add `GET /api/agent-builder/vault-info?path=...` for selected-path validation and broad-root warnings.
+- [X] Guard invalid, nonexistent, non-directory, and unreadable paths with JSON errors.
 - [ ] Add route tests for roots, children, parent navigation, invalid path, and unreadable directory.
-- [ ] Keep all browser routes read-only and independent from `cc.json` mutation.
+- [X] Keep all browser routes read-only and independent from `cc.json` mutation.
 
 {{MEDIUM}}
 ## 15.
@@ -573,10 +573,10 @@ app.post("/api/agent-builder/vaults", async (req, res) => {
 });
 ```
 
-- [ ] Add `POST /api/agent-builder/vaults` to persist a selected path as an AgentBuilder source.
-- [ ] Keep this route available when `ctx.agentBuilder` is undefined.
-- [ ] Return the created/updated `DataSourceEntry`, `configPath`, and fresh `PrepareResponse` summary.
-- [ ] Return consistent JSON errors for duplicates, invalid path, and write failure.
+- [X] Add `POST /api/agent-builder/vaults` to persist a selected path as an AgentBuilder source.
+- [X] Keep this route available when `ctx.agentBuilder` is undefined.
+- [X] Return the created/updated `DataSourceEntry`, `configPath`, and fresh `PrepareResponse` summary.
+- [X] Return consistent JSON errors for duplicates, invalid path, and write failure.
 - [ ] Add route test for add success with an existing AgentBuilder.
 - [ ] Add route test for add success when no AgentBuilder existed at startup.
 - [ ] Add route test for duplicate path.
@@ -587,14 +587,14 @@ app.post("/api/agent-builder/vaults", async (req, res) => {
 
 Vault Manager view integration.
 
-- [ ] Add `vault-manager` to `ViewType`.
-- [ ] Add a built-in `VAULT_MANAGER_VIEW` with stable id, label, color, and order.
-- [ ] Add `vault-manager` to `VIEW_TYPE_DEFAULTS`, `seedViews()`, and stored-view validation.
-- [ ] Add a Manage Vaults action to the Agent Builder column in the view dropdown.
-- [ ] Add `handleManageVaults` in `App.tsx` and wire it through `SearchBar`.
-- [ ] Add an Add Vault shortcut next to `SourceFilterDropdown` that switches to Vault Manager.
-- [ ] Exclude Vault Manager from search execution and standard result-card rendering.
-- [ ] Update disabled search/edit/filter logic for the new view.
+- [X] Add `vault-manager` to `ViewType`.
+- [X] Add a built-in `VAULT_MANAGER_VIEW` with stable id, label, color, and order.
+- [X] Add `vault-manager` to `VIEW_TYPE_DEFAULTS`, `seedViews()`, and stored-view validation.
+- [X] Add a Manage Vaults action to the Agent Builder column in the view dropdown.
+- [X] Add `handleManageVaults` in `App.tsx` and wire it through `SearchBar`.
+- [X] Add an Add Vault shortcut next to `SourceFilterDropdown` that switches to Vault Manager.
+- [X] Exclude Vault Manager from search execution and standard result-card rendering.
+- [X] Update disabled search/edit/filter logic for the new view.
 
 {{MEDIUM}}
 ## 17.
@@ -614,55 +614,55 @@ export default function VaultManagerView({ onVaultAdded }: Props) {
 }
 ```
 
-- [ ] Create `visualizer/src/components/vaults/VaultManagerView.tsx` or equivalent.
-- [ ] Create client API wrappers for roots, children, path info, and create vault.
-- [ ] Add `VaultRoot`, `VaultChild`, `VaultInfo`, and `CreateVaultResponse` types.
-- [ ] Render the component instead of `ChatMap` when `activeView.type === "vault-manager"`.
-- [ ] Add local loading and error states for roots, children, and validation.
-- [ ] Add `onVaultAdded` callback prop for source refresh.
+- [X] Create `visualizer/src/components/vaults/VaultManagerView.tsx` or equivalent.
+- [X] Create client API wrappers for roots, children, path info, and create vault.
+- [X] Add `VaultRoot`, `VaultChild`, `VaultInfo`, and `CreateVaultResponse` types.
+- [X] Render the component instead of `ChatMap` when `activeView.type === "vault-manager"`.
+- [X] Add local loading and error states for roots, children, and validation.
+- [X] Add `onVaultAdded` callback prop for source refresh.
 - [ ] Add an initial smoke test that the view renders roots loading state.
-- [ ] Add empty-state copy for no roots or read failure.
+- [X] Add empty-state copy for no roots or read failure.
 
 {{MEDIUM}}
 ## 18.
 
 Vault Explorer navigation UI.
 
-- [ ] Render root shortcuts and recent/current configured vaults as quick navigation targets.
-- [ ] Render clickable breadcrumbs with stable truncation for long Windows paths.
-- [ ] Render child directories as a dense selectable list.
-- [ ] Support single-click selection of a directory.
+- [X] Render root shortcuts and recent/current configured vaults as quick navigation targets.
+- [X] Render clickable breadcrumbs with stable truncation for long Windows paths.
+- [X] Render child directories as a dense selectable list.
+- [X] Support single-click selection of a directory.
 - [ ] Support double-click or Enter to navigate into a directory.
-- [ ] Support parent navigation through breadcrumb or `parentPath`.
-- [ ] Add manual absolute path input with a Validate button.
-- [ ] Add tests for root click, breadcrumb click, child navigation, and manual path validation.
+- [X] Support parent navigation through breadcrumb or `parentPath`.
+- [X] Add manual absolute path input with a Validate button.
+- [X] Add tests for root click, breadcrumb click, child navigation, and manual path validation.
 
 {{MEDIUM}}
 ## 19.
 
 Vault Explorer details and styling.
 
-- [ ] Show selected path details: path, basename-derived name, warnings, and existing-source match.
-- [ ] Add CSS that matches the current restrained dashboard/tool style without nested cards.
-- [ ] Use compact headings and stable row heights so long paths do not shift layout.
-- [ ] Avoid hero/landing-page treatment; this is an operational tool view.
-- [ ] Add focus-visible styles for keyboard navigation.
-- [ ] Add broad-root warning display.
-- [ ] Add duplicate-source warning display.
-- [ ] Add responsive layout behavior for narrow screens.
+- [X] Show selected path details: path, basename-derived name, warnings, and existing-source match.
+- [X] Add CSS that matches the current restrained dashboard/tool style without nested cards.
+- [X] Use compact headings and stable row heights so long paths do not shift layout.
+- [X] Avoid hero/landing-page treatment; this is an operational tool view.
+- [X] Add focus-visible styles for keyboard navigation.
+- [X] Add broad-root warning display.
+- [X] Add duplicate-source warning display.
+- [X] Add responsive layout behavior for narrow screens.
 
 {{MEDIUM}}
 ## 20.
 
 Add Vault submit flow.
 
-- [ ] Add editable fields for source name, source type, and optional category key.
-- [ ] Default name from selected folder basename and type to `Vault`.
-- [ ] Show broad-root and duplicate warnings before submit.
-- [ ] Disable submit until path validation succeeds and required fields are present.
-- [ ] Add `POST /api/agent-builder/vaults` to persist the selected path as an AgentBuilder source.
-- [ ] Return the created/updated `DataSourceEntry`, `configPath`, and fresh `PrepareResponse` summary.
-- [ ] Show success/failure inline and keep the selected vault visible after save.
+- [X] Add editable fields for source name and source type (category/projectRoot/agentPath deferred — server defaults apply).
+- [X] Default name from selected folder basename and type to `Vault`.
+- [X] Show broad-root and duplicate warnings before submit.
+- [X] Disable submit until path validation succeeds and required fields are present.
+- [X] Add `POST /api/agent-builder/vaults` to persist the selected path as an AgentBuilder source.
+- [X] Return the created/updated `DataSourceEntry`, `configPath`, and fresh `PrepareResponse` summary.
+- [X] Show success/failure inline and keep the selected vault visible after save.
 - [ ] Add component tests for browse, breadcrumbs, manual path, validation, duplicate, and submit success.
 
 {{MEDIUM}}
@@ -670,13 +670,13 @@ Add Vault submit flow.
 
 Refresh source inventory after Add Vault.
 
-- [ ] After successful Add Vault, refresh `agentBuilderSources` from returned prepare data or a fresh `/prepare` call.
-- [ ] Add the new source to `agentBuilderSelectedSources` by default.
-- [ ] Rerun the Agent Builder file-card fetch so the new vault's files appear.
-- [ ] Preserve existing source filter selections where possible.
-- [ ] Refresh Publisher platform capabilities/defaults when the active definition project matches the new source.
-- [ ] Ensure `useSearch` and `App.tsx` do not keep stale card data for removed/changed source lists.
-- [ ] Update empty-state copy so "No data sources defined" offers Add Vault directly.
+- [X] After successful Add Vault, refresh `agentBuilderSources` from returned prepare data or a fresh `/prepare` call.
+- [X] Add the new source to `agentBuilderSelectedSources` by default.
+- [X] Rerun the Agent Builder file-card fetch so the new vault's files appear.
+- [X] Preserve existing source filter selections where possible.
+- [X] Refresh Publisher platform capabilities/defaults when the active definition project matches the new source.
+- [X] Ensure `useSearch` and `App.tsx` do not keep stale card data for removed/changed source lists.
+- [X] Update empty-state copy so "No data sources defined" offers Add Vault directly.
 - [ ] Add a regression test for Add Vault followed by visible source/card refresh.
 
 {{SIMPLE}}
@@ -684,14 +684,14 @@ Refresh source inventory after Add Vault.
 
 Part B documentation and verification.
 
-- [ ] Update `README-DATA-SOURCES.MD` with Vault Manager instructions and browser path-picker limitation.
-- [ ] Update `archi-agent-builder.md` with runtime Add Vault config mutation and refresh behavior.
-- [ ] Update `archi-agent-builder-ui.md` with Vault Manager view, source shortcut, and source refresh flow.
-- [ ] Add troubleshooting notes for invalid paths, duplicate vaults, unreadable directories, and huge roots.
-- [ ] Run `cd server; bun run typecheck`.
+- [X] Update `README-DATA-SOURCES.MD` with Vault Manager instructions and browser path-picker limitation.
+- [X] Update `archi-agent-builder.md` with runtime Add Vault config mutation and refresh behavior.
+- [X] Update `archi-agent-builder-ui.md` with Vault Manager view, source shortcut, and source refresh flow.
+- [X] Add troubleshooting notes for invalid paths, duplicate vaults, unreadable directories, and huge roots.
+- [X] Run `cd server; bun run typecheck`.
 - [ ] Run server route tests covering Add Vault.
-- [ ] Run `cd visualizer; npm run typecheck`.
-- [ ] Record Part B outcome under **Verification Outcome**.
+- [X] Run `cd visualizer; npm run typecheck`.
+- [X] Record Part B outcome under **Verification Outcome**.
 
 ---
 
@@ -702,13 +702,13 @@ Part B documentation and verification.
 
 Runtime audit for placement.
 
-- [ ] Confirm `PathHeatAnalyzer` currently emits file paths in `topPaths` or tree leaves.
-- [ ] Confirm `PublishAgentDialog` currently renders top path chips as placement hints.
-- [ ] Confirm how basket knowledge file refs are resolved to absolute paths.
-- [ ] Confirm how related markdown links are currently extracted, if at all.
-- [ ] Decide whether related docs are discovered only from markdown links or also bare paths.
-- [ ] Decide whether Expand Context modifies only UI basket state or also immediately upserts canonical storage.
-- [ ] Record placement findings under **Runtime Audit Notes**.
+- [X] Confirm `PathHeatAnalyzer` currently emits file paths in `topPaths` or tree leaves.
+- [X] Confirm `PublishAgentDialog` currently renders top path chips as placement hints.
+- [X] Confirm how basket knowledge file refs are resolved to absolute paths.
+- [X] Confirm how related markdown links are currently extracted, if at all.
+- [X] Decide whether related docs are discovered only from markdown links or also bare paths.
+- [X] Decide whether Expand Context modifies only UI basket state or also immediately upserts canonical storage.
+- [X] Record placement findings under **Runtime Audit Notes**.
 
 {{MEDIUM}}
 ## 24.
@@ -729,14 +729,14 @@ export interface PlacementMdSource {
 }
 ```
 
-- [ ] Add `PlacementMdSource` and extend `PathHeatResult` with `mdSources`.
-- [ ] Keep `topPaths` temporarily for backward compatibility or mark it deprecated.
-- [ ] Mirror `PlacementMdSource` in visualizer types.
-- [ ] Add a helper for display path generation relative to project root.
-- [ ] Add a helper for checking whether a resolved path is markdown-like.
-- [ ] Add type-level tests or compile coverage for old heat responses where `mdSources` is absent.
-- [ ] Update API wrapper types in visualizer.
-- [ ] Document the new field in the target API shape if implementation changes it.
+- [X] Add `PlacementMdSource` and extend `PathHeatResult` with `mdSources`.
+- [X] Keep `topPaths` temporarily for backward compatibility or mark it deprecated.
+- [X] Mirror `PlacementMdSource` in visualizer types.
+- [X] Add a helper for display path generation relative to project root.
+- [X] Add a helper for checking whether a resolved path is markdown-like.
+- [X] Add type-level tests or compile coverage for old heat responses where `mdSources` is absent.
+- [X] Update API wrapper types in visualizer.
+- [X] Document the new field in the target API shape if implementation changes it.
 
 {{MEDIUM}}
 ## 25.
@@ -753,11 +753,11 @@ flowchart LR
     Source --> Aggregate["directory heat aggregation"]
 ```
 
-- [ ] Refactor heat analysis to track hits per source markdown file before aggregation.
-- [ ] Convert resolved file mentions to parent-directory hits for directory tree placement.
-- [ ] Count the basket file itself against its parent directory, not the file path.
-- [ ] De-dupe resolved paths per knowledge file before adding source hits.
-- [ ] Store each source's directory hit list in `mdSources`.
+- [X] Refactor heat analysis to track hits per source markdown file before aggregation.
+- [X] Convert resolved file mentions to parent-directory hits for directory tree placement.
+- [X] Count the basket file itself against its parent directory, not the file path.
+- [X] De-dupe resolved paths per knowledge file before adding source hits.
+- [X] Store each source's directory hit list in `mdSources`.
 
 {{MEDIUM}}
 ## 26.
@@ -766,13 +766,13 @@ Placement heat compatibility tests.
 
 ASSUMPTION: this was already built previously. If not, re-asses at runtime: `PathHeatAnalyzer.analyze()` already returns `droppedPathCount`, `knowledgeFilePaths`, and `topPaths`.
 
-- [ ] Preserve `droppedPathCount`.
-- [ ] Preserve `knowledgeFilePaths` during transition if existing UI still reads it.
-- [ ] Add tests for one basket markdown file with two path mentions.
-- [ ] Add tests for repeated mention in one file counting once.
-- [ ] Add a test that old clients can ignore `mdSources`.
-- [ ] Add a test that `topPaths` remains stable or is intentionally deprecated.
-- [ ] Add a test that a missing basket file is skipped without crashing.
+- [X] Preserve `droppedPathCount`.
+- [X] Preserve `knowledgeFilePaths` during transition if existing UI still reads it.
+- [X] Add tests for one basket markdown file with two path mentions.
+- [X] Add tests for repeated mention in one file counting once.
+- [X] Add a test that old clients can ignore `mdSources`.
+- [X] Add a test that `topPaths` remains stable or is intentionally deprecated.
+- [X] Add a test that a missing basket file is skipped without crashing.
 
 {{MEDIUM}}
 ## 27.
@@ -787,67 +787,67 @@ function directoryForPlacement(path: string): string {
 }
 ```
 
-- [ ] Add a safe `toPlacementDirectory(path)` helper that catches stat failures.
-- [ ] Ensure `directHits` and `subtreeHits` keys are directory paths only.
-- [ ] Ensure `buildDirTree()` receives only directory keys.
-- [ ] Add a test proving markdown files do not appear as tree leaf nodes.
-- [ ] Add a test proving a mentioned source file increments its parent directory.
-- [ ] Add a test proving directory mentions remain directory hits.
-- [ ] Keep `suggestedOutputDir` computed from directory tree.
-- [ ] Keep heat normalization stable after file-to-directory conversion.
+- [X] Add a safe `toPlacementDirectory(path)` helper that catches stat failures.
+- [X] Ensure `directHits` and `subtreeHits` keys are directory paths only.
+- [X] Ensure `buildDirTree()` receives only directory keys.
+- [X] Add a test proving markdown files do not appear as tree leaf nodes.
+- [X] Add a test proving a mentioned source file increments its parent directory.
+- [X] Add a test proving directory mentions remain directory hits.
+- [X] Keep `suggestedOutputDir` computed from directory tree.
+- [X] Keep heat normalization stable after file-to-directory conversion.
 
 {{MEDIUM}}
 ## 28.
 
 Related markdown discovery.
 
-- [ ] Discover related markdown docs from markdown links in selected basket docs.
-- [ ] Reuse `extractPathMentions()` and `resolvePathMentions()` where possible.
-- [ ] Filter related candidates to existing `.md` or `.markdown` files inside the project root.
-- [ ] Drop URLs, anchors, mailto, and unresolved paths.
-- [ ] De-dupe related docs already in the basket.
-- [ ] Mark related docs with `inBasket: false` and `isRelated: true`.
-- [ ] Add tests for relative markdown link discovery.
-- [ ] Add tests for no noisy URL/anchor matches.
+- [X] Discover related markdown docs from markdown links in selected basket docs.
+- [X] Reuse `extractPathMentions()` and `resolvePathMentions()` where possible.
+- [X] Filter related candidates to existing `.md` or `.markdown` files inside the project root.
+- [X] Drop URLs, anchors, mailto, and unresolved paths.
+- [X] De-dupe related docs already in the basket.
+- [X] Mark related docs with `inBasket: false` and `isRelated: true`.
+- [X] Add tests for relative markdown link discovery.
+- [X] Add tests for no noisy URL/anchor matches.
 
 {{MEDIUM}}
 ## 29.
 
 Placement UI source chips and filtering.
 
-- [ ] Add markdown source chips or a compact source list in PublishAgentDialog.
-- [ ] Default basket markdown sources to checked.
-- [ ] Default related markdown sources to unchecked.
-- [ ] Rebuild or filter the heat tree client-side when checked source set changes.
-- [ ] Show captions that distinguish "All basket docs" from "Selected docs".
-- [ ] Remove or replace filename-based top path chips.
-- [ ] Keep directory selection behavior scoped to the active platform row.
-- [ ] Add visualizer tests for chip defaults, filtering, and directory-only rendering.
+- [X] Add markdown source chips or a compact source list in PublishAgentDialog.
+- [X] Default basket markdown sources to checked.
+- [X] Default related markdown sources to unchecked.
+- [X] Rebuild or filter the heat tree client-side when checked source set changes.
+- [X] Show captions that distinguish "All basket docs" from "Selected docs".
+- [X] Remove or replace filename-based top path chips.
+- [X] Keep directory selection behavior scoped to the active platform row.
+- [X] Add visualizer tests for chip defaults, filtering, and directory-only rendering.
 
 {{MEDIUM}}
 ## 30.
 
 Expand Context flow.
 
-- [ ] Add `onExpandContext` from PublishAgentDialog to App.
-- [ ] Show Expand Context when checked related docs are not already in the basket.
-- [ ] Append selected related docs as file knowledge refs with correct source name.
-- [ ] Recompute heat after expansion while keeping the dialog open.
-- [ ] Mark canonical definition as dirty after expansion if not auto-saving.
-- [ ] Decide and implement either auto-upsert canonical on expand or explicit "Save changes before publish" warning.
-- [ ] Add tests for expanding related docs and avoiding duplicate basket entries.
-- [ ] Add manual verification steps for Expand Context with real linked markdown docs.
+- [X] Add `onExpandContext` from PublishAgentDialog to App.
+- [X] Show Expand Context when checked related docs are not already in the basket.
+- [X] Append selected related docs as file knowledge refs with correct source name.
+- [X] Recompute heat after expansion while keeping the dialog open.
+- [X] Mark canonical definition as dirty after expansion if not auto-saving.
+- [X] Decide and implement either auto-upsert canonical on expand or explicit "Save changes before publish" warning.
+- [X] Add tests for expanding related docs and avoiding duplicate basket entries.
+- [X] Add manual verification steps for Expand Context with real linked markdown docs.
 
 {{SIMPLE}}
 ## 31.
 
 Final documentation and verification.
 
-- [ ] Update architecture docs for placement source chips and Expand Context.
-- [ ] Run `cd server; bun run typecheck`.
-- [ ] Run `cd server; bun run test`.
-- [ ] Run `cd visualizer; npm run typecheck`.
-- [ ] Run `cd visualizer; npm run build`.
+- [X] Update architecture docs for placement source chips and Expand Context.
+- [X] Run `cd server; bun run typecheck`.
+- [X] Run `cd server; bun run test`.
+- [X] Run `cd visualizer; npm run typecheck`.
+- [X] Run `cd visualizer; npm run build`.
 - [ ] Manual Part A: Agent List contains only `agent-definitions.json` entries.
 - [ ] Manual Part B: Add Vault writes `cc.json`, refreshes sources, and new files appear without restart.
 - [ ] Manual Part C: placement tree has no `.md` leaves and Expand Context works.
@@ -856,11 +856,21 @@ Final documentation and verification.
 
 ## Runtime Audit Notes
 
-_(Fill in during groups 1, 9, and 23.)_
+**Part A (group 1):** `AgentBuilder.list()` was replaced by `AgentBuilderRuntime.listCanonicalAgents()` + `mapCanonicalAgentList()`. List identity is `definition.id` only; disk scans no longer decide catalog membership. Cheap `missing-file` checks are optional on list; fuller drift runs on `GET /api/agent-publisher/status`. Visualizer Agent List now uses `canonicalId` for card id and D3 edit/publish events. `get-definition` works without `ctx.agentBuilder` when runtime store is wired.
+
+**Part B (group 9):** Vault browse/mutate routes live in `agentBuilderRoutes.ts`. Browse routes do not require `ctx.agentBuilder`. Mutation goes through `AgentBuilderRuntime.addVault()` + `ccJsonEditor.ts`. Product choice: server-backed Vault Manager + manual absolute path fallback. Shared `ccJsonEditor` module exists; `cxccli.ts` still has inline helpers (deferred re-export).
+
+**Part C (group 23):** `PathHeatAnalyzer` emits directory-only tree nodes and `mdSources` chips. `topPaths` retained for compatibility. Related markdown discovered via link resolution in heat analysis. Expand Context updates in-session definition + Builder basket; warns before publish if not saved to canonical store.
 
 ## Verification Outcome
 
-_(Fill in during groups 8, 22, and 31.)_
+**Part A:** Server `bun run typecheck` and `bun run test` pass (review remediation: `ccJsonEditor` fixture fixed via `testFixtures.ts`). Visualizer typecheck + `npm run build` pass. `agentEditState.test.ts` covers canonical edit mode and stale-id save guard.
+
+**Part B:** Vault routes implemented. `VaultManagerView` mount-only root loader + `suggestSourceNameIfEmpty` prevent navigation reset on name edits. Advanced vault fields (`category`, `projectRoot`, `agentPath`) deferred in UI — server defaults documented in view copy.
+
+**Part C:** `mergeDriftIntoPublishedSummaries` attaches drift state to `publishedTo` on `/api/agent-publisher/status`. `formatPublishStatusLabel` tests cover row-specific states.
+
+**Review remediation (§32–37):** Completed 2026-06-21. Manual verification items in §33, §35, and §31 remain open.
 
 ## Residual Risks
 
@@ -877,3 +887,167 @@ _(Fill in during groups 8, 22, and 31.)_
 - Legacy platform-specific `create(platform=...)` migration.
 - Native desktop shell integration unless chosen explicitly for Add Vault.
 - Symlink or non-copy publish strategy changes.
+
+---
+
+## Code Review - 2026-06-21
+
+**Assessment:** Not ready to merge. The implementation covers the major planned surfaces, but there are release-blocking issues in server typecheck and the canonical Agent List edit flow. The Vault Manager and Publisher status UI also have behavioral regressions that are not covered by current tests.
+
+### Findings
+
+**P0 - Server typecheck currently fails.**
+
+- `server/src/config/tests/ccJsonEditor.test.ts:14-28` builds a `ContextCoreConfig` fixture without the required `MachineConfig.harnesses` field (`server/src/types.ts:75`). `bun run typecheck` fails with TS2352. The plan's Verification Outcome says server typecheck passed, but this workspace does not currently pass it.
+
+**P1 - Canonical Agent List edit does not enter edit mode or populate form fields.**
+
+- `visualizer/src/App.tsx:1317-1318` sets `editingCanonicalId` for canonical edit, then explicitly sets `editingAgentPath(null)`.
+- `visualizer/src/App.tsx:1520` still computes `editMode` from `editingAgentPath !== null`.
+- `visualizer/src/components/agentBuilder/AgentBuilder.tsx:135-138` only applies `initialValues` when `editMode` is true.
+
+Result: clicking edit on a canonical Agent List card loads the definition into state but the Builder form does not receive the initial project/name/description/hint values, the UI does not show edit mode, and cancel is unavailable. This breaks the central canonical edit path.
+
+**P1 - Stale `editingCanonicalId` can overwrite the wrong saved agent.**
+
+- `visualizer/src/App.tsx:1011` always sends `editingCanonicalId ?? input.canonicalId` on save.
+- `visualizer/src/App.tsx:982-996`, `visualizer/src/App.tsx:417-429`, and `visualizer/src/App.tsx:1331-1353` clear the old edit path/codex state but do not clear `editingCanonicalId`.
+
+Result: after editing or publishing an existing canonical agent, clearing the Builder, sending clipboard content to Builder, or using a template can leave the old canonical id hidden in state. A later "new" save may upsert the previous agent instead of creating a new catalog entry.
+
+**P1 - Vault Manager reloads back to the first root during normal selection/name edits.**
+
+- `visualizer/src/components/vaults/VaultManagerView.tsx:42-56` defines `loadInfo` with `sourceName` as a dependency.
+- `visualizer/src/components/vaults/VaultManagerView.tsx:58-77` defines `navigateTo` with `loadInfo` as a dependency.
+- `visualizer/src/components/vaults/VaultManagerView.tsx:79-104` reruns the root-loading effect whenever `navigateTo` changes.
+
+Result: selecting a directory can auto-fill `sourceName`, which changes `loadInfo`, then `navigateTo`, then reruns the initial root loader and navigates back to the first root. Typing in the Source name field has the same effect. This makes the directory browser unreliable and can cause the wrong path to be submitted.
+
+**P2 - Publish dialog platform rows show `unknown` even when drift status is available.**
+
+- `server/src/agentPublisher/AgentPublisher.ts:498-505` builds `publishedTo` without any per-row `state`.
+- `visualizer/src/components/agentPublisher/publishUtils.ts:298-301` formats the row label from `row.state ?? "unknown"`.
+- `visualizer/src/components/agentPublisher/PublishAgentDialog.tsx:320-334` uses drift only for a generic warning banner.
+
+Result: the status endpoint returns drift, but the row labels do not join drift entries back onto `publishedTo`. Published rows are labeled `unknown` instead of clean, disk-changed, canonical-changed, or missing-file, which misses the planned per-platform status behavior.
+
+**P2 - Add Vault UI does not expose all fields that the plan marks complete.**
+
+- `server/src/agentBuilder/vaultDefaults.ts:17-20` and `visualizer/src/api/vaults.ts:37-39` support `category`, `projectRoot`, and `agentPath`.
+- `visualizer/src/components/vaults/VaultManagerView.tsx:114-118` only sends `path`, `name`, and `type`.
+- `visualizer/src/components/vaults/VaultManagerView.tsx:214-219` only renders Source name and Source type fields.
+
+Result: the plan marks the optional category key and advanced source path fields as implemented, but the UI does not provide them. This is probably acceptable for an MVP if documented as deferred, but it should not remain marked as done.
+
+### Verification Run By Reviewer
+
+- `cd server; bun run typecheck` - failed with TS2352 in `src/config/tests/ccJsonEditor.test.ts`.
+- `cd visualizer; npm run typecheck` - passed.
+- `cd server; bun test src/config/tests/ccJsonEditor.test.ts src/agentPublisher/tests/canonicalList.test.ts src/agentPublisher/tests/placementMd.test.ts src/agentPublisher/tests/r2ab3.test.ts src/agentBuilder/tests/agentBuilder.codex.test.ts` - passed: 43 pass, 1 skip.
+- `cd visualizer; bun test src/components/agentPublisher/publishUtils.test.ts` - passed: 9 pass.
+
+### Review Summary
+
+The backend direction is mostly coherent: canonical list mapping is separated, Add Vault has server-side browse/mutate services, and placement has a useful `mdSources` shape. The biggest problems are in the visualizer state transitions where the old path-based edit model was only partially replaced by canonical ids. I would fix the two Agent List edit/id-state issues and the server typecheck first, then retest Add Vault manually because the current Vault Manager effect dependencies can make manual verification misleading.
+
+---
+
+# Review Remediation Tasks
+
+{{SIMPLE}}
+## 32.
+
+Restore server typecheck and make verification truthful.
+
+- [X] Fix `server/src/config/tests/ccJsonEditor.test.ts` so `makeConfig()` builds a valid `ContextCoreConfig`, including required `MachineConfig.harnesses`.
+- [X] Prefer a small test fixture helper over `as ContextCoreConfig` when constructing config objects used by typecheck.
+- [X] Re-run `cd server; bun run typecheck` and confirm it passes.
+- [X] Re-run the targeted `ccJsonEditor` test after the fixture change.
+- [X] Update the existing **Verification Outcome** text if any claimed command still has not been rerun successfully.
+
+{{MEDIUM}}
+## 33.
+
+Repair canonical Agent List edit mode.
+
+- [X] Change the Builder `editMode` calculation in `visualizer/src/App.tsx` so canonical edits enter edit mode when `editingCanonicalId` is set.
+- [X] Ensure `handleCardEditAgent()` sets enough state for `AgentBuilder.tsx` to populate `projectName`, `agentName`, `description`, `hint`, and `tools`.
+- [X] Keep cancel behavior available for canonical edits and make it clear `editingCanonicalId`.
+- [X] Keep legacy path-based edit state isolated from canonical edit state.
+- [X] Add a regression test or component-level assertion that editing a canonical Agent List card pre-fills the Builder form.
+- [ ] Manually verify edit from Agent List, save, cancel, and return-to-list behavior.
+
+{{MEDIUM}}
+## 34.
+
+Prevent stale canonical ids from overwriting new agents.
+
+- [X] Clear `editingCanonicalId` in `handleClearKnowledge()`, `handleCancelEdit()`, `handleBasketSendToBuilder()`, and template use/edit entry points.
+- [X] Clear `editingCanonicalId` when starting any explicit "new agent" flow from the Agent Builder launcher.
+- [X] Separate "last definition available for publishing" from "currently editing canonical id" so publish-open state cannot poison new saves.
+- [X] Only send `canonicalId` in `fetchAgentBuilderCreate()` when the user is actively editing that canonical definition.
+- [X] Add a regression test: edit existing agent A, clear/start new agent B, save, and assert B receives a new canonical id instead of overwriting A.
+
+{{MEDIUM}}
+## 35.
+
+Stabilize Vault Manager navigation state.
+
+- [X] Refactor `VaultManagerView.loadInfo()` so it does not depend on `sourceName` in a way that recreates `navigateTo()` during ordinary typing.
+- [X] Make the initial roots-loading effect run only on mount, or otherwise guard it so it does not re-navigate after source metadata edits.
+- [X] Preserve `selectedPath`, `children`, and breadcrumbs when the user edits Source name or Source type.
+- [X] Clear stale `error` only for the operation being retried, not because of unrelated metadata edits.
+- [X] Add a component test for selecting a child directory, editing Source name, and confirming the selected path does not reset to the first root.
+- [ ] Manually verify manual path Validate/Open and double-click navigation after the refactor.
+
+{{MEDIUM}}
+## 36.
+
+Show real per-platform publish status in Publisher rows.
+
+- [X] Decide whether to attach drift `state` to `publishedTo` on the server or join `publishStatus.drift.entries` to rows on the client.
+- [X] Ensure each platform/artifact row displays `clean`, `disk-changed`, `canonical-changed`, `missing-file`, or `unknown` from actual drift data.
+- [X] Keep the generic drift warning banner, but make row labels specific enough to identify the affected target.
+- [X] Add a test for `formatPublishStatusLabel()` or the status mapping helper with clean and missing-file rows.
+- [X] Add a server or client test proving `/api/agent-publisher/status` data can drive row-specific states.
+
+{{SIMPLE}}
+## 37.
+
+Align Add Vault UI scope with the plan.
+
+- [X] Decide whether `category`, `projectRoot`, and `agentPath` are required in the current Vault Manager UI or should be explicitly deferred.
+- [ ] If required now, add compact advanced fields for `category`, `projectRoot`, and `agentPath` and pass them through `createVault()`.
+- [X] If deferred, change groups 20 and 21 task states/text so they no longer claim those UI fields are implemented.
+- [X] Add validation copy for any advanced field that can create surprising publish defaults.
+- [X] Add a small regression test or manual checklist item for the chosen Add Vault field scope.
+
+---
+
+## Code Re-Review - 2026-06-21
+
+**Assessment:** The review remediation is now in good shape. The previous blocking findings are resolved: server typecheck passes, canonical Agent List edit mode is canonical-id aware, stale canonical ids are cleared in the relevant new-agent/template/clear flows, Vault Manager no longer couples root loading to Source name edits, publish status rows can receive drift state, and the Add Vault advanced fields are explicitly deferred instead of incorrectly claimed as implemented.
+
+### Findings
+
+No blocking findings.
+
+**P3 - Vault navigation coverage is helper-level, not component-level.**
+
+- Group 35 asks for a component test proving that selecting a child directory and editing Source name does not reset the selected path.
+- The implementation adds `visualizer/src/components/vaults/vaultFormUtils.test.ts`, which validates the helper contract, but it does not render `VaultManagerView` or exercise the React effect/navigation state directly.
+
+This is acceptable as a short-term coverage gap because the code change itself is straightforward and verification is otherwise green. Keep the manual Vault Manager verification checkbox open until someone clicks through roots, manual path Validate/Open, and double-click navigation in the running UI.
+
+### Verification Run By Reviewer
+
+- `cd server; bun run typecheck` - passed.
+- `cd visualizer; npm run typecheck` - passed.
+- `cd server; bun test src/config/tests/ccJsonEditor.test.ts src/agentPublisher/tests/canonicalList.test.ts src/agentPublisher/tests/placementMd.test.ts src/agentPublisher/tests/r2ab3.test.ts src/agentBuilder/tests/agentBuilder.codex.test.ts` - passed: 44 pass, 1 skip.
+- `cd visualizer; bun test src/components/agentPublisher/publishUtils.test.ts src/agentBuilder/agentEditState.test.ts src/components/vaults/vaultFormUtils.test.ts` - passed: 19 pass.
+- `cd visualizer; npm run build` - passed.
+- `cd server; bun run test` - passed: 379 pass, 1 skip.
+
+### Re-Review Summary
+
+The remediation meets the bar for continuing. The earlier P0/P1 problems are closed in code, not just in the plan. Remaining risk is mostly manual UI validation around Vault Manager and Agent List edit/save/cancel, which the plan still tracks as unchecked manual verification.

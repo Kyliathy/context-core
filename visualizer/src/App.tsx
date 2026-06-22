@@ -28,7 +28,20 @@ import StatusBar from "./components/searchTools/StatusBar";
 import ClipboardBasket from "./components/searchView/ClipboardBasket";
 import AgentBasket from "./components/agentBuilder/AgentBuilder";
 import PublishAgentDialog from "./components/agentPublisher/PublishAgentDialog";
-import { agentDefinitionToCanonical } from "./api/agentPublisher";
+import { fetchAgentBuilderGetDefinition } from "./api/agentPublisher";
+import VaultManagerView from "./components/vaults/VaultManagerView";
+import VaultExplorerDialog, { type VaultEditEntry } from "./components/vaults/VaultExplorerDialog";
+import {
+	addVaultNameToSourceSelection,
+	mapPrepareSourcesToInventory,
+	mapVaultSaveToSourceSummaries,
+	replaceVaultNameInSourceSelection,
+	type VaultInventoryRow,
+} from "./components/vaults/vaultSaveIntegration";
+import type { CreateVaultResponse, UpdateVaultResponse } from "./api/vaults";
+import type { VaultExplorerMode } from "./components/vaults/vaultNavigationUtils";
+import { buildEditSessionFromVaultRow } from "./components/vaults/vaultExplorerLogic";
+import { isAgentBasketEditMode, resolveCreateCanonicalId } from "./agentBuilder/agentEditState";
 import EditResultsView from "./components/searchView/EditResultsView";
 import AddFavoriteMessage, { type CustomTextInitial } from "./components/favorites/AddFavoriteMessage";
 import FavoritesPickerDialog from "./components/favorites/FavoritesPickerDialog";
@@ -36,7 +49,7 @@ import FavoritesSyncConflictDialog from "./components/favorites/FavoritesSyncCon
 import ChatViewDialog from "./components/searchView/ChatViewDialog";
 import ContentFileDialog from "./components/agentBuilder/ContentFileDialog";
 import FilterDialog from "./components/searchTools/FilterDialog";
-import { useViews, VIEW_TYPE_DEFAULTS, AGENT_LIST_VIEW, TEMPLATE_LIST_VIEW } from "./hooks/useViews";
+import { useViews, VIEW_TYPE_DEFAULTS, AGENT_LIST_VIEW, TEMPLATE_LIST_VIEW, VAULT_MANAGER_VIEW } from "./hooks/useViews";
 import { useFavorites } from "./hooks/useFavorites";
 import { useSearch } from "./hooks/useSearch";
 import { useSearchHistory } from "./hooks/useSearchHistory";
@@ -361,16 +374,22 @@ export default function App() {
 	const [viewport, setViewport] = useState<ViewportChangeDetail>({ x: 0, y: 0, k: 1 });
 	const [basketLines, setBasketLines] = useState<BasketLine[]>([]);
 	const [isFilterDialogOpen, setIsFilterDialogOpen] = useState(false);
-	const [agentBuilderSources, setAgentBuilderSources] = useState<{ name: string; fileCount: number; codexDirectories?: string[]; codexDefaultDirectory?: string }[]>([]);
+	const [agentBuilderSources, setAgentBuilderSources] = useState<VaultInventoryRow[]>([]);
 	const [agentKnowledgeEntries, setAgentKnowledgeEntries] = useState<AgentKnowledgeEntry[]>([]);
 	const [isCreatingAgent, setIsCreatingAgent] = useState(false);
 	const [agentCreateError, setAgentCreateError] = useState<string | null>(null);
 	const [agentCreateSuccess, setAgentCreateSuccess] = useState<string | null>(null);
 	const [lastCreatedAgentDefinition, setLastCreatedAgentDefinition] = useState<CanonicalAgentDefinition | null>(null);
 	const [isPublisherOpen, setIsPublisherOpen] = useState(false);
+	const [vaultExplorerOpen, setVaultExplorerOpen] = useState(false);
+	const [vaultExplorerSession, setVaultExplorerSession] = useState<{
+		mode: VaultExplorerMode;
+		editEntry?: VaultEditEntry;
+	}>({ mode: "add" });
 	const [agentFlashId, setAgentFlashId] = useState<string | null>(null);
 	const [editingAgentPath, setEditingAgentPath] = useState<string | null>(null);
 	const [editingCodexEntryId, setEditingCodexEntryId] = useState<string | null>(null);
+	const [editingCanonicalId, setEditingCanonicalId] = useState<string | null>(null);
 	const [agentEditInitial, setAgentEditInitial] = useState<{
 		projectName: string;
 		agentName: string;
@@ -379,8 +398,6 @@ export default function App() {
 		tools: string;
 		codexDirectory?: string;
 		platform?: "github" | "claude" | "codex";
-		platforms?: import("./types").AgentListPlatformEntry[];
-		contentDiverged?: boolean;
 	} | null>(null);
 	const [isFromTemplate, setIsFromTemplate] = useState(false);
 	const [activePlaceholderId, setActivePlaceholderId] = useState<string | null>(null);
@@ -398,6 +415,7 @@ export default function App() {
 			: isFromTemplate && activeView.type === "agent-builder"
 				? "agent-from-template"
 				: "agent";
+	const agentBasketEditMode = isAgentBasketEditMode(editingAgentPath, editingCanonicalId, basketMode);
 	const handleHover = useCallback((detail: HoverEventDetail) => setHoverDetail(detail), []);
 	const handleViewportChange = useCallback((detail: ViewportChangeDetail) => setViewport(detail), []);
 
@@ -428,6 +446,7 @@ export default function App() {
 		setAgentCreateSuccess(null);
 		setEditingAgentPath(null);
 		setEditingCodexEntryId(null);
+		setEditingCanonicalId(null);
 		setAgentEditInitial(null);
 		setIsFromTemplate(false);
 		setActivePlaceholderId(null);
@@ -682,14 +701,7 @@ export default function App() {
 	useEffect(() => {
 		fetchAgentBuilderPrepare()
 			.then((prepared) => {
-				setAgentBuilderSources(
-					prepared.sources.map((s) => ({
-						name: s.name,
-						fileCount: s.fileCount,
-						codexDirectories: s.codexDirectories,
-						codexDefaultDirectory: s.codexDefaultDirectory,
-					}))
-				);
+				setAgentBuilderSources(mapPrepareSourcesToInventory(prepared.sources));
 			})
 			.catch(() => {
 				// Server not yet updated or no sources — leave empty, dropdown shows "No data sources configured"
@@ -736,12 +748,104 @@ export default function App() {
 	}, [latestLimit]);
 
 	const handleLaunchAgentBuilder = useCallback(() => {
+		// Business logic: launching Builder starts a fresh agent session — do not carry a prior canonical edit id into new saves.
+		setEditingCanonicalId(null);
+		setEditingAgentPath(null);
+		setEditingCodexEntryId(null);
+		setAgentEditInitial(null);
 		switchView("built-in-agent-builder");
 	}, [switchView]);
 
 	const handleListAgents = useCallback(() => {
 		switchView(AGENT_LIST_VIEW.id);
 	}, [switchView]);
+
+	const handleManageVaults = useCallback(() => {
+		switchView(VAULT_MANAGER_VIEW.id);
+		//Business logic: Manage Vaults lands on the inventory — explorer opens only from Add vault or row click.
+		setVaultExplorerOpen(false);
+		setVaultExplorerSession({ mode: "add" });
+	}, [switchView]);
+
+	const handleAddVault = useCallback(() => {
+		setVaultExplorerSession({ mode: "add" });
+		setVaultExplorerOpen(true);
+	}, []);
+
+	const handleOpenVaultForEdit = useCallback((vault: VaultInventoryRow) => {
+		const session = buildEditSessionFromVaultRow(vault);
+		setVaultExplorerSession(session);
+		setVaultExplorerOpen(true);
+	}, []);
+
+	const handleCloseVaultExplorer = useCallback(() => {
+		setVaultExplorerOpen(false);
+		setVaultExplorerSession({ mode: "add" });
+	}, []);
+
+	const handleVaultSaved = useCallback(
+		(result: CreateVaultResponse) => {
+			setAgentBuilderSources((prev) => mapVaultSaveToSourceSummaries(result, prev));
+			setAgentBuilderSelectedSources((prev) => addVaultNameToSourceSelection(prev, result.entry.name));
+			if (activeView.type === "vault-manager")
+			{
+				switchView("built-in-agent-builder");
+			}
+			// Business logic: after Save from vault-manager we switch views in the same tick — use empty query so new vault cards load.
+			if (activeView.type === "agent-builder" || activeView.type === "vault-manager")
+			{
+				void search(activeView.type === "agent-builder" ? activeView.query : "");
+			}
+		},
+		[activeView.type, activeView.query, search, switchView],
+	);
+
+	const handleVaultUpdated = useCallback(
+		(result: UpdateVaultResponse) => {
+			const previousName = result.previousName;
+			setAgentBuilderSources((prev) => mapVaultSaveToSourceSummaries(result, prev, previousName));
+			if (previousName && previousName !== result.entry.name)
+			{
+				setAgentBuilderSelectedSources((prev) =>
+					replaceVaultNameInSourceSelection(prev, previousName, result.entry.name),
+				);
+			}
+		},
+		[],
+	);
+
+	const handlePublisherExpandContext = useCallback((paths: string[]) => {
+		setLastCreatedAgentDefinition((prev) => {
+			if (!prev) return prev;
+			const existing = new Set(
+				prev.knowledge.filter((k) => k.kind === "file").map((k) => k.value.replace(/\\/g, "/").toLowerCase()),
+			);
+			const nextKnowledge = [...prev.knowledge];
+			for (const filePath of paths)
+			{
+				const key = filePath.replace(/\\/g, "/").toLowerCase();
+				// Business logic: Expand Context must not duplicate basket file refs already in the canonical definition.
+				if (!existing.has(key))
+				{
+					nextKnowledge.push({ kind: "file", value: filePath });
+					existing.add(key);
+				}
+			}
+			return { ...prev, knowledge: nextKnowledge };
+		});
+		setAgentKnowledgeEntries((prev) => {
+			const existing = new Set(prev.filter((e) => e.kind === "file").map((e) => e.value.replace(/\\/g, "/").toLowerCase()));
+			const additions = paths
+				.filter((p) => !existing.has(p.replace(/\\/g, "/").toLowerCase()))
+				.map((value, idx) => ({
+					id: `ak-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 7)}`,
+					value,
+					kind: "file" as const,
+					addedAt: Date.now(),
+				}));
+			return additions.length > 0 ? [...prev, ...additions] : prev;
+		});
+	}, []);
 
 	const handleCreateTemplate = useCallback(() => {
 		switchView("built-in-template-create");
@@ -924,6 +1028,7 @@ export default function App() {
 		setAgentCreateSuccess(null);
 		setEditingAgentPath(null);
 		setEditingCodexEntryId(null);
+		setEditingCanonicalId(null);
 		setAgentEditInitial(null);
 		setIsFromTemplate(false);
 		setActivePlaceholderId(null);
@@ -932,6 +1037,7 @@ export default function App() {
 	const handleCancelEdit = useCallback(() => {
 		setEditingAgentPath(null);
 		setEditingCodexEntryId(null);
+		setEditingCanonicalId(null);
 		setAgentEditInitial(null);
 		setAgentKnowledgeEntries([]);
 		setIsFromTemplate(false);
@@ -947,6 +1053,7 @@ export default function App() {
 				const payload: CreateAgentInput = {
 					...input,
 					codexEntryId: editingCodexEntryId ?? input.codexEntryId,
+					canonicalId: resolveCreateCanonicalId(editingCanonicalId),
 				};
 				const result = await fetchAgentBuilderCreate(payload);
 				if (result.canonicalDefinition)
@@ -957,12 +1064,14 @@ export default function App() {
 						return;
 					}
 					setLastCreatedAgentDefinition(result.canonicalDefinition);
+					setEditingCanonicalId(result.canonicalDefinition.id);
 				}
 				setAgentCreateSuccess(
 					result.canonicalStoragePath
 						? `Saved canonical definition "${result.canonicalId ?? result.agentName}"\n${result.canonicalStoragePath}`
 						: `Saved canonical definition "${result.canonicalId ?? result.agentName}"`,
 				);
+				if (activeView.type === "agent-list") void search(activeView.query);
 				// H4: In agent-from-template mode, clear template state and switch to agent-list
 				if (isFromTemplate) {
 					setIsFromTemplate(false);
@@ -978,7 +1087,7 @@ export default function App() {
 				setIsCreatingAgent(false);
 			}
 		},
-		[editingCodexEntryId, isFromTemplate, switchView],
+		[editingCodexEntryId, editingCanonicalId, isFromTemplate, switchView, activeView.type, search],
 	);
 
 	const handlePublishAgent = useCallback(() => {
@@ -987,22 +1096,16 @@ export default function App() {
 
 	const handlePublisherPublished = useCallback(() => {
 		fetchAgentBuilderPrepare().then((response) => {
-			setAgentBuilderSources(
-				response.sources.map((s) => ({
-					name: s.name,
-					fileCount: s.fileCount,
-					codexDirectories: s.codexDirectories,
-					codexDefaultDirectory: s.codexDefaultDirectory,
-				})),
-			);
+			setAgentBuilderSources(mapPrepareSourcesToInventory(response.sources));
 		}).catch(() => { /* best-effort refresh */ });
-	}, []);
+		if (activeView.type === "agent-list") void search(activeView.query);
+	}, [activeView.type, search]);
 
 	const handleCardPublishAgent = useCallback(
 		async (detail: CardPublishAgentEventDetail) => {
 			try {
-				const response = await fetchAgentBuilderGetAgent(detail.agentPath, detail.codexEntryId);
-				setLastCreatedAgentDefinition(agentDefinitionToCanonical(response.agent));
+				const response = await fetchAgentBuilderGetDefinition(detail.canonicalId);
+				setLastCreatedAgentDefinition(response.definition);
 				setIsPublisherOpen(true);
 			} catch (err) {
 				setAgentCreateError(err instanceof Error ? err.message : String(err));
@@ -1221,6 +1324,7 @@ export default function App() {
 					});
 					setEditingAgentPath(null);
 					setEditingCodexEntryId(null);
+					setEditingCanonicalId(null);
 					setIsFromTemplate(false);
 					setActivePlaceholderId(null);
 					switchView("built-in-template-create");
@@ -1229,40 +1333,31 @@ export default function App() {
 				}
 				return;
 			}
-			// Standard agent edit flow
+			// Standard canonical agent edit flow
 			try {
-				// Read platforms and divergence info from the consolidated card.
-				const cardPlatforms = card?.platforms;
-				const cardDiverged = card?.contentDiverged ?? false;
-
-				const response = await fetchAgentBuilderGetAgent(detail.agentPath, detail.codexEntryId);
-				const agent = response.agent;
-				// Populate knowledge entries from agent definition
+				const response = await fetchAgentBuilderGetDefinition(detail.canonicalId);
+				const def = response.definition;
 				setAgentKnowledgeEntries(
-					agent.agentKnowledge.map((path) => ({
-						id: `ak-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-						value: path,
-						kind: "file" as const,
+					def.knowledge.map((item, idx) => ({
+						id: `ak-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 7)}`,
+						value: item.value,
+						kind: item.kind === "file" ? "file" as const : "custom" as const,
 						addedAt: Date.now(),
 					})),
 				);
-				// Set initial form values for AgentBasket
 				setAgentEditInitial({
-					projectName: agent.projectName,
-					agentName: agent.agentName,
-					description: agent.description,
-					hint: agent["argument-hint"],
-					tools: agent.tools?.join(", ") ?? "",
-					codexDirectory: agent.codexDirectory,
-					platform: agent.platform,
-					platforms: cardPlatforms,
-					contentDiverged: cardDiverged,
+					projectName: def.projectName,
+					agentName: def.name,
+					description: def.description,
+					hint: def["argument-hint"] ?? "",
+					tools: def.tools?.join(", ") ?? "",
 				});
-				setEditingAgentPath(detail.agentPath);
-				setEditingCodexEntryId(agent.codexEntryId ?? detail.codexEntryId ?? null);
+				setEditingCanonicalId(def.id);
+				setEditingAgentPath(null);
+				setEditingCodexEntryId(null);
+				setLastCreatedAgentDefinition(def);
 				setIsFromTemplate(false);
 				setActivePlaceholderId(null);
-				// Switch to agent-builder view so user can modify knowledge files
 				switchView("built-in-agent-builder");
 			} catch (err) {
 				setAgentCreateError(err instanceof Error ? err.message : String(err));
@@ -1296,6 +1391,7 @@ export default function App() {
 				setEditingAgentPath(null);
 				setEditingCodexEntryId(null);
 				setIsFromTemplate(true);
+				setEditingCanonicalId(null);
 				const firstPlaceholder = entries.find((e) => e.kind === "placeholder");
 				setActivePlaceholderId(firstPlaceholder?.id ?? null);
 				switchView("built-in-agent-builder");
@@ -1357,6 +1453,8 @@ export default function App() {
 				onEditView={handleEditView}
 				onLaunchAgentBuilder={handleLaunchAgentBuilder}
 				onListAgents={handleListAgents}
+				onManageVaults={handleManageVaults}
+				onAddVault={handleAddVault}
 				onCreateTemplate={handleCreateTemplate}
 				onListTemplates={handleListTemplates}
 				showSourceFilter={activeView.type === "agent-builder"}
@@ -1368,14 +1466,16 @@ export default function App() {
 					activeView.type !== "search-threads" &&
 					activeView.type !== "agent-builder" &&
 					activeView.type !== "agent-list" &&
-					activeView.type !== "template-list"
+					activeView.type !== "template-list" &&
+					activeView.type !== "vault-manager"
 				}
 				isEditDisabled={
 					activeView.id === "built-in-latest" ||
 					activeView.id === "built-in-agent-builder" ||
 					activeView.id === "built-in-agent-list" ||
 					activeView.id === "built-in-template-create" ||
-					activeView.id === "built-in-template-list"
+					activeView.id === "built-in-template-list" ||
+					activeView.id === "built-in-vault-manager"
 				}
 				searchHistory={searchHistory}
 				onClearHistory={clearHistory}
@@ -1388,6 +1488,7 @@ export default function App() {
 					activeView.type === "agent-list" ||
 					activeView.type === "template-create" ||
 					activeView.type === "template-list" ||
+					activeView.type === "vault-manager" ||
 					(locallyFilteredCards.length === 0 && cards.length === 0 && locallyFilteredThreadCards.length === 0)
 				}
 				searchExecutionToken={searchResetToken}
@@ -1455,7 +1556,7 @@ export default function App() {
 						createSuccess={agentCreateSuccess}
 						onDismissCreateSuccess={handleDismissCreateSuccess}
 						flashId={agentFlashId}
-						editMode={editingAgentPath !== null && basketMode === "agent"}
+						editMode={agentBasketEditMode}
 						initialValues={agentEditInitial}
 						onCancelEdit={handleCancelEdit}
 						mode={basketMode}
@@ -1467,6 +1568,14 @@ export default function App() {
 						onClearImportedTools={() => setImportedTools([])}
 					/>
 				)}
+				{activeView.type === "vault-manager" ? (
+					<VaultManagerView
+						explorerOpen={vaultExplorerOpen}
+						vaults={agentBuilderSources}
+						onOpenExplorer={handleAddVault}
+						onOpenExplorerForPath={handleOpenVaultForEdit}
+					/>
+				) : (
 				<ChatMap
 					cards={locallyFilteredCards}
 					threadCards={locallyFilteredThreadCards}
@@ -1489,6 +1598,7 @@ export default function App() {
 					onCardPositionChange={handleCardPositionChange}
 					starredCardIds={starredCardIds}
 				/>
+				)}
 			</div>
 			<HoverPanel
 				data={hoverDetail?.data ?? null}
@@ -1599,11 +1709,20 @@ export default function App() {
 				}}
 			/>
 
+			<VaultExplorerDialog
+				open={vaultExplorerOpen}
+				mode={vaultExplorerSession.mode}
+				editEntry={vaultExplorerSession.editEntry}
+				onClose={handleCloseVaultExplorer}
+				onSaved={handleVaultSaved}
+				onUpdated={handleVaultUpdated}
+			/>
 			<PublishAgentDialog
 				open={isPublisherOpen}
 				definition={lastCreatedAgentDefinition}
 				onClose={() => setIsPublisherOpen(false)}
 				onPublished={handlePublisherPublished}
+				onExpandContext={handlePublisherExpandContext}
 			/>
 			<EditResultsView
 				open={isEditResultsViewOpen}

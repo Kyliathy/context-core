@@ -5,6 +5,7 @@ import type {
 	DriftReport,
 	PathHeatResult,
 	PlatformCapability,
+	PublishStatusResponse,
 	PreviewResult,
 	PublishPlatform,
 	PublishResult,
@@ -63,6 +64,13 @@ export async function fetchPublisherPublish(body: {
 		headers: { "Content-Type": "application/json" },
 		body: JSON.stringify(body),
 	});
+	if (!response.ok) throw new Error(await response.text());
+	return response.json();
+}
+
+export async function fetchPublisherStatus(canonicalId: string): Promise<PublishStatusResponse>
+{
+	const response = await fetch(`${API_BASE}/api/agent-publisher/status?canonicalId=${encodeURIComponent(canonicalId)}`);
 	if (!response.ok) throw new Error(await response.text());
 	return response.json();
 }

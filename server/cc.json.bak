@@ -1,0 +1,215 @@
+{
+	"storage": "d:\\Codez\\Nexus\\design\\CXC",
+	"databaseFile": "d:\\Codez\\Nexus\\design\\CXC\\cxc-db.sqlite",
+	"machines": [
+		{
+			"machine": "Kyliathy3",
+			"harnesses": {
+				"ClaudeCode": {
+					"paths": [
+						"C:\\Users\\Axonn\\.claude\\projects\\d--Codez-Nexus-AXON\\",
+						"C:\\Users\\Axonn\\.claude\\projects\\d--Codez-Nexus-Evo2-Indra\\",
+						"C:\\Users\\Axonn\\.claude\\projects\\d--Codez-Nexus-IDA\\",
+						"C:\\Users\\Axonn\\.claude\\projects\\d--Codez-Nexus-Reach2-context-core\\",
+						"C:\\Users\\Axonn\\.claude\\projects\\d--Codez-Nexus-Evo-NexusPlatform\\"
+					]
+				},
+				"Antigravity": {
+					"paths": [
+						"c:\\Users\\Axonn\\.gemini\\antigravity\\conversations\\"
+					]
+				},
+				"Codex": {
+					"paths": [
+						"c:\\Users\\Axonn\\.codex\\sessions\\"
+					]
+				},
+				"VSCode": {
+					"paths": [
+						"C:\\Users\\Axonn\\AppData\\Roaming\\Code\\User\\workspaceStorage\\32f5b61a5bd25a075df43f887e697492\\",
+						"C:\\Users\\Axonn\\AppData\\Roaming\\Code\\User\\workspaceStorage\\34300d7ddc3787e8471ec775e735756d\\",
+						"C:\\Users\\Axonn\\AppData\\Roaming\\Code\\User\\workspaceStorage\\9141ce25bb1181c0fafe2a4a9b01ad47\\",
+						"C:\\Users\\Axonn\\AppData\\Roaming\\Code\\User\\workspaceStorage\\a8fac0c9c1be9005514bca6b9f67f11b\\",
+						"C:\\Users\\Axonn\\AppData\\Roaming\\Code\\User\\workspaceStorage\\e718a804e979e29a8fe1887e446c3f7a\\",
+						"C:\\Users\\Axonn\\AppData\\Roaming\\Code\\User\\workspaceStorage\\956f509a029d4e26c6fff7f09bd430eb\\",
+						"C:\\Users\\Axonn\\AppData\\Roaming\\Code\\User\\workspaceStorage\\d408e4a80c64ab681f9df507c4c7b740\\"
+					]
+				},
+				"Cursor": {
+					"paths": [
+						"c:\\Users\\Axonn\\AppData\\Roaming\\Cursor\\User\\globalStorage\\state.vscdb"
+					],
+					"projectMappingRules": [
+						{
+							"paths": "Nexus\\Evo",
+							"newProjectName": "NexusEvo"
+						},
+						{
+							"projectName": "n-",
+							"newProjectName": "Misc"
+						},
+						{
+							"projectName": "untitled",
+							"newProjectName": "Misc"
+						},
+						{
+							"projectName": "-Nexus-Evo-NexusEvo-code-workspace",
+							"newProjectName": "NexusEvo"
+						}
+					]
+				},
+				"genericProjectMappingRules": [
+					{
+						"paths": "Codez\\Nexus",
+						"rule": "byFirstDir"
+					},
+					{
+						"paths": "Codez",
+						"rule": "byFirstDir"
+					}
+				]
+			},
+			"dataSources": {
+				"zz-reach2": [
+					{
+						"path": "D:\\Codez\\Nexus\\Reach2\\context-core\\server\\zz-reach2",
+						"agentPath": "D:\\Codez\\Nexus\\Reach2\\context-core\\.github\\agents",
+						"name": "Context Core Server",
+						"type": "Reach2 Architectural Repo",
+						"purpose": "AgentBuilder"
+					},
+					{
+						"path": "D:\\Codez\\Nexus\\Reach2\\context-core\\visualizer\\zz-reach2",
+						"agentPath": "D:\\Codez\\Nexus\\Reach2\\context-core\\.github\\agents",
+						"name": "Context Core Front",
+						"type": "Reach2 Architectural Repo",
+						"purpose": "AgentBuilder"
+					},
+					{
+						"path": "d:\\Codez\\Nexus\\Evo2\\Indra\\zz-reach2\\",
+						"agentPath": "d:\\Codez\\Nexus\\Evo2\\Indra\\.github\\agents",
+						"name": "Indra",
+						"type": "Reach2 Architectural Repo",
+						"purpose": "AgentBuilder"
+					},
+					{
+						"path": "d:\\Codez\\Nexus\\AXON\\zz-reach2",
+						"agentPath": "d:\\Codez\\Nexus\\AXON\\.github\\agents",
+						"name": "AXON",
+						"type": "Reach2 Architectural Repo",
+						"purpose": "AgentBuilder"
+					},
+					{
+						"path": "d:\\Codez\\Nexus\\design\\CXC\\zeDataSources\\",
+						"name": "Global Keywords",
+						"type": "Reach2 Keyword Repository",
+						"purpose": "SyntaxHelper"
+					}
+				],
+				"vaults": [
+					{
+						"path": "D:\\Codez\\Nexus\\AIUL2\\zz-reach2",
+						"projectRoot": "D:\\Codez\\Nexus\\AIUL2\\zz-reach2",
+						"name": "Codez",
+						"type": "Vault",
+						"purpose": "AgentBuilder"
+					}
+				]
+			}
+		},
+		{
+			"machine": "SUSAN2",
+			"harnesses": {
+				"Codex": {
+					"paths": [
+						"c:\\Users\\Axonn\\.codex\\sessions\\"
+					]
+				},
+				"ClaudeCode": {
+					"paths": [
+						"C:\\Users\\Axonn\\.claude\\projects\\d--Codez-Nexus-AXON\\",
+						"C:\\Users\\Axonn\\.claude\\projects\\d--Codez-Nexus-Evo2-Indra\\",
+						"C:\\Users\\Axonn\\.claude\\projects\\d--Codez-Nexus-IDA\\",
+						"C:\\Users\\Axonn\\.claude\\projects\\d--Codez-Nexus-Reach2-context-core\\",
+						"C:\\Users\\Axonn\\.claude\\projects\\d--Codez-Nexus-Evo-NexusPlatform\\",
+						"C:\\Users\\Axonn\\.claude\\projects\\d--Codez-Nexus-Evo2-NexusPlatform\\",
+						"C:\\Users\\Axonn\\.claude\\projects\\d--Codez-Nexus-Reach2-context-master\\"
+					]
+				},
+				"VSCode": {
+					"paths": [
+						"C:\\Users\\Axonn\\AppData\\Roaming\\Code\\User\\workspaceStorage\\12d71409852508de6765285f1549c7ff\\",
+						"C:\\Users\\Axonn\\AppData\\Roaming\\Code\\User\\workspaceStorage\\244f5219f912c75763ff06b83ce32179\\",
+						"C:\\Users\\Axonn\\AppData\\Roaming\\Code\\User\\workspaceStorage\\32f5b61a5bd25a075df43f887e697492\\",
+						"C:\\Users\\Axonn\\AppData\\Roaming\\Code\\User\\workspaceStorage\\b02087a4790b680b857249f871922e07\\",
+						"C:\\Users\\Axonn\\AppData\\Roaming\\Code\\User\\workspaceStorage\\d408e4a80c64ab681f9df507c4c7b740\\",
+						"C:\\Users\\Axonn\\AppData\\Roaming\\Code\\User\\workspaceStorage\\dbcff189e9553404838e6220cbdd18fd\\"
+					]
+				},
+				"Cursor": {
+					"paths": [
+						"c:\\Users\\Axonn\\AppData\\Roaming\\Cursor\\User\\globalStorage\\state.vscdb"
+					],
+					"projectMappingRules": [
+						{
+							"paths": "Codez\\Nexus\\Evo",
+							"newProjectName": "NexusEvo"
+						},
+						{
+							"paths": "Codez\\Nexus\\AXON",
+							"newProjectName": "AXON"
+						}
+					]
+				},
+				"genericProjectMappingRules": [
+					{
+						"paths": "Codez\\Nexus",
+						"rule": "byFirstDir"
+					},
+					{
+						"paths": "Codez",
+						"rule": "byFirstDir"
+					}
+				]
+			},
+			"dataSources": {
+				"zz-reach2": [
+					{
+						"path": "D:\\Codez\\Nexus\\Reach2\\context-core\\server\\zz-reach2",
+						"agentPath": "D:\\Codez\\Nexus\\Reach2\\context-core\\.github\\agents",
+						"name": "Context Core Server",
+						"type": "Reach2 Architectural Repo",
+						"purpose": "AgentBuilder"
+					},
+					{
+						"path": "D:\\Codez\\Nexus\\Reach2\\context-core\\visualizer\\zz-reach2",
+						"agentPath": "D:\\Codez\\Nexus\\Reach2\\context-core\\.github\\agents",
+						"name": "Context Core Front",
+						"type": "Reach2 Architectural Repo",
+						"purpose": "AgentBuilder"
+					},
+					{
+						"path": "d:\\Codez\\Nexus\\Evo2\\Indra\\zz-reach2\\",
+						"agentPath": "d:\\Codez\\Nexus\\Evo2\\Indra\\.github\\agents",
+						"name": "Indra",
+						"type": "Reach2 Architectural Repo",
+						"purpose": "AgentBuilder"
+					},
+					{
+						"path": "d:\\Codez\\Nexus\\AXON\\zz-reach2",
+						"agentPath": "d:\\Codez\\Nexus\\AXON\\.github\\agents",
+						"name": "AXON",
+						"type": "Reach2 Architectural Repo",
+						"purpose": "AgentBuilder"
+					},
+					{
+						"path": "d:\\Codez\\Nexus\\design\\CXC\\zeDataSources\\",
+						"name": "Global Keywords",
+						"type": "Reach2 Keyword Repository",
+						"purpose": "SyntaxHelper"
+					}
+				]
+			}
+		}
+	]
+}

@@ -8,6 +8,7 @@
 import { existsSync } from "fs";
 import type { DataSourceEntry } from "../types.js";
 import type { AgentBuilder } from "../agentBuilder/AgentBuilder.js";
+import { mergeDriftIntoPublishedSummaries, toPublishedTargetSummary } from "./canonicalListMapper.js";
 import { AgentPublisherBase } from "./AgentPublisherBase.js";
 import { AgentPublisherCopilot } from "./platforms/AgentPublisherCopilot.js";
 import { AgentPublisherClaude } from "./platforms/AgentPublisherClaude.js";
@@ -64,8 +65,8 @@ const ALL_PLATFORMS: PublishPlatform[] = [
 export class AgentPublisher
 {
 	private readonly publishers: Map<PublishPlatform, AgentPublisherBase>;
-	private readonly pathPolicy: PathPolicy;
-	private readonly heatAnalyzer: PathHeatAnalyzer;
+	private pathPolicy: PathPolicy;
+	private heatAnalyzer: PathHeatAnalyzer;
 	private readonly ledger: PublishLedger;
 	private readonly symlinkProbe: () => boolean;
 
@@ -92,6 +93,16 @@ export class AgentPublisher
 			["kiro", new AgentPublisherKiro()],
 		]);
 		this.ledger.load();
+	}
+
+	/**
+	 * Rebuilds path policy and heat analyzer after Add Vault refreshes dataSources.
+	 * @param sources - Updated AgentBuilder source list from cc.json.
+	 */
+	refreshSources(sources: DataSourceEntry[]): void
+	{
+		this.pathPolicy = new PathPolicy(sources);
+		this.heatAnalyzer = new PathHeatAnalyzer(this.pathPolicy, this.agentBuilder);
 	}
 
 	/** Exposes ledger for AgentBuilder artifact classification. */
@@ -354,7 +365,11 @@ export class AgentPublisher
 		{
 			try
 			{
-				this.canonicalStore.upsert(def);
+				const existing = this.canonicalStore.get(def.id);
+				const defToSave = existing?.publishedArtifacts?.length
+					? { ...def, publishedArtifacts: existing.publishedArtifacts }
+					: def;
+				this.canonicalStore.upsert(defToSave);
 				this.canonicalStore.save();
 			} catch (error)
 			{
@@ -419,6 +434,27 @@ export class AgentPublisher
 
 		this.ledger.save();
 
+		// Business logic: append publish history on the canonical definition for Publisher "Already published" UI.
+		if (this.canonicalStore && written.length > 0)
+		{
+			const stored = this.canonicalStore.get(def.id) ?? def;
+			const history = [...(stored.publishedArtifacts ?? [])];
+			const publishedAt = new Date().toISOString();
+			for (const row of written)
+			{
+				const artifact = preview.artifacts.find((item) => item.absolutePath === row.absolutePath);
+				history.push({
+					platform: row.platform,
+					artifactKind: row.artifactKind,
+					absolutePath: row.absolutePath,
+					publishedAt,
+					linkStrategy: artifact?.materialization?.actualLinkStrategy,
+				});
+			}
+			this.canonicalStore.upsert({ ...stored, publishedArtifacts: history });
+			this.canonicalStore.save();
+		}
+
 		const markdownArtifacts = preview.artifacts.filter((a) => !a.isCompanionJson);
 		if (this.onArtifactsWritten && markdownArtifacts.length > 0)
 		{
@@ -467,5 +503,35 @@ export class AgentPublisher
 		});
 
 		return { canonicalId, entries };
+	}
+
+	/**
+	 * Returns publish status for Publisher dialog (ledger join + full drift).
+	 * @param canonicalId - Canonical definition id from agent-definitions.json.
+	 * @param currentDef - Optional in-memory definition override (e.g. after Expand Context).
+	 */
+	getPublishStatus(canonicalId: string, currentDef?: CanonicalAgentDefinition)
+	{
+		const definition = currentDef
+			?? this.agentBuilder?.getCanonicalDefinition(canonicalId)
+			?? this.canonicalStore?.get(canonicalId);
+		if (!definition)
+		{
+			throw Object.assign(new Error(`No canonical definition found for id "${canonicalId}"`), { status: 404 });
+		}
+
+		const rows = this.ledger.getByCanonicalId(canonicalId);
+		const drift = this.detectDrift(canonicalId, definition);
+		const publishedTo = mergeDriftIntoPublishedSummaries(
+			rows.map((row) => toPublishedTargetSummary(row)),
+			drift.entries,
+		);
+
+		return {
+			canonicalId,
+			publishedTo,
+			publishedArtifacts: definition.publishedArtifacts ?? [],
+			drift,
+		};
 	}
 }

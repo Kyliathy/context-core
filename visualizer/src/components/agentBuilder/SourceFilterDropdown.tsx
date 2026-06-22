@@ -10,6 +10,7 @@
  *   - Emits a new Set<string> through onChange for each selection update.
  *
  * Docs: zz-reach2/architecture/ui/archi-context-core-visualizer-ui.md Sec 4.11
+ * Upgrade: server/zz-reach2/upgrades/2026-06/r2ap-agent-publisher-2.md (Part B)
  */
 import { useEffect, useRef, useState } from "react";
 import "./SourceFilterDropdown.css";
@@ -18,9 +19,15 @@ type SourceFilterDropdownProps = {
 	sources: string[];
 	selected: Set<string>;
 	onChange: (selected: Set<string>) => void;
+	/** Opens Vault Manager when user clicks Add Vault. */
+	onAddVault?: () => void;
 };
 
-export default function SourceFilterDropdown({ sources, selected, onChange }: SourceFilterDropdownProps) {
+/**
+ * Source picker for Agent Builder — toggles indexed vaults and offers Add Vault shortcut.
+ * @param props - Dropdown props including source list and selection handler.
+ */
+export default function SourceFilterDropdown({ sources, selected, onChange, onAddVault }: SourceFilterDropdownProps) {
 	const [isOpen, setIsOpen] = useState(false);
 	const [filterText, setFilterText] = useState("");
 	const containerRef = useRef<HTMLDivElement>(null);
@@ -78,6 +85,11 @@ export default function SourceFilterDropdown({ sources, selected, onChange }: So
 					<div className="source-filter-header">
 						<span className="source-filter-label">Sources</span>
 						<div style={{ display: "flex", gap: "4px" }}>
+							{onAddVault && (
+								<button type="button" className="source-filter-select-all" onClick={() => { onAddVault(); setIsOpen(false); }}>
+									Add Vault
+								</button>
+							)}
 							<button type="button" className="source-filter-select-all" onClick={selectAll}>
 								Select All
 							</button>
@@ -87,7 +99,11 @@ export default function SourceFilterDropdown({ sources, selected, onChange }: So
 						</div>
 					</div>
 					{visibleSources.length === 0 ? (
-						<div className="source-filter-empty">{sources.length === 0 ? "No sources available" : "No matches"}</div>
+						<div className="source-filter-empty">
+							{sources.length === 0
+								? (onAddVault ? "No sources — use Add Vault to index a directory" : "No sources available")
+								: "No matches"}
+						</div>
 					) : (
 						visibleSources.map((name) => (
 							<label key={name} className="source-filter-item">

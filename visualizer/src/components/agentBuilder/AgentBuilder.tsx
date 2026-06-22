@@ -40,8 +40,6 @@ type Props = {
 		tools: string;
 		codexDirectory?: string;
 		platform?: "github" | "claude" | "codex";
-		platforms?: import("../../types").AgentListPlatformEntry[];
-		contentDiverged?: boolean;
 	} | null;
 	onCancelEdit?: () => void;
 	mode?: "agent" | "template" | "agent-from-template";
@@ -378,11 +376,6 @@ export default function AgentBuilder({
 			)}
 
 			{/* Content divergence warning (edit mode only) */}
-			{editMode && initialValues?.contentDiverged && (
-				<div className="agent-basket-banner-warning">
-					⚠ Agent data differs between platforms. Saving may overwrite a version with different content.
-				</div>
-			)}
 
 			{/* Form fields */}
 			<div className="agent-basket-form" onKeyDown={handleFormKeyDown}>

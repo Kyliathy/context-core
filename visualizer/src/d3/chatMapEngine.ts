@@ -341,13 +341,29 @@ function renderCardHtml(card: CardData, lod: LOD, starredIds: Set<string>, mode:
 	const harnessBadge = `<span class="harness-badge" style="background-color:${badgeColor}">${escapeHtml(harnessDisplay)}</span>`;
 	const projectLabel = card.project || "MISC";
 	const projectBadge = `<span class="project-badge" style="background-color:${getProjectColor(projectLabel)};color:${getProjectTextColor(projectLabel)}">${escapeHtml(projectLabel)}</span>`;
-	// Platform badges for agent-list cards (e.g. "GH", "CL", "CX").
+	// Platform badges for agent-list cards from canonical publish summaries.
 	let platformBadges = "";
-	if (mode === "agent-list" && card.platforms && card.platforms.length > 0)
+	if (mode === "agent-list" && card.publishedTo && card.publishedTo.length > 0)
 	{
-		const labels: Record<string, string> = { github: "GH", claude: "CL", codex: "CX" };
-		const colors: Record<string, string> = { github: "#1f6feb", claude: "#d97706", codex: "#059669" };
-		platformBadges = card.platforms
+		const labels: Record<string, string> = {
+			copilot: "GH",
+			claude: "CL",
+			codex: "CX",
+			cursor: "CU",
+			windsurf: "WS",
+			kiro: "KI",
+			antigravity: "AG",
+		};
+		const colors: Record<string, string> = {
+			copilot: "#1f6feb",
+			claude: "#d97706",
+			codex: "#059669",
+			cursor: "#7c3aed",
+			windsurf: "#0ea5e9",
+			kiro: "#db2777",
+			antigravity: "#64748b",
+		};
+		platformBadges = card.publishedTo
 			.map((p) => `<span class="platform-badge" style="background:${colors[p.platform] ?? "#555"}">${labels[p.platform] ?? p.platform}</span>`)
 			.join("");
 	}
@@ -887,13 +903,13 @@ export function createChatMapEngine(
 				if (target.classList.contains("card-publish-btn"))
 				{
 					event.stopPropagation();
-					emit("card-publish-agent", { cardId: card.id, agentPath: card.agentPath ?? card.id, codexEntryId: card.codexEntryId });
+					emit("card-publish-agent", { cardId: card.id, canonicalId: card.canonicalId ?? card.id });
 					return;
 				}
 				if (target.classList.contains("card-edit-btn"))
 				{
 					event.stopPropagation();
-					emit("card-edit-agent", { cardId: card.id, agentPath: card.agentPath ?? card.id, codexEntryId: card.codexEntryId });
+					emit("card-edit-agent", { cardId: card.id, canonicalId: card.canonicalId ?? card.id });
 					return;
 				}
 				if (target.classList.contains("card-envelope-btn"))

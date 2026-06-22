@@ -101,6 +101,18 @@ const TEMPLATE_LIST_VIEW: ViewDefinition = {
 	createdAt: 6,
 };
 
+const VAULT_MANAGER_VIEW: ViewDefinition = {
+	id: "built-in-vault-manager",
+	name: "Vault Manager",
+	type: "vault-manager",
+	emoji: "🗄️",
+	color: "#64748b",
+	query: "",
+	autoQuery: false,
+	autoRefreshSeconds: 0,
+	createdAt: 7,
+};
+
 const VIEW_TYPE_DEFAULTS: Record<ViewType, { emoji: string; color: string }> = {
 	search: { emoji: "🔎", color: "#3b82f6" },
 	"search-threads": { emoji: "🧵", color: "#8b5cf6" },
@@ -110,6 +122,7 @@ const VIEW_TYPE_DEFAULTS: Record<ViewType, { emoji: string; color: string }> = {
 	"agent-list": { emoji: "📋", color: "#f97316" },
 	"template-create": { emoji: "📝", color: "#8b5cf6" },
 	"template-list": { emoji: "📚", color: "#8b5cf6" },
+	"vault-manager": { emoji: "🗄️", color: "#64748b" },
 };
 
 type UseViewsResult = {
@@ -176,7 +189,7 @@ function normalizeView(view: ViewDefinition): ViewDefinition
 
 function seedViews(): ViewDefinition[]
 {
-	return [LATEST_CHATS_VIEW, DEFAULT_SEARCH_VIEW, DEFAULT_SEARCH_THREADS_VIEW, DEFAULT_FAVORITES_VIEW, AGENT_BUILDER_VIEW, AGENT_LIST_VIEW, TEMPLATE_CREATE_VIEW, TEMPLATE_LIST_VIEW];
+	return [LATEST_CHATS_VIEW, DEFAULT_SEARCH_VIEW, DEFAULT_SEARCH_THREADS_VIEW, DEFAULT_FAVORITES_VIEW, AGENT_BUILDER_VIEW, AGENT_LIST_VIEW, TEMPLATE_CREATE_VIEW, TEMPLATE_LIST_VIEW, VAULT_MANAGER_VIEW];
 }
 
 function safeReadViews(): ViewDefinition[]
@@ -207,11 +220,11 @@ function safeReadViews(): ViewDefinition[]
 				return false;
 			}
 			const candidate = item as Partial<ViewDefinition> & { type?: unknown };
-			return typeof candidate.id === "string" && typeof candidate.name === "string" && ["search", "search-threads", "latest", "favorites", "agent-builder", "agent-list", "template-create", "template-list"].includes(String(candidate.type));
+			return typeof candidate.id === "string" && typeof candidate.name === "string" && ["search", "search-threads", "latest", "favorites", "agent-builder", "agent-list", "template-create", "template-list", "vault-manager"].includes(String(candidate.type));
 		});
 
 		const userViews = incoming
-			.filter((view) => view.id !== LATEST_CHATS_VIEW.id && view.id !== DEFAULT_SEARCH_VIEW.id && view.id !== DEFAULT_SEARCH_THREADS_VIEW.id && view.id !== DEFAULT_FAVORITES_VIEW.id && view.id !== AGENT_BUILDER_VIEW.id && view.id !== AGENT_LIST_VIEW.id && view.id !== TEMPLATE_CREATE_VIEW.id && view.id !== TEMPLATE_LIST_VIEW.id)
+			.filter((view) => view.id !== LATEST_CHATS_VIEW.id && view.id !== DEFAULT_SEARCH_VIEW.id && view.id !== DEFAULT_SEARCH_THREADS_VIEW.id && view.id !== DEFAULT_FAVORITES_VIEW.id && view.id !== AGENT_BUILDER_VIEW.id && view.id !== AGENT_LIST_VIEW.id && view.id !== TEMPLATE_CREATE_VIEW.id && view.id !== TEMPLATE_LIST_VIEW.id && view.id !== VAULT_MANAGER_VIEW.id)
 			.map((view) => normalizeView({
 				id: view.id as string,
 				name: view.name as string,
@@ -227,7 +240,7 @@ function safeReadViews(): ViewDefinition[]
 					? { cardPositioningMode: (view as Partial<ViewDefinition>).cardPositioningMode }
 					: {}),
 			}));
-		return [LATEST_CHATS_VIEW, normalizeView(DEFAULT_SEARCH_VIEW), normalizeView(DEFAULT_SEARCH_THREADS_VIEW), normalizeView(DEFAULT_FAVORITES_VIEW), AGENT_BUILDER_VIEW, AGENT_LIST_VIEW, TEMPLATE_CREATE_VIEW, TEMPLATE_LIST_VIEW, ...userViews].sort((left, right) => left.createdAt - right.createdAt);
+		return [LATEST_CHATS_VIEW, normalizeView(DEFAULT_SEARCH_VIEW), normalizeView(DEFAULT_SEARCH_THREADS_VIEW), normalizeView(DEFAULT_FAVORITES_VIEW), AGENT_BUILDER_VIEW, AGENT_LIST_VIEW, TEMPLATE_CREATE_VIEW, TEMPLATE_LIST_VIEW, VAULT_MANAGER_VIEW, ...userViews].sort((left, right) => left.createdAt - right.createdAt);
 	}
 	catch
 	{
@@ -446,4 +459,4 @@ export function useViews(): UseViewsResult
 	};
 }
 
-export { DEFAULT_SEARCH_VIEW, DEFAULT_SEARCH_THREADS_VIEW, DEFAULT_FAVORITES_VIEW, LATEST_CHATS_VIEW, AGENT_BUILDER_VIEW, AGENT_LIST_VIEW, TEMPLATE_LIST_VIEW, VIEW_TYPE_DEFAULTS };
+export { DEFAULT_SEARCH_VIEW, DEFAULT_SEARCH_THREADS_VIEW, DEFAULT_FAVORITES_VIEW, LATEST_CHATS_VIEW, AGENT_BUILDER_VIEW, AGENT_LIST_VIEW, TEMPLATE_LIST_VIEW, VAULT_MANAGER_VIEW, VIEW_TYPE_DEFAULTS };

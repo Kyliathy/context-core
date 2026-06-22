@@ -33,6 +33,7 @@ import { mountMcpSse } from "./mcp/transports/sse.js";
 import { FileWatcher } from "./watcher/FileWatcher.js";
 import { IncrementalPipeline } from "./watcher/IncrementalPipeline.js";
 import { AgentBuilder } from "./agentBuilder/AgentBuilder.js";
+import { AgentBuilderRuntime } from "./agentBuilder/AgentBuilderRuntime.js";
 import { AgentPublisher } from "./agentPublisher/AgentPublisher.js";
 import { CanonicalAgentStore } from "./agentPublisher/CanonicalAgentStore.js";
 import { collectDbFingerprint, validateDbFingerprint } from "./ingest/DbFingerprint.js";
@@ -400,30 +401,30 @@ async function main(): Promise<void>
 	// === AgentBuilder Initialization ===
 	let agentBuilder: AgentBuilder | undefined;
 	let agentPublisher: AgentPublisher | undefined;
+	const canonicalAgentStore = new CanonicalAgentStore(settings.storage);
+	const storeWarning = canonicalAgentStore.load();
+	if (storeWarning) agentBuilderLogger.warn(storeWarning);
+
+	const agentBuilderRuntime = new AgentBuilderRuntime(
+		settings.configPath,
+		settings.storage,
+		canonicalAgentStore,
+		machine,
+	);
+	await agentBuilderRuntime.initializeFromMachine(machine);
+	agentBuilder = agentBuilderRuntime.getAgentBuilder();
+	agentPublisher = agentBuilderRuntime.getAgentPublisher();
+
 	agentBuilderLogger.info(`cc.json loaded from: ${settings.configPath}`);
 	agentBuilderLogger.info(`matched machine: "${machine.machine}", hostname: "${hostname}"`);
 	agentBuilderLogger.info(`dataSources keys: ${Object.keys(machine.dataSources ?? {}).join(", ") || "(none)"}`);
-	const agentBuilderSources = Object.values(machine.dataSources ?? {})
-		.flat()
-		.filter((s) => s.purpose === "AgentBuilder");
-	if (agentBuilderSources.length > 0)
+	if (agentBuilder)
 	{
-		const canonicalAgentStore = new CanonicalAgentStore(settings.storage);
-		const storeWarning = canonicalAgentStore.load();
-		if (storeWarning) agentBuilderLogger.warn(storeWarning);
-		agentBuilder = new AgentBuilder(machine, canonicalAgentStore, settings.storage);
-		await agentBuilder.index();
-		agentPublisher = new AgentPublisher(
-			agentBuilderSources,
-			settings.storage,
-			agentBuilder,
-			(sourceName, artifacts) => agentBuilder!.upsertPublishedArtifacts(sourceName, artifacts),
-			canonicalAgentStore,
-		);
-		agentBuilderLogger.info("AgentPublisher initialized with publish ledger and index callback.");
-	} else
+		agentBuilderLogger.info("AgentBuilder initialized with publish ledger and index callback.");
+	}
+	else
 	{
-		agentBuilderLogger.info("No AgentBuilder data sources configured — skipping.");
+		agentBuilderLogger.info("No AgentBuilder data sources configured — vault routes still available.");
 	}
 
 	const portFile = resolve(process.cwd(), ".cxc-port");
@@ -434,6 +435,7 @@ async function main(): Promise<void>
 		topicStore,
 		agentBuilder,
 		agentPublisher,
+		agentBuilderRuntime,
 		scopeStore,
 		favoriteStore,
 		summaryEmbeddingCache

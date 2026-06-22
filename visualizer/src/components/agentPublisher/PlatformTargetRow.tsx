@@ -2,7 +2,7 @@
  * Single platform row in PublishAgentDialog.
  *
  * Architecture: visualizer/zz-reach2/architecture/agents/archi-agent-builder-ui.md
- * Upgrade: server/zz-reach2/upgrades/2026-06/r2ab3-agent-builder-3.md
+ * Upgrade: server/zz-reach2/upgrades/2026-06/r2ap-agent-publisher-2.md (Part A/C)
  */
 
 import type { ArtifactKind, LinkStrategy, PublishPlatform } from "../../types";
@@ -20,6 +20,10 @@ export type PlatformTargetRowProps = {
 	filenameHint: string;
 	nativeDefaultDir?: string;
 	heatSuggestedDir?: string;
+	/** Ledger/drift summary for this platform row. */
+	publishStatusLabel?: string;
+	lastPublishedPath?: string;
+	onHeatSuggestedSelect?: (absolutePath: string) => void;
 	onToggle: () => void;
 	onArtifactKindChange: (kind: ArtifactKind) => void;
 	onLinkStrategyChange: (strategy: LinkStrategy) => void;
@@ -39,6 +43,9 @@ export default function PlatformTargetRow({
 	filenameHint,
 	nativeDefaultDir,
 	heatSuggestedDir,
+	publishStatusLabel,
+	lastPublishedPath,
+	onHeatSuggestedSelect,
 	onToggle,
 	onArtifactKindChange,
 	onLinkStrategyChange,
@@ -58,11 +65,16 @@ export default function PlatformTargetRow({
 				<input type="checkbox" checked={selected} disabled={!supported} onChange={onToggle} />
 				<span>{label}</span>
 			</label>
-			{supported && platformNotes && platformNotes.length > 0 && (
-				<div className="platform-target-notes">{platformNotes[0]}</div>
-			)}
 			{selected && supported && (
 				<div className="platform-target-row-body">
+					{publishStatusLabel && (
+						<div className="platform-target-publish-status" title={lastPublishedPath}>
+							{publishStatusLabel}
+						</div>
+					)}
+					{platformNotes && platformNotes.length > 0 && (
+						<div className="platform-target-notes">{platformNotes[0]}</div>
+					)}
 					<div className="platform-target-kind">
 						<button
 							type="button"
@@ -102,8 +114,15 @@ export default function PlatformTargetRow({
 						</div>
 					)}
 					{showHeatHint && (
-						<div className="platform-target-hint platform-target-heat-hint" title={heatSuggestedDir}>
-							Suggested by heat: {heatSuggestedDir}
+						<div className="platform-target-hint platform-target-heat-hint">
+							Suggested by path heatmap:{" "}
+							<button
+								type="button"
+								className="platform-target-heat-link"
+								title={`Select ${heatSuggestedDir}`}
+								onClick={() => onHeatSuggestedSelect?.(heatSuggestedDir!)}>
+								{heatSuggestedDir}
+							</button>
 						</div>
 					)}
 					<div className="platform-target-hint">

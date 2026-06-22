@@ -1,3 +1,10 @@
+/**
+ * PublishAgentDialog — multi-platform publish preview with placement heat and ledger status.
+ *
+ * Architecture: visualizer/zz-reach2/architecture/agents/archi-agent-builder-ui.md
+ * Upgrade: server/zz-reach2/upgrades/2026-06/r2ap-agent-publisher-2.md (Part A/C)
+ */
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
 	ArtifactKind,
@@ -6,21 +13,40 @@ import type {
 	PathHeatResult,
 	PlatformCapability,
 	PlatformDefaultDirs,
+	PublishedTargetSummary,
 	PublishPlatform,
 	PublishResult,
 	PublishTarget,
 	PreviewResult,
+	PublishStatusResponse,
 } from "../../types";
 import {
 	fetchPublisherHeat,
 	fetchPublisherPlatforms,
 	fetchPublisherPreview,
 	fetchPublisherPublish,
+	fetchPublisherStatus,
 	fetchPublisherTree,
 } from "../../api/agentPublisher";
 import PlatformTargetRow from "./PlatformTargetRow";
-import PathHeatTree, { findNearestDirectoryForTopPath } from "./PathHeatTree";
-import { resolveDefaultOutputDir, resolveFilenameHint, normalizeLinkStrategy } from "./publishUtils";
+import PathHeatTree from "./PathHeatTree";
+import {
+	buildInitialPublisherTargets,
+	filterHeatByMdSources,
+	formatPublishedArtifactLabel,
+	formatPublishStatusLabel,
+	initialSelectedMdSourcePaths,
+	normalizeLinkStrategy,
+	outputDirFromArtifactPath,
+	PUBLISHER_PLATFORM_ORDER,
+	readLastSelectedPublisherPlatforms,
+	resolveDefaultOutputDir,
+	resolveFilenameHint,
+	resolvePlacementPlatform,
+	saveLastSelectedPublisherPlatforms,
+	selectedPlatformsFromTargets,
+	sortPlatformsByLastSelected,
+} from "./publishUtils";
 import "./PublishAgentDialog.css";
 
 type Props = {
@@ -28,6 +54,8 @@ type Props = {
 	definition: CanonicalAgentDefinition | null;
 	onClose: () => void;
 	onPublished: (result: PublishResult) => void;
+	/** Appends related markdown paths to the Builder basket and canonical working definition. */
+	onExpandContext?: (paths: string[]) => void;
 };
 
 type TargetState = {
@@ -36,8 +64,6 @@ type TargetState = {
 	outputDir: string;
 	linkStrategy: LinkStrategy;
 };
-
-const PLATFORM_ORDER: PublishPlatform[] = ["codex", "claude", "copilot", "kiro", "cursor", "windsurf", "antigravity"];
 
 const LABELS: Record<PublishPlatform, string> = {
 	copilot: "GitHub Copilot",
@@ -49,12 +75,17 @@ const LABELS: Record<PublishPlatform, string> = {
 	antigravity: "Antigravity",
 };
 
+/**
+ * Builds publish targets from per-platform UI state.
+ * @param def - Canonical agent definition being published.
+ * @param targets - Per-platform row state map.
+ */
 function makePublishTargetsFromState(
 	def: CanonicalAgentDefinition,
 	targets: Record<PublishPlatform, TargetState>,
 ): PublishTarget[]
 {
-	return PLATFORM_ORDER
+	return PUBLISHER_PLATFORM_ORDER
 		.filter((platform) => targets[platform]?.selected && targets[platform].outputDir)
 		.map((platform) => ({
 			platform,
@@ -67,42 +98,37 @@ function makePublishTargetsFromState(
 		}));
 }
 
-function buildInitialTargets(
-	platforms: PlatformCapability[],
-): Record<PublishPlatform, TargetState>
+/** Normalizes markdown absolute paths for chip selection sets. */
+function pathKey(filePath: string): string
 {
-	const next = Object.fromEntries(
-		PLATFORM_ORDER.map((p) => [p, { selected: false, artifactKind: "agent" as ArtifactKind, outputDir: "", linkStrategy: "copy" as LinkStrategy }]),
-	) as Record<PublishPlatform, TargetState>;
-
-	for (const platform of PLATFORM_ORDER)
-	{
-		const cap = platforms.find((item) => item.platform === platform);
-		const outputDir = resolveDefaultOutputDir(cap?.defaultDirs, "agent");
-		next[platform] = {
-			selected: platform === "copilot" || platform === "claude" || platform === "codex",
-			artifactKind: "agent",
-			outputDir,
-			linkStrategy: "copy",
-		};
-	}
-	return next;
+	return filePath.replace(/\\/g, "/").toLowerCase();
 }
 
-export default function PublishAgentDialog({ open, definition, onClose, onPublished }: Props)
+/**
+ * Publish dialog — platform targets, placement heat, ledger status, and Expand Context.
+ * @param props - Dialog props including canonical definition and lifecycle callbacks.
+ */
+export default function PublishAgentDialog({ open, definition, onClose, onPublished, onExpandContext }: Props)
 {
 	const [capabilities, setCapabilities] = useState<PlatformCapability[]>([]);
 	const [nativeDefaults, setNativeDefaults] = useState<Partial<Record<PublishPlatform, PlatformDefaultDirs>>>({});
-	const [heat, setHeat] = useState<PathHeatResult | null>(null);
+	const [fullHeat, setFullHeat] = useState<PathHeatResult | null>(null);
 	const [tree, setTree] = useState<PathHeatResult["tree"]>([]);
+	const [publishStatus, setPublishStatus] = useState<PublishStatusResponse | null>(null);
+	const [selectedMdPaths, setSelectedMdPaths] = useState<Set<string>>(new Set());
 	const [preview, setPreview] = useState<PreviewResult | null>(null);
 	const [publishResult, setPublishResult] = useState<PublishResult | null>(null);
 	const [loading, setLoading] = useState(false);
 	const [previewLoading, setPreviewLoading] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const [activePlatform, setActivePlatform] = useState<PublishPlatform>("codex");
+	const [selectedPublishedArtifactKey, setSelectedPublishedArtifactKey] = useState("");
+	const [knowledgeExpanded, setKnowledgeExpanded] = useState(false);
 	const [targets, setTargets] = useState<Record<PublishPlatform, TargetState>>(() =>
-		Object.fromEntries(PLATFORM_ORDER.map((p) => [p, { selected: false, artifactKind: "agent" as ArtifactKind, outputDir: "", linkStrategy: "copy" as LinkStrategy }])) as Record<PublishPlatform, TargetState>,
+		Object.fromEntries(PUBLISHER_PLATFORM_ORDER.map((p) => [p, { selected: false, artifactKind: "agent" as ArtifactKind, outputDir: "", linkStrategy: "copy" as LinkStrategy }])) as Record<PublishPlatform, TargetState>,
+	);
+	const [platformOrder, setPlatformOrder] = useState<PublishPlatform[]>(() =>
+		sortPlatformsByLastSelected(readLastSelectedPublisherPlatforms()),
 	);
 	const previewTimer = useRef<number | null>(null);
 
@@ -113,26 +139,49 @@ export default function PublishAgentDialog({ open, definition, onClose, onPublis
 		return map;
 	}, [capabilities]);
 
+	const filteredHeat = useMemo(() =>
+	{
+		if (!fullHeat) return null;
+		return filterHeatByMdSources(fullHeat, selectedMdPaths);
+	}, [fullHeat, selectedMdPaths]);
+
 	const resetTransient = useCallback(() =>
 	{
 		setPreview(null);
 		setPublishResult(null);
 		setError(null);
+		setKnowledgeExpanded(false);
+	}, []);
+
+	const loadHeat = useCallback(async (def: CanonicalAgentDefinition) =>
+	{
+		if (!def.knowledge.some((k) => k.kind === "file")) return null;
+		const heatRes = await fetchPublisherHeat(def);
+		setFullHeat(heatRes);
+		setSelectedMdPaths(initialSelectedMdSourcePaths(heatRes.mdSources));
+		return heatRes;
+	}, []);
+
+	const refreshStatus = useCallback(async (canonicalId: string) =>
+	{
+		const status = await fetchPublisherStatus(canonicalId);
+		setPublishStatus(status);
+		return status;
 	}, []);
 
 	useEffect(() =>
 	{
 		if (!open || !definition) return;
 		resetTransient();
+		const lastSelected = readLastSelectedPublisherPlatforms();
+		setPlatformOrder(sortPlatformsByLastSelected(lastSelected));
 		setLoading(true);
 		Promise.all([
 			fetchPublisherPlatforms(definition.projectName),
 			fetchPublisherTree(definition.projectName),
-			definition.knowledge.some((k) => k.kind === "file")
-				? fetchPublisherHeat(definition)
-				: Promise.resolve(null),
+			refreshStatus(definition.id),
 		])
-			.then(([platformsRes, treeRes, heatRes]) =>
+			.then(([platformsRes, treeRes, statusRes]) =>
 			{
 				setCapabilities(platformsRes.platforms);
 				const defaults: Partial<Record<PublishPlatform, PlatformDefaultDirs>> = {};
@@ -142,12 +191,27 @@ export default function PublishAgentDialog({ open, definition, onClose, onPublis
 				}
 				setNativeDefaults(defaults);
 				setTree(treeRes.tree);
-				setHeat(heatRes);
-				setTargets(buildInitialTargets(platformsRes.platforms));
+				const initialTargets = buildInitialPublisherTargets(platformsRes.platforms, statusRes.publishedTo, lastSelected);
+				setTargets(initialTargets);
+				setActivePlatform(resolvePlacementPlatform(initialTargets, "codex"));
 			})
 			.catch((err) => setError(err instanceof Error ? err.message : String(err)))
 			.finally(() => setLoading(false));
-	}, [open, definition, resetTransient]);
+	// Business logic: re-init only when dialog opens for a different canonical id — not on Expand Context knowledge edits.
+	}, [open, definition?.id, resetTransient, refreshStatus]);
+
+	const knowledgeSignature = useMemo(
+		() => JSON.stringify(definition?.knowledge ?? []),
+		[definition?.knowledge],
+	);
+
+	// Business logic: Expand Context mutates parent definition knowledge — re-heat without closing Publisher.
+	useEffect(() =>
+	{
+		if (!open || !definition) return;
+		if (!definition.knowledge.some((k) => k.kind === "file")) return;
+		loadHeat(definition).catch((err) => setError(err instanceof Error ? err.message : String(err)));
+	}, [open, knowledgeSignature, definition, loadHeat]);
 
 	const runPreview = useCallback((def: CanonicalAgentDefinition, nextTargets: Record<PublishPlatform, TargetState>) =>
 	{
@@ -175,6 +239,13 @@ export default function PublishAgentDialog({ open, definition, onClose, onPublis
 		};
 	}, [open, definition, targets, runPreview]);
 
+	// Business logic: remember checked platforms for the next Publisher open and list ordering.
+	useEffect(() =>
+	{
+		if (!open) return;
+		saveLastSelectedPublisherPlatforms(selectedPlatformsFromTargets(targets));
+	}, [open, targets]);
+
 	const handlePublish = useCallback(async () =>
 	{
 		if (!definition) return;
@@ -190,7 +261,11 @@ export default function PublishAgentDialog({ open, definition, onClose, onPublis
 		{
 			const result = await fetchPublisherPublish({ definition, targets: publishTargets });
 			setPublishResult(result);
-			if (result.errors.length === 0) onPublished(result);
+			if (result.errors.length === 0)
+			{
+				onPublished(result);
+				await refreshStatus(definition.id);
+			}
 			else setError(result.errors.join("; "));
 		} catch (err)
 		{
@@ -199,12 +274,82 @@ export default function PublishAgentDialog({ open, definition, onClose, onPublis
 		{
 			setLoading(false);
 		}
-	}, [definition, targets, onPublished]);
+	}, [definition, targets, onPublished, refreshStatus]);
+
+	const toggleMdSource = useCallback((absolutePath: string) =>
+	{
+		const key = pathKey(absolutePath);
+		setSelectedMdPaths((prev) =>
+		{
+			const next = new Set(prev);
+			if (next.has(key)) next.delete(key);
+			else next.add(key);
+			return next;
+		});
+	}, []);
+
+	const relatedCheckedNotInBasket = useMemo(() =>
+	{
+		if (!fullHeat?.mdSources) return [];
+		return fullHeat.mdSources.filter((source) =>
+			source.isRelated
+			&& !source.inBasket
+			&& selectedMdPaths.has(pathKey(source.absolutePath)),
+		);
+	}, [fullHeat?.mdSources, selectedMdPaths]);
+
+	const publishedArtifacts = useMemo(() =>
+	{
+		const rows = publishStatus?.publishedArtifacts ?? [];
+		// Business logic: newest publishes first in the "Already published" dropdown.
+		return [...rows].reverse();
+	}, [publishStatus?.publishedArtifacts]);
+
+	const handleExpandContext = useCallback(() =>
+	{
+		if (!onExpandContext || relatedCheckedNotInBasket.length === 0) return;
+		onExpandContext(relatedCheckedNotInBasket.map((source) => source.absolutePath));
+		setKnowledgeExpanded(true);
+	}, [onExpandContext, relatedCheckedNotInBasket]);
+
+	const applyOutputDirForPlatform = useCallback((platform: PublishPlatform, absolutePath: string) =>
+	{
+		setActivePlatform(platform);
+		setTargets((prev) => ({
+			...prev,
+			[platform]: { ...prev[platform], outputDir: absolutePath },
+		}));
+	}, []);
+
+	const handlePublishedArtifactPick = useCallback((artifactIndex: string) =>
+	{
+		setSelectedPublishedArtifactKey(artifactIndex);
+		if (!artifactIndex) return;
+		const entry = publishedArtifacts[Number(artifactIndex)];
+		if (!entry) return;
+		const outputDir = outputDirFromArtifactPath(entry.absolutePath);
+		setActivePlatform(entry.platform);
+		setTargets((prev) => ({
+			...prev,
+			[entry.platform]: {
+				...prev[entry.platform],
+				selected: true,
+				artifactKind: entry.artifactKind,
+				outputDir: outputDir || prev[entry.platform].outputDir,
+				linkStrategy: entry.linkStrategy
+					? normalizeLinkStrategy(entry.platform, entry.artifactKind, entry.linkStrategy)
+					: prev[entry.platform].linkStrategy,
+			},
+		}));
+	}, [publishedArtifacts]);
 
 	if (!open || !definition) return null;
 
-	const selectedDir = targets[activePlatform]?.outputDir;
-	const heatSuggestedDir = heat?.suggestedOutputDir;
+	const placementPlatform = resolvePlacementPlatform(targets, activePlatform);
+	const selectedDir = targets[placementPlatform]?.outputDir;
+	const heatSuggestedDir = filteredHeat?.suggestedOutputDir;
+	const publishedTo = publishStatus?.publishedTo ?? [];
+	const driftWarnings = publishStatus?.drift?.entries?.filter((entry) => entry.state !== "clean") ?? [];
 
 	return (
 		<div className="publish-agent-overlay" role="dialog" aria-modal="true" aria-label="Publish Agent">
@@ -216,17 +361,30 @@ export default function PublishAgentDialog({ open, definition, onClose, onPublis
 
 				{loading && <div>Loading publisher data…</div>}
 				{error && <div className="publish-agent-error">{error}</div>}
+				{driftWarnings.length > 0 && (
+					<div className="publish-agent-warn">
+						Drift detected on {driftWarnings.length} published artifact(s). Review before confirming publish.
+					</div>
+				)}
+				{knowledgeExpanded && (
+					<div className="publish-agent-warn">
+						Knowledge basket was expanded in this session. Save the agent in Builder before relying on canonical storage.
+					</div>
+				)}
 
 				<div className="publish-agent-grid">
 					<div className="publish-agent-section">
 						<h3>Platforms</h3>
-						{PLATFORM_ORDER.map((platform) =>
+						{platformOrder.map((platform) =>
 						{
 							const cap = capabilities.find((item) => item.platform === platform);
 							const supported = (supportedKinds.get(platform)?.length ?? 0) > 0;
 							const state = targets[platform];
 							const defaultDirs = nativeDefaults[platform];
 							const nativeAgentDir = defaultDirs?.agentOutputDir;
+							const publishedRow = publishedTo.find(
+								(entry) => entry.platform === platform && entry.artifactKind === state.artifactKind,
+							);
 							return (
 								<PlatformTargetRow
 									key={platform}
@@ -249,6 +407,9 @@ export default function PublishAgentDialog({ open, definition, onClose, onPublis
 											: nativeAgentDir
 									}
 									heatSuggestedDir={heatSuggestedDir}
+									publishStatusLabel={formatPublishStatusLabel(platform, state.artifactKind, publishedTo)}
+									lastPublishedPath={publishedRow?.absolutePath}
+									onHeatSuggestedSelect={(absolutePath) => applyOutputDirForPlatform(platform, absolutePath)}
 									onToggle={() =>
 									{
 										setActivePlatform(platform);
@@ -287,66 +448,53 @@ export default function PublishAgentDialog({ open, definition, onClose, onPublis
 					<div className="publish-agent-section">
 						<h3>Placement</h3>
 						<p className="publish-agent-placement-note">
-							Directory picks apply to the active platform ({LABELS[activePlatform]}). Native defaults are used unless you choose a different folder.
+							Directory picks apply to the active platform ({LABELS[placementPlatform]}). Select markdown sources to filter directory heat.
 						</p>
-						{heat && heat.totalHits === 0 && (
-							<div>No file-path heat (custom text knowledge only). Pick a directory manually.</div>
+						{filteredHeat && filteredHeat.totalHits === 0 && (
+							<div>No directory heat for the selected markdown sources. Pick a folder manually or enable more source chips.</div>
 						)}
-						{heat && heat.knowledgeFilePaths?.length > 0 && (
-							<div className="publish-placement-knowledge">
-								<div className="publish-placement-caption">Knowledge files in this agent</div>
-								<ul className="publish-placement-knowledge-list">
-									{heat.knowledgeFilePaths.map((filePath) => (
-										<li key={filePath} title={filePath}>
-											{filePath.replace(/\\/g, "/").split("/").slice(-3).join("/")}
-										</li>
-									))}
-								</ul>
-							</div>
-						)}
-						{heat && heat.topPaths.length > 0 && (
-							<div className="top-paths-panel">
+						{fullHeat?.mdSources && fullHeat.mdSources.length > 0 && (
+							<div className="publish-placement-md-sources">
 								<div className="publish-placement-caption">
-									Top referenced paths — file paths mentioned inside your knowledge docs, plus the knowledge files themselves. Click a chip to pick a nearby output folder for the active platform.
+									Markdown sources — basket docs are checked by default; related link discoveries are optional.
 								</div>
-								{heat.topPaths.map((item) => (
-									<button
-										key={item.path}
-										type="button"
-										className="top-path-chip"
-										aria-label={`${item.path} (${item.hits} hits)`}
-										onClick={() =>
-										{
-											const nearest = findNearestDirectoryForTopPath(item.path, tree) ?? heat.suggestedOutputDir;
-											if (!nearest) return;
-											setTargets((prev) => ({
-												...prev,
-												[activePlatform]: { ...prev[activePlatform], outputDir: nearest },
-											}));
-										}}>
-										{item.path.split(/[/\\]/).pop()} ({item.hits})
+								<div className="publish-md-source-chips">
+									{fullHeat.mdSources.map((source) =>
+									{
+										const checked = selectedMdPaths.has(pathKey(source.absolutePath));
+										return (
+											<label key={source.absolutePath} className={`publish-md-chip${source.isRelated ? " is-related" : ""}`}>
+												<input
+													type="checkbox"
+													checked={checked}
+													onChange={() => toggleMdSource(source.absolutePath)}
+												/>
+												<span title={source.absolutePath}>
+													{source.displayPath}
+													{source.isRelated ? " (related)" : ""}
+												</span>
+											</label>
+										);
+									})}
+								</div>
+								{onExpandContext && relatedCheckedNotInBasket.length > 0 && (
+									<button type="button" className="publish-expand-context-btn" onClick={handleExpandContext}>
+										Expand Context ({relatedCheckedNotInBasket.length})
 									</button>
-								))}
-							</div>
-						)}
-						{heat && heat.topPaths.length === 0 && heat.knowledgeFilePaths?.length > 0 && (
-							<div className="publish-placement-caption">
-								No extra path references were found inside your knowledge files. Use the directory tree below to choose an output folder.
+								)}
 							</div>
 						)}
 						<div className="publish-placement-caption publish-placement-tree-caption">
-							Directory tree — color shows how often paths under each folder were referenced in knowledge (warmer = more). [n] is the mention count in that folder and its subfolders. Click a folder to set the output directory for {LABELS[activePlatform]}.
+							Directory tree — warmer folders were referenced more often in the selected markdown sources. Click a folder to set the output directory for {LABELS[placementPlatform]}.
 						</div>
 						<PathHeatTree
-							nodes={heat?.tree?.length ? heat.tree : tree}
+							nodes={filteredHeat?.tree?.length ? filteredHeat.tree : tree}
 							selectedPath={selectedDir}
 							suggestedPath={heatSuggestedDir}
 							onSelect={(absolutePath) =>
 							{
-								setTargets((prev) => ({
-									...prev,
-									[activePlatform]: { ...prev[activePlatform], outputDir: absolutePath },
-								}));
+								const platform = resolvePlacementPlatform(targets, activePlatform);
+								applyOutputDirForPlatform(platform, absolutePath);
 							}}
 						/>
 					</div>
@@ -367,6 +515,26 @@ export default function PublishAgentDialog({ open, definition, onClose, onPublis
 						))}
 					</div>
 				</div>
+
+				{publishedArtifacts.length > 0 && (
+					<div className="publish-agent-section publish-agent-published-history">
+						<label className="publish-agent-published-label" htmlFor="publish-agent-published-select">
+							Already published:
+						</label>
+						<select
+							id="publish-agent-published-select"
+							className="publish-agent-published-select"
+							value={selectedPublishedArtifactKey}
+							onChange={(e) => handlePublishedArtifactPick(e.target.value)}>
+							<option value="">Select a previous publish…</option>
+							{publishedArtifacts.map((entry, index) => (
+								<option key={`${entry.publishedAt}-${entry.absolutePath}-${index}`} value={String(index)}>
+									{formatPublishedArtifactLabel(entry, LABELS[entry.platform])}
+								</option>
+							))}
+						</select>
+					</div>
+				)}
 
 				{publishResult && (
 					<div className="publish-agent-success">

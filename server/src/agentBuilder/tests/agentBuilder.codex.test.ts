@@ -101,10 +101,12 @@ describe("AgentBuilder codex platform (multi-entry collections)", () =>
 			expect(second.codexEntryId).toBe("biome-worker");
 
 			const listed = builder.list();
-			expect(listed.totalAgents).toBe(2);
-			expect(listed.agents.map((a) => a.name).sort()).toEqual(["biome-worker", "knk-home"]);
-			expect(new Set(listed.agents.map((a) => a.path)).size).toBe(1);
-			expect(new Set(listed.agents.map((a) => a.codexEntryId)).size).toBe(2);
+			// Canonical-first list ignores legacy disk-only codex creates without CanonicalAgentStore entries.
+			expect(listed.totalAgents).toBe(0);
+
+			const jsonPath = join(sourcePath, "AGENTS.json");
+			const json = JSON.parse(readFileSync(jsonPath, "utf8")) as { agents?: Array<{ id?: string }> };
+			expect(json.agents?.map((a) => a.id).sort()).toEqual(["biome-worker", "knk-home"]);
 
 			// Update one entry only
 			builder.create(codexInput("knk-home", {
@@ -112,12 +114,11 @@ describe("AgentBuilder codex platform (multi-entry collections)", () =>
 				description: "Updated KNK Home description",
 			}));
 
-			const afterUpdate = builder.list();
-			expect(afterUpdate.totalAgents).toBe(2);
-			const updated = afterUpdate.agents.find((a) => a.codexEntryId === "knk-home");
-			const untouched = afterUpdate.agents.find((a) => a.codexEntryId === "biome-worker");
-			expect(updated?.description).toBe("Updated KNK Home description");
-			expect(untouched?.description).toBe("biome-worker worker");
+			const jsonAfter = JSON.parse(readFileSync(jsonPath, "utf8")) as { agents?: Array<{ description?: string }> };
+			const updatedEntry = jsonAfter.agents?.find((a) => (a as { id?: string }).id === "knk-home") as { description?: string } | undefined;
+			const untouchedEntry = jsonAfter.agents?.find((a) => (a as { id?: string }).id === "biome-worker") as { description?: string } | undefined;
+			expect(updatedEntry?.description).toBe("Updated KNK Home description");
+			expect(untouchedEntry?.description).toBe("biome-worker worker");
 		}
 		finally
 		{
@@ -297,9 +298,7 @@ describe("AgentBuilder codex platform (multi-entry collections)", () =>
 			await builder.index();
 
 			const listed = builder.list();
-			expect(listed.totalAgents).toBe(1);
-			expect(listed.agents[0]?.name).toBe("legacy-home");
-			expect(listed.agents[0]?.codexEntryId).toBe("legacy-home");
+			expect(listed.totalAgents).toBe(0);
 
 			const loaded = builder.getAgent(agentsMdPath).agent;
 			expect(loaded.fromJson).toBe(true);
@@ -361,10 +360,7 @@ describe("AgentBuilder codex platform (multi-entry collections)", () =>
 			await builder.index();
 
 			const listed = builder.list();
-			expect(listed.totalAgents).toBe(3);
-
-			const ids = listed.agents.map((entry) => entry.codexEntryId).sort();
-			expect(ids).toEqual(["dup", "dup-2", "third-agent"]);
+			expect(listed.totalAgents).toBe(0);
 
 			const selected = builder.getAgent(agentsMdPath, "dup-2").agent;
 			expect(selected.agentName).toBe("second");
@@ -414,9 +410,7 @@ describe("AgentBuilder codex platform (multi-entry collections)", () =>
 
 			await builder.index();
 			const listed = builder.list();
-			expect(listed.totalAgents).toBe(2);
-			expect(listed.agents.find((entry) => entry.name === "gh-worker")?.platform).toBe("github");
-			expect(listed.agents.find((entry) => entry.name === "claude-worker")?.platform).toBe("claude");
+			expect(listed.totalAgents).toBe(0);
 
 			const githubAgent = builder.getAgent(githubPath).agent;
 			const claudeAgent = builder.getAgent(claudePath).agent;

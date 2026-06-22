@@ -2,7 +2,7 @@
  * AgentBuilder – indexes content sources and manages agent file lifecycle.
  *
  * Architecture: server/zz-reach2/architecture/agents/archi-agent-builder.md
- * Upgrade: server/zz-reach2/upgrades/2026-06/r2ab3-agent-builder-3.md
+ * Upgrade: server/zz-reach2/upgrades/2026-06/r2ab3-agent-builder-3.md, r2ap-agent-publisher-2.md
  * Logging: server/zz-reach2/upgrades/2026-06/r2wl-winston-logging.md
  */
 
@@ -21,6 +21,13 @@ import {
 	isListableAgentDefinitionPath,
 } from "../agentPublisher/agentArtifactClassifier.js";
 import { CXC_GENERATED_MARKER } from "../agentPublisher/generatedMarker.js";
+import { mapCanonicalAgentList } from "../agentPublisher/canonicalListMapper.js";
+export type {
+	AgentListResponse,
+	CanonicalAgentListEntry,
+	CanonicalAgentListEntry as AgentListEntry,
+	PublishedTargetSummary,
+} from "../agentPublisher/canonicalListMapper.js";
 
 /** A single indexed file from a data source directory. */
 export interface IndexedFile
@@ -72,6 +79,8 @@ export interface CreateAgentInput
 	codexDirectory?: string;
 	/** Target platform for legacy platform-specific create. Omit for canonical-only save. */
 	platform?: "github" | "claude" | "codex" | "cursor" | "windsurf" | "kiro" | "antigravity";
+	/** When editing an existing catalog entry, preserve this canonical id on save. */
+	canonicalId?: string;
 }
 
 /** Response shape for POST /api/agent-builder/create. */
@@ -87,49 +96,6 @@ export interface CreateAgentResponse
 	/** Absolute path to agent-definitions.json when canonical-only create succeeded. */
 	canonicalStoragePath?: string;
 	codexEntryId?: string;
-}
-
-/** Per-platform location info within a consolidated agent list entry. */
-export interface AgentListPlatformEntry
-{
-	platform: "github" | "claude" | "codex" | "cursor" | "windsurf" | "kiro" | "antigravity";
-	path: string;
-	codexEntryId?: string;
-	codexDirectory?: string;
-	/** Byte size of the agent definition file (used to pick primary version for editing). */
-	dataLength: number;
-}
-
-/** Summary entry for GET /api/agent-builder/list (consolidated across platforms). */
-export interface AgentListEntry
-{
-	/** Agent name (filename stem, e.g. cxc-ui-worker). */
-	name: string;
-	/** Absolute path to the primary platform's agent file (biggest dataLength). */
-	path: string;
-	/** Optional entry id (set when primary platform is Codex). */
-	codexEntryId?: string;
-	/** Optional Codex directory (set when primary platform is Codex). */
-	codexDirectory?: string;
-	/** Primary platform (the one with the biggest dataLength). */
-	platform?: "github" | "claude" | "codex" | "cursor" | "windsurf" | "kiro" | "antigravity";
-	/** All platforms this logical agent exists on. */
-	platforms: AgentListPlatformEntry[];
-	/** True when the agent content differs between platforms (knowledge, description, etc.). */
-	contentDiverged: boolean;
-	/** Agent description from JSON or frontmatter (from primary platform). */
-	description: string;
-	/** Argument hint from JSON or frontmatter (from primary platform). */
-	hint: string;
-	/** First 1000 characters of primary platform file content. */
-	excerpt: string;
-}
-
-/** Response shape for GET /api/agent-builder/list. */
-export interface AgentListResponse
-{
-	totalAgents: number;
-	agents: AgentListEntry[];
 }
 
 /** Structured payload returned by GET /api/agent-builder/get-agent. */
@@ -1189,6 +1155,41 @@ export class AgentBuilder
 		this.sources = this.extractAgentBuilderSources(machineConfig);
 	}
 
+	/**
+	 * Extracts AgentBuilder dataSources from a machine config (shared with AgentBuilderRuntime).
+	 * @param machineConfig - Machine row from cc.json.
+	 */
+	static extractAgentBuilderSourcesFromMachine(machineConfig: MachineConfig): DataSourceEntry[]
+	{
+		if (!machineConfig.dataSources) return [];
+		const results: DataSourceEntry[] = [];
+		// Business logic: vault categories are arbitrary keys — flatten every bucket with purpose AgentBuilder.
+		for (const entries of Object.values(machineConfig.dataSources))
+		{
+			for (const entry of entries)
+			{
+				if (entry.purpose === "AgentBuilder") results.push(entry);
+			}
+		}
+		return results;
+	}
+
+	/**
+	 * Reloads dataSources from an updated machine config and rebuilds the file index.
+	 * @param machineConfig - Machine row after Add Vault cc.json mutation.
+	 */
+	async refreshSources(machineConfig: MachineConfig): Promise<void>
+	{
+		this.sources = AgentBuilder.extractAgentBuilderSourcesFromMachine(machineConfig);
+		await this.index();
+	}
+
+	/** Exposes publish ledger for canonical list joins without lazy-init side effects in tests. */
+	getPublishLedgerForList(): PublishLedger | undefined
+	{
+		return this.getPublishLedger();
+	}
+
 	/** Lazy publish ledger reader for AGENTS.md provenance classification. */
 	private getPublishLedger(): PublishLedger | undefined
 	{
@@ -1215,26 +1216,9 @@ export class AgentBuilder
 		return this.canonicalStore?.get(canonicalId);
 	}
 
-	/** Extracts all DataSourceEntry items with purpose "AgentBuilder". */
 	private extractAgentBuilderSources(machineConfig: MachineConfig): DataSourceEntry[]
 	{
-		if (!machineConfig.dataSources) return [];
-		const results: DataSourceEntry[] = [];
-		// Business logic: this iteration walks every relevant item so agent builder artifact integrity reflects the complete source set instead of a partial snapshot.
-
-		for (const entries of Object.values(machineConfig.dataSources))
-		{
-			// Business logic: this iteration walks every relevant item so agent builder artifact integrity reflects the complete source set instead of a partial snapshot.
-
-			for (const entry of entries)
-			{
-				if (entry.purpose === "AgentBuilder")
-				{
-					results.push(entry);
-				}
-			}
-		}
-		return results;
+		return AgentBuilder.extractAgentBuilderSourcesFromMachine(machineConfig);
 	}
 
 	/**
@@ -1460,7 +1444,10 @@ export class AgentBuilder
 		// Canonical-only save path — persist definition; platform files written by Publisher.
 		if (!platform)
 		{
-			const canonicalDefinition = toCanonicalAgentDefinition(input);
+			const canonicalDefinition = toCanonicalAgentDefinition({
+				...input,
+				id: input.canonicalId,
+			});
 			if (!this.canonicalStore)
 			{
 				throw Object.assign(
@@ -1648,212 +1635,31 @@ export class AgentBuilder
 		return { created: true, path: mdAbsPath, agentName, codexEntryId: createdCodexEntryId };
 	}
 
-	/** Returns all agent entries consolidated by name across platforms (GitHub, Claude, Codex). */
-	list(): AgentListResponse
+	/**
+	 * Returns the canonical agent catalog from agent-definitions.json joined with publish ledger rows.
+	 * Disk artifacts are publish output only — they do not determine catalog membership.
+	 */
+	list(): import("../agentPublisher/canonicalListMapper.js").AgentListResponse
 	{
-		this.refreshAgentEntriesFromDisk();
-
-		const mdEntries = this.indexedFiles.filter((f) =>
+		if (!this.canonicalStore)
 		{
-			if (f.origin !== "agent") return false;
-			const ledgerEntry = this.getPublishLedger()?.getByAbsolutePath(f.absolutePath);
-			return isListableAgentDefinitionPath(f.absolutePath, ledgerEntry);
-		});
-
-		// Step 1: Build flat intermediate list with per-entry platform info + content fingerprint.
-		type FlatEntry = {
-			name: string;
-			platform: AgentListPlatformEntry["platform"];
-			path: string;
-			codexEntryId?: string;
-			codexDirectory?: string;
-			dataLength: number;
-			description: string;
-			hint: string;
-			excerpt: string;
-			contentFingerprint: string;
-		};
-		const flat: FlatEntry[] = [];
-		// Business logic: this iteration walks every relevant item so agent builder artifact integrity reflects the complete source set instead of a partial snapshot.
-
-
-		for (const entry of mdEntries)
-		{
-			const ledgerEntry = this.getPublishLedger()?.getByAbsolutePath(entry.absolutePath);
-			const classification = classifyAgentArtifactPath(entry.absolutePath, ledgerEntry);
-
-			// Business logic: plain AGENTS.md platforms appear as one logical project-guidance agent when provenance is known.
-			if (classification.artifactFormat === "plain-agents-md"
-				&& (classification.platform === "cursor"
-					|| classification.platform === "windsurf"
-					|| classification.platform === "kiro"
-					|| classification.platform === "antigravity"))
-			{
-				const canonicalDef = ledgerEntry?.canonicalId
-					? this.canonicalStore?.get(ledgerEntry.canonicalId)
-					: undefined;
-				let description = canonicalDef?.description ?? "";
-				let hint = canonicalDef?.["argument-hint"] ?? "";
-				let fingerprint = canonicalDef ? JSON.stringify(canonicalDef) : "";
-				if (!description)
-				{
-					try
-					{
-						const content = readFileSync(entry.absolutePath, "utf8");
-						const reconstructed = reconstructCursorPlainAgent(content, entry.sourceName, entry.absolutePath);
-						description = reconstructed.description;
-						hint = reconstructed["argument-hint"];
-						fingerprint = JSON.stringify({ d: description, h: hint, k: reconstructed.agentKnowledge });
-					} catch { /* keep defaults */ }
-				}
-				flat.push({
-					name: canonicalDef?.name ?? getAgentNameFromPath(entry.absolutePath),
-					platform: classification.platform,
-					path: entry.absolutePath,
-					dataLength: entry.size,
-					description,
-					hint,
-					excerpt: entry.excerpt,
-					contentFingerprint: fingerprint || JSON.stringify({ size: entry.size }),
-				});
-				continue;
-			}
-
-			// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting agent builder artifact integrity from partial or invalid state.
-
-			if (classification.platform === "codex" && classification.artifactFormat === "codex-collection")
-			{
-				const codexCollection = loadCodexCollection(entry.absolutePath, entry.sourceName);
-				if (codexCollection.agents.length > 0)
-				{
-					// Business logic: this iteration walks every relevant item so agent builder artifact integrity reflects the complete source set instead of a partial snapshot.
-
-					for (const codexEntry of codexCollection.agents)
-					{
-						flat.push({
-							name: codexEntry.agentName || codexEntry.id,
-							platform: "codex",
-							path: entry.absolutePath,
-							codexEntryId: codexEntry.id,
-							codexDirectory: dirname(entry.absolutePath),
-							dataLength: entry.size,
-							description: codexEntry.description,
-							hint: codexEntry["argument-hint"],
-							excerpt: entry.excerpt,
-							contentFingerprint: JSON.stringify({
-								d: codexEntry.description,
-								h: codexEntry["argument-hint"],
-								k: codexEntry.agentKnowledge ?? [],
-								t: codexEntry.tools ?? [],
-							}),
-						});
-					}
-					continue;
-				}
-			}
-
-			const jsonPath = toAgentJsonPath(entry.absolutePath);
-			let description = "";
-			let hint = "";
-			let fingerprint = "";
-
-			if (existsSync(jsonPath))
-			{
-				try
-				{
-					const raw = readFileSync(jsonPath, "utf8");
-					const parsed = JSON.parse(raw) as Record<string, unknown>;
-					description = typeof parsed.description === "string" ? parsed.description : "";
-					hint = typeof parsed["argument-hint"] === "string" ? parsed["argument-hint"] : "";
-					const knowledge = Array.isArray(parsed.agentKnowledge) ? parsed.agentKnowledge : [];
-					const tools = Array.isArray(parsed.tools) ? parsed.tools : [];
-					fingerprint = JSON.stringify({ d: description, h: hint, k: knowledge, t: tools });
-				} catch
-				{
-					// Fall through to frontmatter parsing.
-				}
-			}			// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting agent builder artifact integrity from partial or invalid state.
-
-
-			if (!description && !hint)
-			{
-				try
-				{
-					const content = readFileSync(entry.absolutePath, "utf8");
-					const frontmatter = parseFrontmatter(content);
-					description = frontmatter["description"] ?? "";
-					hint = frontmatter["argument-hint"] ?? "";
-				} catch
-				{
-					// Keep defaults when unreadable.
-				}
-			}
-
-			if (!fingerprint)
-			{
-				fingerprint = JSON.stringify({ d: description, h: hint, size: entry.size });
-			}
-
-			flat.push({
-				name: getAgentNameFromPath(entry.absolutePath),
-				platform: isClaudeAgentMdPath(entry.absolutePath) ? "claude" : "github",
-				path: entry.absolutePath,
-				dataLength: entry.size,
-				description,
-				hint,
-				excerpt: entry.excerpt,
-				contentFingerprint: fingerprint,
-			});
+			return { totalAgents: 0, agents: [] };
 		}
 
-		// Step 2: Group by agent name and consolidate across platforms.
-		const grouped = new Map<string, FlatEntry[]>();
-		// Business logic: this iteration walks every relevant item so agent builder artifact integrity reflects the complete source set instead of a partial snapshot.
+		const definitions = this.canonicalStore.list();
+		const ledger = this.getPublishLedger();
+		const byId = new Map<string, ReturnType<PublishLedger["getByCanonicalId"]>>();
 
-		for (const fe of flat)
+		if (ledger)
 		{
-			const existing = grouped.get(fe.name);
-			if (existing) existing.push(fe);
-			else grouped.set(fe.name, [fe]);
+			// Business logic: pre-group ledger rows per canonical id so list mapping avoids repeated full-ledger scans.
+			for (const def of definitions)
+			{
+				byId.set(def.id, ledger.getByCanonicalId(def.id));
+			}
 		}
 
-		const agents: AgentListEntry[] = [];
-		// Business logic: this iteration walks every relevant item so agent builder artifact integrity reflects the complete source set instead of a partial snapshot.
-
-		for (const [name, entries] of grouped)
-		{
-			// Pick primary: the platform variant with the biggest dataLength.
-			entries.sort((a, b) => b.dataLength - a.dataLength);
-			const primary = entries[0];
-
-			// Detect content divergence: if any fingerprint differs from the primary's.
-			const contentDiverged = entries.length > 1 &&
-				entries.some((e) => e.contentFingerprint !== primary.contentFingerprint);
-
-			const platforms: AgentListPlatformEntry[] = entries.map((e) => ({
-				platform: e.platform,
-				path: e.path,
-				...(e.codexEntryId ? { codexEntryId: e.codexEntryId } : {}),
-				...(e.codexDirectory ? { codexDirectory: e.codexDirectory } : {}),
-				dataLength: e.dataLength,
-			}));
-
-			agents.push({
-				name,
-				path: primary.path,
-				...(primary.codexEntryId ? { codexEntryId: primary.codexEntryId } : {}),
-				...(primary.codexDirectory ? { codexDirectory: primary.codexDirectory } : {}),
-				platform: primary.platform,
-				platforms,
-				contentDiverged,
-				description: primary.description,
-				hint: primary.hint,
-				excerpt: primary.excerpt,
-			});
-		}
-
-		agents.sort((a, b) => a.name.localeCompare(b.name));
-		return { totalAgents: agents.length, agents };
+		return mapCanonicalAgentList(definitions, byId, true);
 	}
 
 	/** Returns one structured agent definition by absolute path (.agent.md for GitHub, .md for Claude, AGENTS*.md for Codex). */
@@ -2069,15 +1875,30 @@ export class AgentBuilder
 			? this.indexedFiles.filter((f) => f.sourceName === filterName)
 			: this.indexedFiles;
 
-		// Build per-source summaries for sources that have at least one matching file
-		const sourceMap = new Map<string, PrepareSource>();
-		// Business logic: this iteration walks every relevant item so agent builder artifact integrity reflects the complete source set instead of a partial snapshot.
+		const configuredSources = filterName
+			? this.sources.filter((s) => s.name === filterName)
+			: this.sources;
 
+		const sourceMap = new Map<string, PrepareSource>();
+		// Business logic: seed every configured AgentBuilder source so empty vaults still appear in prepare.sources after Save.
+		for (const sourceEntry of configuredSources)
+		{
+			sourceMap.set(sourceEntry.name, {
+				name: sourceEntry.name,
+				type: sourceEntry.type,
+				path: sourceEntry.path ?? "",
+				agentPath: sourceEntry.agentPath,
+				codexDirectories: resolveCodexAgentPaths(sourceEntry),
+				codexDefaultDirectory: resolveCodexAgentPath(sourceEntry),
+				fileCount: 0,
+			});
+		}
+
+		// Business logic: this iteration walks indexed files so per-source fileCount reflects the live index, including sources discovered only via files.
 		for (const file of files)
 		{
 			if (!sourceMap.has(file.sourceName))
 			{
-				// Find the original source entry for path/agentPath metadata
 				const sourceEntry = this.sources.find((s) => s.name === file.sourceName);
 				sourceMap.set(file.sourceName, {
 					name: file.sourceName,
