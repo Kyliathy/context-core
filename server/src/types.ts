@@ -1,5 +1,8 @@
 /**
  * ContextCore – shared types for config and harness definitions.
+ *
+ * Architecture: server/zz-reach2/architecture/archi-context-core-level0.md
+ * Logging audit: server/zz-reach2/upgrades/2026-06/r2wl-winston-logging.md (T63 — no runtime logging)
  */
 
 /** Harness config: paths to chat history storage for a given IDE. */
@@ -38,9 +41,16 @@ export function getHarnessEntries(harnesses: Harnesses): [string, HarnessConfig]
 	) as [string, HarnessConfig][];
 }
 
+/** Publish platform keys for publishRoots config (narrow duplicate to avoid circular imports). */
+export type PublishPlatformConfigKey = "copilot" | "claude" | "codex" | "kiro" | "cursor" | "windsurf" | "antigravity";
+
 /** A data source entry from cc.json dataSources. */
 export type DataSourceEntry = {
 	path: string;
+	/** Explicit project root for publish path policy and heat analysis. */
+	projectRoot?: string;
+	/** Per-platform allowed publish output directories. */
+	publishRoots?: Partial<Record<PublishPlatformConfigKey, string[]>>;
 	/** Directory where GitHub Copilot .agent.md files are written. */
 	agentPath?: string;
 	/** Directory where Claude Code .md sub-agent files are written. Falls back to {dirname(dirname(agentPath))}/.claude/agents when absent. */

@@ -1,888 +1,448 @@
-# AgentBuilder – Architectural Review
+# Agent Builder and Publisher - Architecture
 
-**Date**: 2026-04-09
-**Scope**: Full architectural review of the AgentBuilder subsystem — config, indexing, API endpoints, file persistence, and UI integration
-**Runtime**: Bun (TypeScript, ESNext modules)
-**Entry point**: `src/agentBuilder/AgentBuilder.ts`
-**API Endpoints**: `POST /api/agent-builder/prepare`, `POST /api/agent-builder/create`, `GET /api/agent-builder/list`, `GET /api/agent-builder/get-agent`
+**Date**: 2026-06-22
+**Status**: Current after r2ap Publisher placement/status and r2ve Vault Explorer rollout
+**Scope**: Server-side AgentBuilder, canonical definition persistence, indexing, Builder API, and legacy create. **Agent Publisher and Vault Explorer** are documented in [`archi-agent-publisher.md`](./archi-agent-publisher.md).
+**Runtime**: Bun, TypeScript, ES modules
+**UI**: [`archi-agent-builder-ui.md`](../../../../visualizer/zz-reach2/architecture/agents/archi-agent-builder-ui.md) · Publisher/Vault UI: [`archi-agent-publisher-ui.md`](../../../../visualizer/zz-reach2/architecture/agents/archi-agent-publisher-ui.md)
 
 ---
 
 ## 1. System Overview
 
-The AgentBuilder is a subsystem of ContextCore that **indexes external file directories** (declared as `dataSources` in `cc.json`), serves the file listing through an API, and provides a complete agent lifecycle: **create**, **list**, **retrieve**, and **edit** agents. The system supports three output platforms: GitHub (`.agent.md` + `.agent.json`), Claude (`.md` + `.json` under `.claude/agents`), and Codex (`AGENTS.md` + `AGENTS.json`), each with a structured JSON companion for round-trip editing.
+The current subsystem is split into three responsibilities:
 
-The system operates entirely in-memory (no database involvement) and is feature-gated by the presence of `dataSources` entries with `purpose: "AgentBuilder"` in the machine's `cc.json` config. When no such entries exist, the AgentBuilder is not instantiated and all endpoints return 404.
+| Subsystem | Responsibility |
+| --- | --- |
+| `AgentBuilder` | Index configured source directories, expose knowledge files, save canonical agent/skill definitions, return the canonical-first Agent List, retain legacy artifact reads, and keep an in-memory file index fresh. |
+| `AgentBuilderRuntime` / Vault routes | Own the live Builder/Publisher instances for the current machine, serve read-only Vault Explorer browsing, and apply explicit Save Vault / Save changes mutations to `cc.json` before refreshing sources. |
+| `AgentPublisher` | Take a canonical definition and materialize concrete platform artifacts through `/api/agent-publisher/*`, with preview, directory placement heat, markdown-source attribution, path allow-listing, backups, generated markers, ledger entries, publish status, and drift detection. |
+
+Agent Builder no longer owns normal platform selection in the UI. The default visualizer flow is:
+
+1. Builder assembles metadata and knowledge.
+2. Builder saves a canonical definition through `/api/agent-builder/create` with no `platform`.
+3. Publisher previews and writes platform files through `/api/agent-publisher/preview` and `/api/agent-publisher/publish`.
+4. Agent List and Publisher status read the canonical store first, then join publish-ledger rows by `canonicalId`.
+
+Legacy `POST /api/agent-builder/create` with `platform: "github" | "claude" | "codex"` is still supported for old clients and tests. That path writes GitHub, Claude, or Codex artifacts directly from `AgentBuilder`, but the current product flow uses `AgentPublisher`.
+
+Active publishing is materialized copy by default. Claude **agent** targets may optionally use `import-shim` (writes `CLAUDE.md` importing `@AGENTS.md`). Symlink and mention-only strategies are deferred behind an internal flag (`ENABLE_SYMLINK_PUBLISH = false`) and are not exposed in `/api/agent-publisher/platforms` or the Publisher UI. Every supported publish target writes concrete files and records provenance in the ledger at `{storage}/.settings/agent-publish.json`.
 
 ```mermaid
 flowchart LR
     subgraph Config["cc.json"]
-        DS["dataSources<br/>(purpose: AgentBuilder)"]
+        DS["dataSources<br/>purpose=AgentBuilder"]
     end
 
-    subgraph AgentBuilder["AgentBuilder (in-memory)"]
-        IDX["File Index<br/>IndexedFile[]"]
-        PREP["prepare()"]
-        CRT["create()"]
-        LST["list()"]
-        GET["getAgent()"]
+    subgraph Runtime["AgentBuilderRuntime / Vault routes"]
+        BROWSE["vault roots/children/info"]
+        ADD["Save Vault"]
+        UPDATE["Save changes"]
     end
 
-    subgraph API["Express API (:3210)"]
-        E1["POST /agent-builder/prepare"]
-        E2["POST /agent-builder/create"]
-        E3["GET /agent-builder/list"]
-        E4["GET /agent-builder/get-agent"]
+    subgraph Builder["AgentBuilder"]
+        IDX["IndexedFile[]"]
+        PREP["prepare"]
+        SAVE["canonical-only create"]
+        LEGACY["legacy platform create"]
+        LIST["list / get-agent"]
+        STORE["CanonicalAgentStore"]
+    end
+
+    subgraph Publisher["AgentPublisher"]
+        PLAT["platforms"]
+        TREE["tree / heat + mdSources"]
+        PREVIEW["preview"]
+        PUBLISH["publish"]
+        STATUS["status"]
+        DRIFT["drift"]
+        LEDGER["PublishLedger"]
     end
 
     subgraph Disk["Filesystem"]
-        CONTENT["Content files<br/>(zz-reach2/**/*.md)"]
-        AGENTS["GitHub: .agent.md/.agent.json<br/>Claude: .md/.json<br/>Codex: AGENTS.md/AGENTS.json"]
+        CONTENT["knowledge/content files"]
+        CANON["{storage}/.settings/agent-definitions.json"]
+        ART["platform artifacts"]
+        PUBLEDGER["{storage}/.settings/agent-publish.json"]
     end
 
-    subgraph UI["Visualizer (React)"]
-        AB["AgentBasket<br/>(Creator Panel)"]
-        AL["Agent List View"]
-        D3["D3 ChatMap<br/>(File Cards)"]
-    end
-
-    DS -->|startup| AgentBuilder
-    CONTENT -->|indexed| IDX
-    AGENTS -->|indexed| IDX
-    IDX --> PREP
-    IDX --> CRT
-    IDX --> LST
-    IDX --> GET
-    PREP --> E1
-    CRT --> E2
-    LST --> E3
-    GET --> E4
-    CRT -->|writes| AGENTS
-    E1 --> D3
-    E2 --> AB
-    E3 --> AL
-    E4 --> AB
+    ADD --> DS
+    UPDATE --> DS
+    BROWSE --> CONTENT
+    DS --> Runtime --> Builder
+    Runtime --> Publisher
+    CONTENT --> IDX
+    SAVE --> STORE --> CANON
+    PREP --> IDX
+    LIST --> STORE
+    LIST --> LEDGER
+    LEGACY --> ART
+    PREVIEW --> ART
+    PUBLISH --> ART
+    PUBLISH --> LEDGER --> PUBLEDGER
+    PUBLISH --> IDX
+    STATUS --> LEDGER
+    STATUS --> DRIFT
 ```
-
-Codex-specific creation path:
-
-- If `codexAgentPath` is set, write `AGENTS.md` there.
-- Else if `agentPath` matches `.github/agents`, infer repo root by going two levels up and write `AGENTS.md` there.
-- Else fallback to `path`.
-
-Implemented in 2026-04 for Codex support:
-
-- Added `platform: "codex"` support across create, list, get-agent, and indexing flows.
-- Added Codex file generation (`AGENTS.md` + `AGENTS.json`) with a CXC generation marker in markdown output.
-- Added Codex path inference from `agentPath` when `agentPath` points to `.github/agents`.
-- Added overwrite safety: unmanaged existing `AGENTS.md` files are backed up before replacement.
-- Added Codex-aware retrieval and reconstruction when companion JSON is missing.
 
 ---
 
 ## 2. Configuration
 
-### 2.1 Data Source Declaration
+Agent Builder sources come from `MachineConfig.dataSources`. Entries with `purpose: "AgentBuilder"` are indexed and are also used as Publisher project roots.
 
-AgentBuilder sources are declared per-machine in `cc.json` under the `dataSources` block. Each category (e.g. `"zz-reach2"`) contains an array of `DataSourceEntry` objects:
+```ts
+type DataSourceEntry = {
+    path: string;
+    agentPath?: string;
+    claudeAgentPath?: string;
+    codexAgentPath?: string;
+    codexAgentPaths?: string[];
+    projectRoot?: string;
+    publishRoots?: Partial<Record<PublishPlatform, string[]>>;
+    name: string;
+    type: string;
+    purpose: string;
+};
+```
 
-```json
-{
-    "machine": "DEVBOX1",
-  "harnesses": { "..." },
-  "dataSources": {
-    "zz-reach2": [
-      {
-        "path": "D:\\...\\server\\zz-reach2",
-        "agentPath": "D:\\...\\.github\\agents",
-        "codexAgentPath": "D:\\...\\server\\zz-reach2",
-        "name": "Context Core Server",
-        "type": "Reach2 Architectural Repo",
-        "purpose": "AgentBuilder"
-      },
-      {
-        "path": "D:\\...\\visualizer\\zz-reach2",
-        "agentPath": "D:\\...\\.github\\agents",
-        "name": "Context Core Front",
-        "type": "Reach2 Architectural Repo",
-        "purpose": "AgentBuilder"
-      }
-    ]
-  }
+| Field | Purpose |
+| --- | --- |
+| `path` | Content root scanned for knowledge files. |
+| `agentPath` | Legacy GitHub/Copilot `.agent.md` output directory and default Copilot publisher agent directory. |
+| `claudeAgentPath` | Legacy Claude `.md` output directory and default Claude publisher agent directory. |
+| `codexAgentPath` | Legacy single Codex `AGENTS.md` output directory. |
+| `codexAgentPaths` | Preferred ordered Codex output directories. |
+| `projectRoot` | Optional project root for path tree, heat analysis, and publish allow-listing. |
+| `publishRoots` | Optional per-platform allowed output roots. Defaults to the inferred project root when absent. |
+| `name` | Project/source label used as `projectName`. |
+| `type` | Informational source type shown in cards and index entries. |
+| `purpose` | Must be `AgentBuilder` to participate. |
+
+Project root inference lives in publisher path policy. It uses `projectRoot` first, then infers from `.github/agents` when possible, then falls back to `path`.
+
+Vault Explorer creates and edits these entries for the current machine only. Add mode writes a default AgentBuilder source with `path`, `projectRoot`, `name`, `type: "Vault"`, and `purpose: "AgentBuilder"`; `agentPath`, `category`, and explicit alternate roots are supported by the server contract but are not primary UI fields. Edit mode is metadata-only for the existing normalized `path`: it updates `name`, `type`, and optional `agentPath`.
+
+Startup reads `cc.json` but does not mutate it. The only runtime config mutations in this subsystem are explicit `POST /api/agent-builder/vaults` and `PATCH /api/agent-builder/vaults` requests, both written atomically with backup behavior.
+
+---
+
+## 3. Server Modules
+
+| Module | Path | Responsibility |
+| --- | --- | --- |
+| `AgentBuilder` | `server/src/agentBuilder/AgentBuilder.ts` | Source extraction, recursive indexing, canonical-only create, legacy create, list/get-agent, templates, file content, and index updates after publishing. |
+| `AgentBuilderRuntime` | `server/src/agentBuilder/AgentBuilderRuntime.ts` | Owns live Builder/Publisher instances, canonical store, runtime source refresh, Save Vault, Save changes, and status fallback wiring. |
+| `agentBuilderRoutes` | `server/src/server/routes/agentBuilderRoutes.ts` | `/api/agent-builder/*` endpoints and request validation. |
+| `AgentPublisher` | `server/src/agentPublisher/AgentPublisher.ts` | Orchestrates platform publishers, preview, publish, ledger updates, path heat, and drift. |
+| `AgentPublisherBase` | `server/src/agentPublisher/AgentPublisherBase.ts` | Shared rendering helpers and materialization helpers for platform publishers. |
+| `AgentPublisherCopilot` | `server/src/agentPublisher/platforms/AgentPublisherCopilot.ts` | GitHub Copilot agent and skill artifacts. |
+| `AgentPublisherClaude` | `server/src/agentPublisher/platforms/AgentPublisherClaude.ts` | Claude sub-agent and skill artifacts. |
+| `AgentPublisherCodex` | `server/src/agentPublisher/platforms/AgentPublisherCodex.ts` | Codex `AGENTS.md` collection and skill artifacts. |
+| Other platform publishers | `server/src/agentPublisher/platforms/AgentPublisher*.ts` | Cursor, Windsurf, Antigravity, and Kiro plain `AGENTS.md` / skill materialization. |
+| `CanonicalAgentStore` | `server/src/agentPublisher/CanonicalAgentStore.ts` | Persists canonical definitions under `{storage}/.settings/agent-definitions.json`. |
+| `PublishLedger` | `server/src/agentPublisher/PublishLedger.ts` | Tracks published artifact provenance and hashes. |
+| `canonicalListMapper` | `server/src/agentPublisher/canonicalListMapper.ts` | Maps canonical definitions plus ledger rows to Agent List/status publish summaries and merges drift states. |
+| `pathPolicy` | `server/src/agentPublisher/pathPolicy.ts` | Infers roots and blocks publish output outside allowed roots. |
+| `pathContract` | `server/src/agentPublisher/pathContract.ts` | Returns platform-native default directories for the Publisher UI. |
+| `PathHeatAnalyzer` / placement helpers | `server/src/agentPublisher/PathHeatAnalyzer.ts`, `placement*.ts` | Builds directory-only heat trees, markdown-source chips, and related markdown discoveries. |
+| `PathMentionExtractor` / `PathResolver` | `server/src/agentPublisher/*` | Extracts and resolves path mentions for heat analysis. |
+| `vaultBrowser` | `server/src/agentBuilder/vaultBrowser.ts` | Read-only server-backed directory roots, child listing, validation, duplicate detection, and broad-root warnings. |
+| `dataSourceMutation` / `vaultDefaults` | `server/src/agentBuilder/*` | Atomic `cc.json` create/update helpers for AgentBuilder vault data sources. |
+| `fileOps` / `generatedMarker` | `server/src/agentPublisher/*` | Atomic writes, unmanaged backups, hashing, and generated-file detection. |
+| `types` | `server/src/agentPublisher/types.ts`, `server/src/types.ts` | Shared publisher and machine config types. |
+
+---
+
+## 4. Core Data Model
+
+The canonical definition is the source of truth used by Builder saves and Publisher materialization.
+
+```ts
+interface CanonicalAgentDefinition {
+    id: string;
+    kind: "agent" | "skill";
+    projectName: string;
+    name: string;
+    description: string;
+    whenToUse?: string;
+    "argument-hint"?: string;
+    tools?: string[];
+    knowledge: KnowledgeRef[];
+    body?: string;
+    license?: string;
+    compatibility?: string;
+    metadata?: Record<string, string>;
+    paths?: string[];
+    disableModelInvocation?: boolean;
+}
+
+interface KnowledgeRef {
+    kind: "file" | "text";
+    value: string;
+}
+
+interface PublishTarget {
+    platform: "copilot" | "claude" | "codex" | "kiro" | "cursor" | "windsurf" | "antigravity";
+    artifactKind: "agent" | "skill";
+    outputDir: string;
+    codexEntryId?: string;
+    linkStrategy?: "copy" | "import-shim" | "symlink";
+}
+
+interface PublishedTargetSummary {
+    platform: PublishTarget["platform"];
+    artifactKind: "agent" | "skill";
+    absolutePath: string;
+    publishedAt: string;
+    artifactFormat?: "codex-collection" | "plain-agents-md" | "plain-agents-override-md";
+    actualLinkStrategy?: "copy" | "import-shim" | "symlink";
+    codexEntryId?: string;
+    state?: "clean" | "disk-changed" | "missing-file" | "canonical-changed" | "unknown";
+}
+
+interface DirHeatNode {
+    name: string;
+    absolutePath: string;
+    directHits: number;
+    subtreeHits: number;
+    heat: number;
+    children: DirHeatNode[];
+}
+
+interface PlacementMdSource {
+    absolutePath: string;
+    displayPath: string;
+    inBasket: boolean;
+    isRelated: boolean;
+    directoryPaths: Array<{ absolutePath: string; hits: number }>;
+}
+
+interface PathHeatResult {
+    projectName: string;
+    projectRoot: string;
+    totalHits: number;
+    tree: DirHeatNode[];
+    /** @deprecated retained for older clients; prefer mdSources and tree. */
+    topPaths: Array<{ path: string; hits: number }>;
+    suggestedOutputDir?: string;
+    droppedPathCount: number;
+    knowledgeFilePaths?: string[];
+    mdSources?: PlacementMdSource[];
 }
 ```
 
-### 2.2 Configuration Model
-
-```mermaid
-classDiagram
-    class MachineConfig {
-        +String machine
-        +Harnesses harnesses
-        +DataSources? dataSources
-    }
-
-    class DataSources {
-        <<Record~string, DataSourceEntry[]~>>
-    }
-
-    class DataSourceEntry {
-        +String path
-        +String? agentPath
-        +String? claudeAgentPath
-        +String? codexAgentPath
-        +String[]? codexAgentPaths
-        +String name
-        +String type
-        +String purpose
-    }
-
-    MachineConfig "1" --> "0..1" DataSources : dataSources
-    DataSources "1" --> "*" DataSourceEntry : entries
-```
-
-| Field       | Type     | Required | Description                                                        |
-| ----------- | -------- | -------- | ------------------------------------------------------------------ |
-| `path`      | `string` | yes      | Root directory to index for content files                          |
-| `agentPath` | `string` | no       | GitHub output directory (`.agent.md` / `.agent.json`)               |
-| `claudeAgentPath` | `string` | no | Claude output directory (`.md` / `.json`). Falls back to `{dirname(dirname(agentPath))}/.claude/agents` when absent |
-| `codexAgentPath` | `string` | no | Legacy single Codex output directory (`AGENTS.md` / `AGENTS.json`). Still supported as fallback. |
-| `codexAgentPaths` | `string[]` | no | Preferred Codex output directory list. Enables explicit directory targeting in the UI and API. |
-| `name`      | `string` | yes      | Human-readable label — acts as a filter key and project identifier |
-| `type`      | `string` | yes      | Informational tag (e.g. `"Reach2 Architectural Repo"`)             |
-| `purpose`   | `string` | yes      | Must be `"AgentBuilder"` to be indexed                             |
-
-**Key design decision**: Multiple data sources can share the same `agentPath`. This is the case in the current config where both "Context Core Server" and "Context Core Front" point to `.github/agents/`. The indexer deduplicates by absolute path to prevent double-counting.
+Current implementation detail: the backend registers concrete publishers for `copilot`, `claude`, `codex`, `cursor`, `windsurf`, `antigravity`, and `kiro`. `paths` and `disableModelInvocation` are Cursor skill metadata extensions. `topPaths` remains for older clients, but current placement UX uses `mdSources` to separate markdown source selection from directory heat.
 
 ---
 
-## 3. Component Architecture
+## 5. Startup Wiring
 
-### 3.1 Module Map
+`ContextCore` reads machine settings, extracts `dataSources` with `purpose: "AgentBuilder"`, creates `AgentBuilderRuntime`, creates/indexes `AgentBuilder` when sources exist, creates `CanonicalAgentStore`, then creates `AgentPublisher` with:
 
-The AgentBuilder subsystem spans three layers: the server-side `AgentBuilder` class, the Express API routing in `routes/agentBuilderRoutes.ts` (mounted by `ContextServer.ts`), and the React UI components in the visualizer.
+- the same source list
+- storage path for ledger and canonical store
+- an optional `AgentBuilder` reference for indexed-file lookup and heat reads
+- an `onArtifactsWritten` callback so published markdown artifacts are immediately added to the Builder index
 
-```mermaid
-graph TD
-    subgraph Server["Server Layer"]
-        AB["AgentBuilder.ts<br/>(class + helpers)"]
-        CS["agentBuilderRoutes.ts<br/>(endpoint registration)"]
-        CC["ContextCore.ts<br/>(startup wiring)"]
-        TY["types.ts<br/>(DataSourceEntry, MachineConfig)"]
-    end
-
-    subgraph Visualizer["Visualizer Layer"]
-        BASKET["AgentBasket.tsx<br/>(Creator/Editor panel)"]
-        SEARCH_API["api/search.ts<br/>(fetch wrappers)"]
-        VTYPES["types.ts<br/>(mirrored API types)"]
-        VIEWS["useViews.ts<br/>(agent-builder view def)"]
-        HOOKS["useSearch.ts<br/>(agent state management)"]
-        SB["SearchBar.tsx<br/>(view switcher)"]
-        APP["App.tsx<br/>(layout orchestration)"]
-        D3["chatMapEngine.ts<br/>(file card rendering)"]
-    end
-
-    CC -->|"instantiates"| AB
-    CC -->|"passes to"| CS
-    CS -->|"delegates to"| AB
-    AB --> TY
-
-    APP --> BASKET
-    APP --> SB
-    SB --> VIEWS
-    BASKET --> SEARCH_API
-    HOOKS --> SEARCH_API
-    SEARCH_API -->|"HTTP"| CS
-    D3 -->|"add-knowledge event"| HOOKS
-
-    style AB fill:#2d6a4f,color:#fff
-    style CS fill:#1b4332,color:#fff
-    style BASKET fill:#7c3aed,color:#fff
-```
-
-### 3.2 Module Inventory
-
-| Module                 | Path                                             | Responsibility                                                                                                                      |
-| ---------------------- | ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
-| **AgentBuilder**       | `server/src/agentBuilder/AgentBuilder.ts`        | Core class: source extraction, recursive file indexing, agent CRUD, in-memory index management                                      |
-| **agentBuilderRoutes** | `server/src/server/routes/agentBuilderRoutes.ts` | Express endpoint registration for all agent-builder routes; input validation; error mapping                                         |
-| **ContextCore**        | `server/src/ContextCore.ts`                      | Startup wiring: instantiates AgentBuilder if data sources exist, passes to `startServer()`                                          |
-| **types**              | `server/src/types.ts`                            | `DataSourceEntry`, `DataSources`, `MachineConfig` type definitions                                                                  |
-| **AgentBasket**        | `visualizer/src/components/AgentBasket.tsx`      | React side panel: form fields, knowledge list, reorder controls, create/save/cancel actions                                         |
-| **api/search**         | `visualizer/src/api/search.ts`                   | Fetch wrappers: `fetchAgentBuilderPrepare()`, `fetchAgentBuilderCreate()`, `fetchAgentBuilderList()`, `fetchAgentBuilderGetAgent()` |
-| **useViews**           | `visualizer/src/hooks/useViews.ts`               | View system: registers `agent-builder` and `agent-list` as built-in view types                                                      |
-| **chatMapEngine**      | `visualizer/src/d3/chatMapEngine.ts`             | D3 card rendering: emits `card:addKnowledge` events when user clicks add-knowledge buttons on file cards                            |
+When no AgentBuilder sources exist, ordinary Builder/Publisher endpoints that require indexed sources may be unavailable. Vault browse routes remain available, and Save Vault can create the first AgentBuilder source through the runtime without requiring a restart.
 
 ---
 
-## 4. Data Model
+## 6. Agent Builder API
 
-### 4.1 Core Types (Server)
+| Endpoint | Method | Purpose |
+| --- | --- | --- |
+| `/api/agent-builder/prepare` | POST | Return indexed files and sources, optionally filtered by source name. |
+| `/api/agent-builder/create` | POST | Save a canonical definition when `platform` is omitted. Legacy: write GitHub/Claude/Codex artifacts when `platform` is present. |
+| `/api/agent-builder/list` | GET | Return canonical catalog entries from `agent-definitions.json` joined with publish-ledger rows by `canonicalId`. Disk artifacts are publish output only - not list identity. |
+| `/api/agent-builder/get-definition` | GET | Reload a persisted canonical definition by `canonicalId`. |
+| `/api/agent-builder/get-agent` | GET | Load one legacy artifact definition by absolute path and optional `codexEntryId`. |
+| `/api/agent-builder/get-file-content` | GET | Return full content for an indexed file, guarded by index membership. |
+| `/api/agent-builder/vault-roots` | GET | List server browse roots for Vault Explorer. Read-only; no AgentBuilder source required. |
+| `/api/agent-builder/vault-children?path=` | GET | List one level of child directories, breadcrumbs, and parent path for Vault Explorer. Read-only; directory entries only. |
+| `/api/agent-builder/vault-info?path=` | GET | Validate a selected directory and return basename, readability, duplicate state, and broad-root warnings. Read-only. |
+| `/api/agent-builder/vaults` | POST | Save Vault: persist a new AgentBuilder `dataSources` entry into `cc.json`, refresh runtime Builder/Publisher sources, index, and return an updated `prepare` payload. |
+| `/api/agent-builder/vaults` | PATCH | Save changes: update `name`, `type`, and optional `agentPath` on an existing entry keyed by normalized `path`; returns `previousName` when the display name changed. |
+| `/api/agent-builder/add-template` | POST | Persist an agent template under `{storage}/.settings/agent-templates`. |
+| `/api/agent-builder/list-templates` | GET | List persisted templates. |
 
-```mermaid
-classDiagram
-    class IndexedFile {
-        +String relativePath
-        +String absolutePath
-        +Number size
-        +String lastModified
-        +String sourceName
-        +String sourceType
-        +String origin ["content"|"agent"]
-        +String excerpt
-    }
+Canonical-only create validates the same builder form fields as legacy create and returns:
 
-    class CreateAgentInput {
-        +String projectName
-        +String agentName
-        +String description
-        +String argument-hint
-        +String[]? tools
-        +String[] agentKnowledge
-    }
-
-    class AgentDefinition {
-        +Boolean fromJson
-    }
-
-    class AgentListPlatformEntry {
-        +String platform ["github"|"claude"|"codex"]
-        +String path
-        +String? codexEntryId
-        +String? codexDirectory
-        +Number dataLength
-    }
-
-    class AgentListEntry {
-        +String name
-        +String path
-        +String? platform
-        +AgentListPlatformEntry[] platforms
-        +Boolean contentDiverged
-        +String description
-        +String hint
-        +String excerpt
-    }
-
-    AgentListEntry "1" --> "*" AgentListPlatformEntry : platforms
-
-    AgentDefinition --|> CreateAgentInput : extends
-
-    class AgentBuilder {
-        -IndexedFile[] indexedFiles
-        -DataSourceEntry[] sources
-        +index() void
-        +prepare(filterName?) PrepareResponse
-        +create(input) CreateAgentResponse
-        +list() AgentListResponse
-        +getAgent(path) GetAgentResponse
-    }
-
-    AgentBuilder "1" --> "*" IndexedFile : indexes
-    AgentBuilder --> CreateAgentInput : accepts
-    AgentBuilder --> AgentDefinition : returns
-    AgentBuilder --> AgentListEntry : returns
+```ts
+{
+    created: true,
+    agentName: string,
+    canonicalId: string,
+    canonicalDefinition: CanonicalAgentDefinition,
+    persisted: true
+}
 ```
 
-### 4.2 UI Types (Visualizer)
+Legacy platform create is retained for compatibility. It still writes:
 
-The visualizer mirrors the server types in `visualizer/src/types.ts` plus adds UI-specific types:
+| Legacy platform | Files |
+| --- | --- |
+| `github` | `{agentName}.agent.md` and `{agentName}.agent.json` |
+| `claude` | `{agentName}.md` and `{agentName}.json` |
+| `codex` | `AGENTS.md` and `AGENTS.json` collection |
 
-| Type                       | Purpose                                                                                                                                    |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `AgentKnowledgeEntry`      | A single knowledge item in the basket — carries `id`, `value`, `kind` ("file" or "custom"), optional `sourceName`, and `addedAt` timestamp |
-| `CardEditAgentEventDetail` | D3 engine event payload when user clicks edit on an agent card                                                                             |
-| `ViewType`                 | Union type including `"agent-builder"` and `"agent-list"`                                                                                  |
+Vault browse endpoints must not mutate `cc.json`, refresh sources, call `prepare()`, or start indexing. Only Save Vault and Save changes mutate `cc.json`; both use the runtime mutation helpers and return a `prepare` payload so the visualizer can refresh source inventory without an extra browse-time prepare call.
 
 ---
 
-## 5. Startup & Initialization
+## 7. Agent Publisher API
 
-The AgentBuilder integrates into the ContextCore startup sequence after topic summarization and before the Express server starts:
+| Endpoint | Method | Purpose |
+| --- | --- | --- |
+| `/api/agent-publisher/platforms?projectName=` | GET | Return platform labels, supported artifact kinds, and platform-native default directories. |
+| `/api/agent-publisher/tree?projectName=` | GET | Return a raw directory tree for the path picker. |
+| `/api/agent-publisher/heat` | POST | Analyze canonical knowledge refs and return a directory-only heat tree, `mdSources`, compatibility `topPaths`, and suggested output directory. |
+| `/api/agent-publisher/preview` | POST | Validate targets and render artifacts without writing. |
+| `/api/agent-publisher/publish` | POST | Validate, render, write artifacts, update ledger, and update AgentBuilder index. |
+| `/api/agent-publisher/drift?canonicalId=` | GET | Return ledger-vs-disk drift, loading current canonical definition from store when possible. |
+| `/api/agent-publisher/drift` | POST | Return drift using `{ canonicalId, definition? }`, including canonical-changed detection. |
+| `/api/agent-publisher/status?canonicalId=` | GET | Return ledger-backed `publishedTo` summaries with per-row drift state for PublishAgentDialog. |
+
+Preview and publish return JSON error bodies for validation and unexpected exceptions. `publish` returns HTTP 201 when successful and 400 when the returned `PublishResult.errors` list is non-empty.
+
+---
+
+## 8. Publisher Lifecycle
 
 ```mermaid
 sequenceDiagram
-    participant CC as ContextCore.ts
-    participant Settings as CCSettings
+    participant UI as PublishAgentDialog
+    participant API as agentPublisherRoutes
+    participant AP as AgentPublisher
+    participant PP as Platform publisher
+    participant FS as File system
+    participant Ledger as PublishLedger
     participant AB as AgentBuilder
-    participant Server as ContextServer
 
-    CC->>Settings: getInstance()
-    Settings-->>CC: machine config (with dataSources)
-    CC->>CC: Filter dataSources for purpose="AgentBuilder"
+    UI->>API: GET /platforms?projectName=...
+    API->>AP: getPlatforms(projectName)
+    AP-->>UI: labels + supportedArtifactKinds + defaultDirs
 
-    alt AgentBuilder sources exist
-        CC->>AB: new AgentBuilder(machineConfig)
-        CC->>AB: await index()
-        AB->>AB: extractAgentBuilderSources()
-        AB->>AB: collectFiles(path) per source
-        AB->>AB: collectFiles(agentPath / claudeAgentPath / codex path) per source
-        AB->>AB: Deduplicate by absolute path
-        AB-->>CC: Indexed N files across M sources
-    else No AgentBuilder sources
-        CC->>CC: Log skip message
-    end
+    UI->>API: POST /heat { definition }
+    API->>AP: computeHeat(definition)
+    AP-->>UI: PathHeatResult
 
-    CC->>Server: startServer(messageDB, port, vectors, topics, agentBuilder?)
-    Server->>Server: Register /api/agent-builder/* endpoints
-    Server-->>CC: { server, app }
+    UI->>API: POST /preview { definition, targets }
+    API->>AP: preview(definition, targets)
+    AP->>PP: render(definition, target)
+    PP-->>AP: RenderedArtifact[]
+    AP-->>UI: artifacts + warnings + errors
+
+    UI->>API: POST /publish { definition, targets }
+    API->>AP: publish(definition, targets)
+    AP->>PP: render(definition, target)
+    PP->>FS: materialize artifacts
+    AP->>Ledger: upsert rows
+    AP->>AB: upsertPublishedArtifacts()
+    AP-->>UI: PublishResult
 ```
 
-**Key behaviors:**
-- The `AgentBuilder` constructor only extracts source entries; actual file scanning happens in `index()`
-- `index()` is async but internally synchronous (`readdirSync`, `statSync`, `readFileSync`) — the async signature is a future-proofing hook
-- The `agentBuilder` parameter is optional in `startServer()` — when `undefined`, all agent-builder endpoints return 404
+Materialization behavior:
+
+- validates `outputDir` inside allowed project roots before rendering
+- renders all artifacts before writing
+- backs up unmanaged existing files
+- uses platform-neutral generated markers for backup detection
+- writes through atomic file helpers
+- skips companion JSON files when adding published artifacts to `AgentBuilder.indexedFiles`
+
+Placement heat behavior:
+
+- `/heat` returns directory tree nodes only; resolved file mentions count against their parent directory.
+- `mdSources` lists basket markdown files and link-discovered related markdown files separately from the directory tree.
+- Basket markdown sources are marked `inBasket: true`; related markdown discoveries are marked `isRelated: true`.
+- Related markdown comes from markdown links resolved inside the project root; URLs, anchors, mailto links, duplicates, and unresolved paths are dropped.
+- `topPaths` and `knowledgeFilePaths` remain compatibility fields for older clients.
 
 ---
 
-## 6. File Indexing Pipeline
+## 9. Supported Platform Outputs
 
-### 6.1 Indexing Flow
+Current concrete Publisher support:
 
-```mermaid
-flowchart TD
-    START["AgentBuilder.index()"] --> RESET["Clear indexedFiles[]<br/>Initialize seen Set"]
-    RESET --> LOOP["For each DataSourceEntry"]
-    LOOP --> CONTENT["collectFiles(source.path)"]
-    CONTENT --> DEDUP1{"Already<br/>seen?"}
-    DEDUP1 -->|yes| SKIP1["Skip"]
-    DEDUP1 -->|no| STAT1["statSync() → size, mtime"]
-    STAT1 --> READ1["readExcerpt() → first 1000 chars"]
-    READ1 --> PUSH1["Push IndexedFile<br/>(origin: content)"]
+| Platform | Agent output | Skill output | Notes |
+| --- | --- | --- | --- |
+| `copilot` | `{outputDir}/{name}.agent.md` plus companion JSON where applicable | `{skillRoot}/.github/skills/{id}/SKILL.md` | Default agent output dir is `agentPath` or `<projectRoot>/.github/agents`. |
+| `claude` | `{outputDir}/{name}.md` plus companion JSON where applicable | `{skillRoot}/.claude/skills/{id}/SKILL.md` | Default agent output dir is `claudeAgentPath`, inferred `.claude/agents`, or `<projectRoot>/.claude/agents`. |
+| `codex` | `{outputDir}/AGENTS.md` and `AGENTS.json` collection | `{skillRoot}/.agents/skills/{id}/SKILL.md` | `artifactFormat: codex-collection` on ledger rows. |
+| `cursor` | `{outputDir}/AGENTS.md` plain Markdown | `{skillRoot}/.agents/skills/{id}/SKILL.md` | Default `agentOutputDir` is `projectRoot`; supports `paths` and `disableModelInvocation` on skills. |
+| `windsurf` | `{outputDir}/AGENTS.md` | `{skillRoot}/.windsurf/skills/{id}/SKILL.md` | Root AGENTS is always-on in Windsurf rules engine. |
+| `antigravity` | `{outputDir}/AGENTS.md` | `{skillRoot}/.agents/skills/{id}/SKILL.md` | Portable `.agents/skills` default; avoids Codelab orchestration pattern. |
+| `kiro` | `{outputDir}/AGENTS.md` compatibility | `{skillRoot}/.kiro/skills/{id}/SKILL.md` | Native steering mirrors are out of scope for first pass. |
 
-    LOOP --> AGENT{"agent output dirs<br/>resolvable?"}
-    AGENT -->|yes| AGENTFILES["collectFiles(agentPath, claudeAgentPath,<br/>codexAgentPath/source.path)"]
-    AGENTFILES --> DEDUP2{"Already<br/>seen?"}
-    DEDUP2 -->|yes| SKIP2["Skip"]
-    DEDUP2 -->|no| STAT2["statSync() → size, mtime"]
-    STAT2 --> READ2["readExcerpt() → first 1000 chars"]
-    READ2 --> PUSH2["Push IndexedFile<br/>(origin: agent)"]
-    AGENT -->|no| SKIP3["Skip agent directories"]
+Link strategies (opt-in via `PublishTarget.linkStrategy`):
 
-    PUSH1 --> LOOP
-    PUSH2 --> LOOP
-    SKIP1 --> LOOP
-    SKIP2 --> LOOP
-    SKIP3 --> LOOP
-```
+| Strategy | Support |
+| --- | --- |
+| `copy` (default) | All platforms and artifact kinds |
+| `import-shim` | Claude **agent** only - writes `CLAUDE.md` importing `@AGENTS.md` |
+| `symlink` | Deferred - not advertised in capabilities; gated by `ENABLE_SYMLINK_PUBLISH` |
 
-### 6.2 Directory Traversal Rules
-
-The `collectFiles()` function recursively walks directories with these filtering rules:
-
-| Rule                | Behavior                                                   |
-| ------------------- | ---------------------------------------------------------- |
-| `.git/`             | Skipped (in `SKIP_DIRS` set)                               |
-| `node_modules/`     | Skipped (in `SKIP_DIRS` set)                               |
-| Hidden dirs (`.*/`) | Skipped — **except** `.github` and `.claude` which are explicitly allowed |
-| All files           | Included regardless of extension                           |
-| Errors              | Silently caught per-entry (defensive traversal)            |
-
-### 6.3 Indexed File Structure
-
-Each indexed file records:
-- **`relativePath`**: Path relative to the data source root, forward-slash normalized
-- **`absolutePath`**: Full disk path (used as deduplication key and identity)
-- **`origin`**: `"content"` (from `path`) or `"agent"` (from platform agent directories) — this distinction drives the `list()` and `getAgent()` filtering logic
-- **`excerpt`**: First 1000 characters of file content — provides preview without a second round-trip
+`GET /api/agent-publisher/platforms` returns `supportedLinkStrategiesByKind` (and legacy `supportedLinkStrategies` for agent rows) per platform.
 
 ---
 
-## 7. API Surface
+## 10. Indexing and Listing
 
-### 7.1 Endpoint Map
+`AgentBuilder.index()` recursively scans content roots and configured agent output roots. It skips `.git` and `node_modules`; hidden directories are skipped except `.github` and `.claude`.
 
-```mermaid
-flowchart LR
-    subgraph Endpoints["Agent Builder API"]
-        E1["POST /api/agent-builder/prepare"]
-        E2["POST /api/agent-builder/create"]
-        E3["GET /api/agent-builder/list"]
-        E4["GET /api/agent-builder/get-agent"]
-    end
+Important current behavior:
 
-    E1 -->|"prepare(filterName?)"| AB["AgentBuilder"]
-    E2 -->|"create(input)"| AB
-    E3 -->|"list()"| AB
-    E4 -->|"getAgent(path, codexEntryId?)"| AB
+- `prepare()` returns all indexed files and source summaries.
+- `prepare()` includes configured AgentBuilder source summaries even when a vault currently has `fileCount: 0`.
+- `get-file-content` only reads paths already in `indexedFiles`.
+- `upsertPublishedArtifacts()` adds published markdown artifacts to the in-memory index immediately.
+- `list()` / `listCanonicalAgents()` reads `CanonicalAgentStore` and joins `PublishLedger` by `canonicalId`. Unpublished definitions appear with `publishedTo: []`.
+- `get-agent()` remains for legacy disk artifact reads; Agent List edit/publish uses `get-definition` by `canonicalId`.
+- Disk-only platform artifacts without a canonical definition are **not** listed as saved agents.
+- `AgentBuilderRuntime.addVault()` writes `cc.json`, refreshes Builder/Publisher sources, and re-indexes without restart.
+- `AgentBuilderRuntime.updateVault()` writes metadata changes for an existing normalized `path`, refreshes the runtime inventory, returns `previousName`, and lets the UI replace renamed source-filter selections.
 
-    AB --> IDX["In-Memory Index"]
-    AB -->|"writes"| FS["Filesystem<br/>(GitHub/Claude/Codex markdown + JSON companions)"]
-```
+### Vault Explorer persistence policy
 
-### 7.2 Endpoint Reference
+- `vault-roots`, `vault-children`, and `vault-info` are read-only and must not trigger indexing.
+- `vault-children` returns directories only, with breadcrumbs and parent navigation metadata.
+- `vault-info` returns duplicate-source state and broad-root warnings. Broad-root warnings are advisory; they do not block Save.
+- `POST /vaults` is the add-mode mutation boundary and starts indexing only after the `cc.json` write succeeds.
+- `PATCH /vaults` is edit-mode metadata persistence keyed by normalized `path`; it does not create a second source row.
+- Both mutations preserve unrelated config branches through atomic `cc.json` write helpers and return `prepare` for UI refresh.
 
-| Endpoint                       | Method | Purpose                                                         | Request                | Response                                           |
-| ------------------------------ | ------ | --------------------------------------------------------------- | ---------------------- | -------------------------------------------------- |
-| `/api/agent-builder/prepare`   | POST   | Return indexed file listing, optionally filtered by source name | `{ name?: string }`    | `PrepareResponse` (totalFiles, sources[], files[]) |
-| `/api/agent-builder/create`    | POST   | Create or update platform-specific agent files (GitHub / Claude / Codex)   | `CreateAgentInput` + optional `codexDirectory`, `codexEntryId` | `CreateAgentResponse` (201)                        |
-| `/api/agent-builder/list`      | GET    | List agents consolidated by name across platforms, with platform metadata and content divergence detection | —                      | `AgentListResponse` (totalAgents, agents[])        |
-| `/api/agent-builder/get-agent` | GET    | Get full structured definition for one logical agent entry      | `?path=<absolutePath>&codexEntryId=<id?>` | `GetAgentResponse` (agent: AgentDefinition)        |
+### AGENTS.md collision and provenance policy
 
-### 7.3 Error Handling
-
-All endpoints share a guard pattern: if `agentBuilder` is `undefined` (no data sources configured), they return `404 { error: "AgentBuilder not available" }`.
-
-The `create()` and `getAgent()` methods throw errors with a `status` property that `agentBuilderRoutes` maps directly to HTTP status codes:
-
-| Condition                          | HTTP | Method                                  |
-| ---------------------------------- | ---- | --------------------------------------- |
-| `projectName` not found in sources | 404  | `create()`                              |
-| Source has no `agentPath` (GitHub) | 400  | `create()`                              |
-| Missing required fields            | 400  | `create()` (validated in ContextServer) |
-| Invalid `platform` value           | 400  | `create()`                              |
-| `codexDirectory` missing when multiple `codexAgentPaths` are configured | 400 | `create()` |
-| `codexDirectory` is not in source allowed directories | 400 | `create()` |
-| Path not an agent file (`.agent.md`, `.claude/agents/*.md`, `AGENTS*.md`) | 400 | `getAgent()` |
-| Codex file has multiple entries and `codexEntryId` is omitted | 400 | `getAgent()` |
-| Path not in index                  | 404  | `getAgent()`                            |
-| File read failure                  | 500  | `getAgent()`                            |
+- Codex collections use `artifactFormat: codex-collection`.
+- Cursor/Windsurf/Kiro/Antigravity plain guidance uses `artifactFormat: plain-agents-md`.
+- Publisher preview blocks incompatible generated collisions within the same request and against ledger/on-disk state (e.g. Codex collection vs Cursor plain on the same path).
+- `AgentBuilder.invalidatePublishLedger()` is called from `upsertPublishedArtifacts()` so list/get-agent classification sees fresh provenance after publish.
+- Unmanaged `AGENTS.md` files still receive backup behavior, not silent cross-platform overwrite.
+- `GET /api/agent-publisher/platforms` returns `artifactTemplates`, `notes`, and `supportedLinkStrategiesByKind` per platform.
 
 ---
 
-## 8. Agent File Lifecycle
+## 11. Safety Boundaries
 
-### 8.1 Dual-File Persistence
-
-When an agent is created via `POST /api/agent-builder/create`, **two files** are written for the selected platform:
-
-| Platform | Output directory resolution | Files written |
-| -------- | --------------------------- | ------------- |
-| `github` | `agentPath`                 | `{agentName}.agent.md` + `{agentName}.agent.json` |
-| `claude` | `claudeAgentPath` or inferred `{dirname(dirname(agentPath))}/.claude/agents` | `{agentName}.md` + `{agentName}.json` |
-| `codex`  | Selected `codexDirectory` -> `codexAgentPaths[]` -> `codexAgentPath` -> inferred repo root from `agentPath` (`.github/agents`) -> `path` | `AGENTS.md` + `AGENTS.json` |
-
-```mermaid
-flowchart TD
-    INPUT["CreateAgentInput<br/>(HTTP POST body)"] --> VALIDATE["Validate: projectName,<br/>agentName, description,<br/>argument-hint"]
-    VALIDATE --> FIND["Find source by projectName"]
-    FIND --> MKDIR["Resolve platform output dir<br/>and ensure it exists"]
-    MKDIR --> BUILD_MD["Build markdown content<br/>(platform-specific)"]
-    BUILD_MD --> WRITE_MD["Atomic write (temp + rename)"]
-    WRITE_MD --> BUILD_JSON["Build companion JSON payload"]
-    BUILD_JSON --> WRITE_JSON["Atomic write (temp + rename)"]
-    WRITE_JSON --> UPDATE_IDX["Remove stale entries<br/>Push both files to index"]
-    UPDATE_IDX --> RETURN["Return CreateAgentResponse"]
-```
-
-### 8.2 Generated File Formats
-
-```markdown
----
-name: my-agent
-description: What this agent does.
-argument-hint: A task to implement.
-tools: ['read', 'edit', 'search']
----
-
-To get context for your task, you MUST read the following files:
-
-- [path/to/file.md](path/to/file.md)
-- [another/file.md](another/file.md)
-```
-
-When `tools` is empty or omitted, the tools line is commented out:
-```
-# tools: [] # specify the tools this agent can use. If not set, all enabled tools are allowed.
-```
-
-Codex output uses a collection format. `AGENTS.md` can contain multiple logical entries, each wrapped with deterministic markers and frontmatter:
-
-```markdown
-<!-- Generated by ContextCore AgentBuilder (platform: codex) -->
-<!-- CXC-CODEX-FORMAT: v2 -->
-
-<!-- CXC-CODEX-ENTRY:knk-home -->
----
-name: knk-home
-description: Handles Kin Home issues
-argument-hint: A task to implement
-tools: ['read', 'edit']
----
-...
-<!-- /CXC-CODEX-ENTRY -->
-```
-
-Companion `AGENTS.json` v2 shape:
-
-```json
-{
-  "version": 2,
-  "platform": "codex",
-  "generatedBy": "ContextCore AgentBuilder",
-  "updatedAt": "2026-04-10T09:00:00.000Z",
-  "agents": [
-    {
-      "id": "knk-home",
-      "projectName": "Context Core Server",
-      "agentName": "knk-home",
-      "description": "Handles Kin Home issues",
-      "argument-hint": "A task to implement",
-      "tools": ["read", "edit"],
-      "agentKnowledge": ["architecture/archi-axon-level0.md"],
-      "platform": "codex",
-      "updatedAt": "2026-04-10T09:00:00.000Z"
-    }
-  ]
-}
-```
-
-### 8.3 Agent Retrieval Strategy
-
-The `getAgent()` method uses a two-tier retrieval strategy to handle both new agents (with JSON companion) and legacy markdown-only agents across GitHub, Claude, and Codex paths:
-
-```mermaid
-flowchart TD
-    PATH["Input: absolute agent markdown path"] --> VALIDATE["Validate supported agent path"]
-    VALIDATE --> INDEX_CHECK["Verify path exists in index<br/>(origin=agent)"]
-    INDEX_CHECK --> DERIVE_JSON["Derive companion JSON path<br/>(platform-aware mapping)"]
-    DERIVE_JSON --> JSON_EXISTS{"Companion JSON<br/>exists?"}
-
-    JSON_EXISTS -->|yes| READ_JSON["Parse companion JSON<br/>Validate all fields"]
-    READ_JSON --> RETURN_JSON["Return AgentDefinition<br/>(fromJson: true)"]
-
-    JSON_EXISTS -->|no| READ_MD["Read markdown content"]
-    READ_MD --> RECONSTRUCT["reconstructAgentInput()<br/>- parseFrontmatter()<br/>- parseToolsFromFrontmatter()<br/>- parseKnowledgeLinks()"]
-    RECONSTRUCT --> RETURN_MD["Return AgentDefinition<br/>(fromJson: false)"]
-```
-
-**Security boundary**: The path is validated against the in-memory index before any disk read, preventing path traversal attacks. Only files that were indexed from legitimate `agentPath` directories can be retrieved.
-
-### 8.4 Legacy Agent Reconstruction
-
-For agents without a companion JSON file (e.g. manually created `cxc-ui-worker.agent.md` or `AGENTS.md`), the system reconstructs a `CreateAgentInput` from markdown:
-
-| Data             | Extraction Method                                                    |
-| ---------------- | -------------------------------------------------------------------- |
-| `agentName`      | Frontmatter `name` field, or filename stem fallback                  |
-| `description`    | Frontmatter `description` field                                      |
-| `argument-hint`  | Frontmatter `argument-hint` field                                    |
-| `tools`          | Frontmatter `tools: [...]` line — commented line (`#`) → empty array |
-| `agentKnowledge` | Markdown links `[text](path)` in the body (after second `---` fence) |
-| `projectName`    | `sourceName` from the matching index entry                           |
-
-The reconstruction is signaled via `fromJson: false` so the client knows the data is best-effort.
-
-For Codex collections, reconstruction supports selecting a single logical entry via `codexEntryId`. If an `AGENTS.md` contains multiple entries and no `codexEntryId` is provided, `getAgent()` returns HTTP 400.
-
-### 8.5 Codex File Placement and Usage
-
-Codex artifacts written by AgentBuilder:
-
-- `AGENTS.md`: runtime instruction file consumed by Codex (can hold multiple logical entries).
-- `AGENTS.json`: companion collection JSON used by AgentBuilder for structured round-trip edits.
-
-Codex output location resolution (in order):
-
-1. Explicit request `codexDirectory` from the create payload.
-2. `dataSource.codexAgentPaths[]` (first entry is default when no explicit selection is needed).
-3. `dataSource.codexAgentPath` (legacy single-directory config).
-4. Inferred repo root from `dataSource.agentPath` when `agentPath` ends in `.github/agents` (two levels up).
-5. Fallback to `dataSource.path`.
-
-When `codexAgentPaths` has more than one directory, `codexDirectory` becomes required.
-
-Typical placement examples:
-
-- If `agentPath = D:\repo\.github\agents` and no Codex-specific config, output is:
-  - `D:\repo\AGENTS.md`
-  - `D:\repo\AGENTS.json`
-- If `codexAgentPaths = [D:\repo\apps\a, D:\repo\apps\b]` and user selects `D:\repo\apps\b`, output is:
-  - `D:\repo\apps\b\AGENTS.md`
-  - `D:\repo\apps\b\AGENTS.json`
-- If `codexAgentPath = D:\repo\server\zz-reach2` (legacy), output is:
-  - `D:\repo\server\zz-reach2\AGENTS.md`
-  - `D:\repo\server\zz-reach2\AGENTS.json`
-
-How to use in VS Code + Codex:
-
-1. Configure a data source with `purpose: "AgentBuilder"` and `agentPath` (plus optional `codexAgentPaths` or `codexAgentPath`).
-2. In the Agent Builder UI, select `OpenAI Codex (VS Code)`.
-3. Pick the target `Directory` when Codex is selected.
-4. Create a new entry or edit an existing one; AgentBuilder upserts only that entry and preserves siblings in the same `AGENTS.md`.
-5. Open the target repo/folder in VS Code. Codex reads `AGENTS.md` from the project hierarchy.
-
-Operational note:
-
-- If a user-managed `AGENTS.md` already exists and was not generated by CXC, AgentBuilder creates a timestamped backup (`AGENTS.md.bak.YYYYMMDD-HHMMSS`) before writing the new file.
+| Safety area | Current behavior |
+| --- | --- |
+| Path traversal | Builder file reads are guarded by index membership. Publisher writes are guarded by project-root allow-lists. |
+| Vault browse | Directory browse and validation are read-only, one level at a time, and available without an existing AgentBuilder index. |
+| Vault mutation | Only Save Vault / Save changes mutate `cc.json`; browse, validate, Cancel, and Close do not refresh sources or index. |
+| Output roots | `publishRoots[platform]` can restrict output roots; otherwise the inferred project root is the boundary. |
+| Backups | Existing files without a known generated marker are backed up before overwrite. |
+| Atomic writes | Publisher file writes use temp-file plus rename helpers; vault config mutations use atomic `cc.json` write helpers with backups. |
+| Drift | Ledger rows track canonical hash, artifact hash, knowledge refs, resolved paths, platform, artifact kind, path, and publish time. |
+| Canonical persistence | Canonical definitions live in `{storage}/.settings/agent-definitions.json`. |
 
 ---
 
-## 9. Helper Functions
-
-The `AgentBuilder.ts` module contains helper functions that support traversal, parsing, path resolution, and file generation:
-
-| Function                                             | Purpose                                                                                         |
-| ---------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `collectFiles(dir)`                                  | Recursive directory walker with skip rules. Returns absolute paths                              |
-| `readExcerpt(filePath)`                              | Reads first 1000 characters. Returns `""` on error                                              |
-| `isAgentMdPath(filePath)`                            | Checks if a path ends with `.agent.md` (case-insensitive)                                       |
-| `toAgentJsonPath(mdPath)`                            | Converts supported markdown agent paths to companion JSON paths (`.agent.json`, `.json`, `AGENTS.json`) |
-| `getAgentNameFromPath(mdPath)`                       | Extracts filename stem (e.g. `cxc-ui-worker` from `cxc-ui-worker.agent.md`)                     |
-| `parseFrontmatter(content)`                          | Extracts key/value pairs from `---` fenced YAML frontmatter. Skips commented (`#`) lines        |
-| `parseToolsFromFrontmatter(content)`                 | Parses `tools: [...]` from frontmatter. Handles both active and commented-out tool declarations |
-| `parseKnowledgeLinks(content)`                       | Extracts link targets from markdown `[text](path)` patterns in the body section                 |
-| `reconstructAgentInput(content, sourceName, mdPath)` | Orchestrates the three parsers above to rebuild a `CreateAgentInput` from legacy `.agent.md`    |
-
-Additional platform helpers (2026-04 Codex update):
-
-- `resolveClaudeAgentPath(source)`, `resolveCodexAgentPaths(source)`, and `resolveCodexAgentPath(source, selectedDirectory?)` for platform output directory inference.
-- `isClaudeAgentMdPath()`, `isCodexAgentsMdPath()`, `isCodexOverrideMdPath()`, and `isAnyAgentDefinitionPath()` for path classification.
-- `parseCodexCollectionFromJson()`, `parseCodexCollectionFromMarkdown()`, `buildCodexCollectionMarkdown()`, and `loadCodexCollection()` for Codex collection round-tripping.
-- `makeUniqueCodexEntryId()` and `normalizeCodexEntry()` for deterministic entry identity and legacy recovery.
-- `backupUnmanagedCodexAgentsFileIfNeeded(path)` and `writeFileAtomic(path, content)` for overwrite safety and partial-write reduction.
-
----
-
-## 10. UI Integration
-
-### 10.1 View System
-
-The AgentBuilder integrates into the visualizer's view system as two distinct view types:
-
-| View Type       | Name          | Purpose                                                                               |
-| --------------- | ------------- | ------------------------------------------------------------------------------------- |
-| `agent-builder` | Agent Builder | D3 file card display from `/prepare` + AgentBasket panel for creating/editing agents  |
-| `agent-list`    | Agent List    | Lists all agents from `/list`, allows editing via click-through to agent-builder mode |
-
-### 10.2 Agent Creation Flow (UI → Server)
-
-```mermaid
-sequenceDiagram
-    participant User as User
-    participant D3 as D3 ChatMap
-    participant Basket as AgentBasket
-    participant API as api/search.ts
-    participant Server as ContextServer
-
-    User->>D3: Switch to agent-builder view
-    D3->>API: fetchAgentBuilderPrepare()
-    API->>Server: POST /agent-builder/prepare
-    Server-->>API: PrepareResponse (files[])
-    API-->>D3: Render file cards
-
-    User->>D3: Click add-knowledge on card
-    D3->>Basket: card:addKnowledge event
-    Basket->>Basket: Add AgentKnowledgeEntry
-
-    User->>Basket: Fill form (name, desc, hint, tools)
-    User->>Basket: Click "Create"
-    Basket->>API: fetchAgentBuilderCreate(input)
-    API->>Server: POST /agent-builder/create
-    Server->>Server: Write platform markdown + companion JSON
-    Server->>Server: Update in-memory index
-    Server-->>API: CreateAgentResponse (201)
-    API-->>Basket: Show success banner
-```
-
-### 10.3 Agent Edit Flow (UI → Server)
-
-```mermaid
-sequenceDiagram
-    participant User as User
-    participant List as Agent List View
-    participant API as api/search.ts
-    participant Server as ContextServer
-    participant Basket as AgentBasket
-
-    User->>List: Switch to agent-list view
-    List->>API: fetchAgentBuilderList()
-    API->>Server: GET /agent-builder/list
-    Server-->>API: AgentListResponse
-    API-->>List: Render agent cards
-
-    User->>List: Click ✏️ on consolidated agent card
-    List->>API: Read card.platforms[] and card.contentDiverged
-    Note right of List: Primary = platform with biggest dataLength
-    List->>API: fetchAgentBuilderGetAgent(primaryPath, codexEntryId?)
-    API->>Server: GET /agent-builder/get-agent?path=...
-    Server-->>API: GetAgentResponse (AgentDefinition)
-    API-->>Basket: Populate form in edit mode
-    Note right of Basket: All existing platforms pre-checked<br/>If contentDiverged: warning banner shown
-
-    User->>Basket: Modify fields, adjust knowledge
-    User->>Basket: Click "Save"
-    Basket->>API: fetchAgentBuilderCreate(input) × N checked platforms
-    API->>Server: POST /agent-builder/create (one call per platform)
-    Note right of Server: Overwrites existing files,<br/>updates index (removes stale entries first)
-    Server-->>API: CreateAgentResponse (201)
-    API-->>Basket: Show success banner
-```
-
-### 10.4 AgentBasket Component
-
-The `AgentBasket.tsx` component is a side panel that provides:
-
-| Section                   | Content                                                                                                      |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| **Header**                | Title ("Agent Creator" / "Edit Agent"), Create/Save button, Cancel (edit mode), Clear button                 |
-| **Error/Success banners** | Dismissable error banner, auto-dismiss success banner                                                        |
-| **Form**                  | 5 fields: Project (dropdown from sources), Name (slug-validated), Description, Hint, Tools (comma-separated) |
-| **Knowledge list**        | Scrollable reorderable list of knowledge entries (file or custom), with move up/down/remove controls         |
-| **Custom input**          | Textarea for adding free-text knowledge entries (Ctrl+Enter to add)                                          |
-
-**Smart behaviors:**
-- Auto-selects project when only one source exists
-- Auto-selects project when all file entries come from the same source
-- Slug validation on agent name (lowercase, numbers, hyphens only)
-- Auto-scroll knowledge list when new entry added
-- Ctrl+Enter anywhere in form triggers create/save
-- Edit mode populates all fields from `initialValues` prop
-
----
-
-## 11. File Layout
-
-### 11.1 Server-Side Files
-
-```
-server/
-├── src/
-│   ├── agentBuilder/
-│   │   └── AgentBuilder.ts          ← Core class + 9 helper functions + 11 interfaces
-│   ├── server/
-│   │   ├── ContextServer.ts         ← Thin orchestrator: middleware, route mounting, port binding
-│   │   ├── RouteContext.ts           ← Shared service context interface
-│   │   └── routes/
-│   │       └── agentBuilderRoutes.ts ← All 7 agent-builder endpoint registrations
-│   ├── ContextCore.ts               ← Startup wiring (lines 312–336)
-│   └── types.ts                     ← DataSourceEntry, DataSources, MachineConfig
-└── zz-reach2/
-    └── upgrades/2026-03/
-        ├── r2uab-agent-builder.md   ← Phase 1 plan (prepare + create)
-        └── r2uab2-agent-builder-2.md ← Phase 2 plan (list + get-agent + JSON persistence)
-```
-
-### 11.2 Visualizer-Side Files
-
-```
-visualizer/
-└── src/
-    ├── components/
-    │   ├── AgentBasket.tsx           ← Agent creator/editor panel (357 lines)
-    │   └── AgentBasket.css           ← Panel styles (364 lines)
-    ├── api/
-    │   └── search.ts                 ← 4 fetch wrappers for agent-builder endpoints
-    ├── hooks/
-    │   ├── useViews.ts               ← View definitions (agent-builder, agent-list)
-    │   └── useSearch.ts              ← Agent state management
-    ├── d3/
-    │   └── chatMapEngine.ts          ← File card rendering + add-knowledge events
-    └── types.ts                      ← Mirrored API types + UI-specific types
-```
-
-### 11.3 Agent Output Files
-
-```
-.github/agents/
-├── cxc-ui-worker.agent.md           ← Legacy agent (no JSON companion)
-├── cxc-test-agent.agent.md          ← Created via /create
-├── cxc-test-agent.agent.json        ← JSON companion (structured source of truth)
-├── cxc-test-agent2222.agent.md      ← Created via /create
-└── cxc-test-agent2222.agent.json    ← JSON companion
-
-repo-root/
-├── AGENTS.md                        ← Codex runtime instruction file
-└── AGENTS.json                      ← Codex companion JSON (structured source of truth)
-```
-
----
-
-## 12. Data Flow Summary
-
-```mermaid
-flowchart TD
-    subgraph Startup["Startup (once)"]
-        CC_JSON["cc.json<br/>dataSources"] --> EXTRACT["Extract purpose=AgentBuilder"]
-        EXTRACT --> WALK["Recursive directory walk<br/>collectFiles()"]
-        WALK --> DEDUP["Deduplicate by<br/>absolute path"]
-        DEDUP --> INDEX["Build IndexedFile[]<br/>(with excerpts)"]
-    end
-
-    subgraph Runtime["Runtime (per request)"]
-        PREPARE["/prepare"] --> FILTER_IDX["Filter index by sourceName"]
-        FILTER_IDX --> RESPOND_P["PrepareResponse"]
-
-        CREATE["/create"] --> FIND_SRC["Find source by projectName"]
-        FIND_SRC --> RESOLVE_DIR["Resolve platform output dir"]
-        RESOLVE_DIR --> GEN_MD["Generate platform markdown file"]
-        GEN_MD --> GEN_JSON["Generate companion JSON file"]
-        GEN_JSON --> WRITE["Write platform files"]
-        WRITE --> UPDATE["Update in-memory index<br/>(remove stale + push new)"]
-        UPDATE --> RESPOND_C["CreateAgentResponse"]
-
-        LIST["/list"] --> FILTER_MD["Filter index: origin=agent<br/>AND supported agent markdown path"]
-        FILTER_MD --> ENRICH["Enrich from companion JSON<br/>or frontmatter fallback"]
-        ENRICH --> GROUP["Group by agent name<br/>across platforms"]
-        GROUP --> PRIMARY["Pick primary platform<br/>(biggest dataLength)"]
-        PRIMARY --> DIVERGE["Compare content fingerprints<br/>→ contentDiverged"]
-        DIVERGE --> RESPOND_L["AgentListResponse<br/>(one entry per logical agent)"]
-
-        GET_AGENT["/get-agent"] --> VALIDATE_PATH["Validate path in index"]
-        VALIDATE_PATH --> TRY_JSON{"JSON exists?"}
-        TRY_JSON -->|yes| PARSE_JSON["Parse companion JSON"]
-        TRY_JSON -->|no| RECONSTRUCT["Reconstruct from markdown"]
-        PARSE_JSON --> RESPOND_G["GetAgentResponse<br/>(fromJson: true)"]
-        RECONSTRUCT --> RESPOND_G2["GetAgentResponse<br/>(fromJson: false)"]
-    end
-```
-
----
-
-## 13. Strengths
-
-1. **Zero database overhead**: The index is a plain in-memory array — no SQLite, no persistence, no schema migrations. Startup cost is proportional to the number of files in data source directories (currently ~30 files).
-
-2. **Deduplication by absolute path**: Multiple data sources sharing the same `agentPath` (common in the current config) don't produce duplicate index entries.
-
-3. **Dual-file persistence**: The companion JSON preserves full structured input for round-tripping, while the platform markdown artifact is consumed by GitHub, Claude, or Codex.
-
-4. **Graceful legacy handling**: Agents created before Phase 2 (or manually written) are handled via frontmatter parsing and body link extraction, with `fromJson: false` signaling the reconstruction is best-effort.
-
-5. **Security boundary on retrieval**: `getAgent()` validates the requested path against the in-memory index before any disk read, preventing path traversal attacks.
-
-6. **Immediate index consistency**: After `create()`, both new files are added to the in-memory index (stale entries removed first), so subsequent `/prepare`, `/list`, and `/get-agent` calls reflect the change without a restart.
-
-7. **Defensive I/O**: Every filesystem operation (`readdirSync`, `statSync`, `readFileSync`) is wrapped in try/catch, so a single unreadable file doesn't crash the indexer.
-
-8. **Clean UI separation**: The AgentBasket component is purely presentational — all state management, API calls, and event handling are lifted to parent hooks, making it testable and reusable.
-
----
-
-## 14. Architectural Risks & Improvement Areas
-
-### 14.1 Index Staleness
-
-The file index is built once at startup and only updated when `create()` is called. Files added, modified, or deleted outside the API (e.g. by git operations, manual editing) are not reflected until the next server restart.
-
-**Recommendation**: Hook into the existing `FileWatcher` infrastructure to watch `dataSources` paths and trigger incremental re-indexing on change.
-
-### 14.2 Edit is Create (Overwrite Semantics)
-
-There is no dedicated `update()` or `PATCH` method. Editing an agent re-invokes `create()` which overwrites both files unconditionally. The `create()` method originally threw a `409 Conflict` on file collision, but this was relaxed to enable edit-mode overwrites. This means there is no protection against accidental overwrites if two clients create agents with the same name simultaneously.
-
-**Recommendation**: Add an `overwrite: boolean` flag to `CreateAgentInput` (defaulting to `false` for new creates, `true` for edits) and check `existsSync` when `overwrite` is false.
-
-### 14.3 Synchronous I/O in Index Pipeline
-
-All file operations in `index()`, `create()`, `list()`, and `getAgent()` use synchronous Node.js APIs (`readdirSync`, `readFileSync`, `writeFileSync`). While acceptable for the current ~30 file count, this blocks the event loop during indexing and on every `/list` call (which re-reads JSON/MD files for metadata enrichment).
-
-**Recommendation**: For the current scale this is fine. If data sources grow to hundreds of files, migrate to async variants and cache metadata enrichment results.
-
-### 14.4 No Validation of agentKnowledge Paths
-
-The `create()` method accepts `agentKnowledge` entries as-is without validating that they reference actual indexed files. Custom text entries are also stored in the same array. This is by design (users can add arbitrary text knowledge), but it means a typo in a file path won't be caught until an agent tries to read it.
-
-**Recommendation**: Consider adding a client-side warning (not a hard error) when a knowledge entry doesn't match any indexed file path.
-
-### 14.5 List Method Re-reads Files on Every Call
-
-The `list()` method reads companion JSON or markdown files from disk on every invocation to extract metadata. With the current agent count (<10) this is negligible, but it could become slow with many agents.
-
-**Recommendation**: Cache metadata at index time or on first `list()` call, invalidating on `create()`.
-
-### 14.6 Shared Agent Directories Across Sources
-
-When multiple data sources share the same output directory (`agentPath`, inferred Claude path, or inferred Codex path), `create()` uses the first source matching `projectName` to determine ownership metadata. The resulting files are indexed once by absolute path and attributed to that source's `sourceName`. If another source maps to the same directory, `/list` attribution may look surprising.
-
-**Recommendation**: This is a minor edge case in the current config. If it becomes problematic, associate shared-output files with all matching sources or add an explicit ownership map.
+## 12. Known Gaps
+
+1. Antigravity optional `GEMINI.md` mirror is not implemented in the first materialized pass.
+2. Kiro native `.kiro/steering/*.md` mirrors are deferred; compatibility `AGENTS.md` only.
+3. Vault Explorer UI keeps advanced `category`, `projectRoot`, and `agentPath` fields mostly server/API-level for now; the primary UI exposes Vault name and Vault type.
+4. Expand Context changes the in-session working definition and Builder basket; users should save the Builder definition before relying on canonical storage or later status comparisons.

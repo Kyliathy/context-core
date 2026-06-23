@@ -6,12 +6,12 @@
 	"scripts": {
 		"dev": "bun --watch src/ContextCore.ts",
 		"start": "bun run src/ContextCore.ts",
-		"start-himem": "BUN_JSC_forceRAMSize=17179869184 bun run src/ContextCore.ts",
+		"start-himem": "bun run src/startHiMem.ts",
 		"mcp": "bun run src/mcp/serve.ts",
 		"setup": "bun run src/setup.ts",
 		"cxccli": "bun run src/cxccli.ts",
 		"cceditor": "bun run src/cxccli.ts interactive",
-		"test": "bun test ./src/mcp/tests/*.test.ts ./src/mcp/tests/test_*.ts ./src/settings/tests/*.test.ts ./src/server/routes/tests/*.test.ts ../visualizer/src/hooks/favoriteSync.test.ts",
+		"test": "bun test ./src/logging/tests/*.test.ts ./src/mcp/tests/*.test.ts ./src/mcp/tests/test_*.ts ./src/settings/tests/*.test.ts ./src/ingest/tests/*.test.ts ./src/harness/tests/*.test.ts ./src/watcher/tests/*.test.ts ./src/server/routes/tests/*.test.ts ./src/agentPublisher/tests/*.test.ts ./src/agentBuilder/tests/*.test.ts ../visualizer/src/hooks/favoriteSync.test.ts",
 		"typecheck": "tsc --noEmit",
 		"build:viz": "cd visualizer && npm run build"
 	},
@@ -41,6 +41,7 @@
 		"uuid": "^13.0.0",
 		"win-dpapi": "^1.1.0",
 		"wink-eng-lite-web-model": "^1.8.1",
-		"wink-nlp": "^2.4.0"
+		"wink-nlp": "^2.4.0",
+		"winston": "3.19.0"
 	}
 }

@@ -6,7 +6,31 @@ This is done through the `dataSources` block in your server's `cc.json` configur
 
 ---
 
-## What Are Data Sources?
+## Vault Explorer (Save Vault)
+
+Browser folder pickers cannot return absolute OS paths. Use the **Vault Explorer** popup:
+
+- **Add Vault** in the Agent Builder source filter, or **Manage Vaults** in the view dropdown.
+- **Vault Manager** lists configured vaults (name, path, type, file count). Click a row to **edit** metadata; use **Add vault** for a new directory.
+- Browse server-reported roots and child directories (read-only), or paste an absolute path and press **Go** (or Enter).
+- **Vault name** is stored as `name` in `cc.json` and shown in the source filter. It auto-suggests from the folder basename unless you type a custom name.
+- **Save Vault** (add) or **Save changes** (edit) writes `server/cc.json` for the current machine and refreshes AgentBuilder sources — browsing alone does not mutate config or start indexing.
+
+Defaults for new vaults: category `vaults`, `projectRoot` = selected path. Duplicate absolute paths are rejected.
+
+### Broad-path warning (advisory only)
+
+The explorer may warn when a path is very broad. This **does not block Save**. Thresholds:
+
+| Condition | Example |
+| --- | --- |
+| Drive root | `D:\`, `C:\` |
+| Single path segment after normalize | Very shallow paths |
+| Listed broad roots | Normalized path in `BROAD_ROOT_SEGMENTS` |
+
+Normal project folders (e.g. `D:\Codez\Nexus\AIUL2\zz-reach2`) should **not** warn.
+
+---
 
 A **data source** is a directory on your machine that contains files you want the Agent Builder to index and display. These are typically:
 

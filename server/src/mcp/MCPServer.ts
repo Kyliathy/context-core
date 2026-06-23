@@ -7,21 +7,26 @@
  *   ...
  *   await mcpServer.close();   // on shutdown
  *
- * Note: All diagnostic output uses console.error (stderr) because
- * stdio transport uses stdin/stdout for the MCP protocol.
+ * Stdio transport uses stdin/stdout for the MCP protocol; all diagnostics
+ * go through a stderr-safe Winston logger so stdout stays protocol-clean.
+ *
+ * Upgrade plan: server/zz-reach2/upgrades/2026-06/r2wl-winston-logging.md (T49)
  */
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import chalk from "chalk";
 import { join } from "path";
 import type { IMessageStore } from "../db/IMessageStore.js";
 import type { TopicStore } from "../settings/TopicStore.js";
 import type { ScopeStore } from "../settings/ScopeStore.js";
 import type { EmbeddingService } from "../vector/EmbeddingService.js";
 import type { QdrantService } from "../vector/QdrantService.js";
+import { getStderrLogger } from "../logging/logger.js";
 import { registerAll } from "./registry.js";
 import { initMcpLogger } from "./mcpLogger.js";
+
+/** Stderr-safe logger — never writes MCP diagnostics to stdout. */
+const logger = getStderrLogger("mcp:stdio");
 
 /** Optional Qdrant + embedding services for hybrid search. */
 export type VectorServices = {
@@ -29,17 +34,19 @@ export type VectorServices = {
 	qdrantService: QdrantService;
 };
 
-function logMcpInfo(message: string): void
-{
-	// Keep MCP protocol output clean by writing diagnostics to stderr.
-	process.stderr.write(`${chalk.blue(message)}\n`);
-}
-
 export class MCPServer
 {
 	private readonly server: Server;
 	private transport: StdioServerTransport | null = null;
 
+	/**
+	 * Builds the MCP Server, registers tools/resources/prompts, and initializes optional file logging.
+	 * @param db – shared message store for tool handlers.
+	 * @param topicStore – optional topic store for subject resolution.
+	 * @param vectorServices – optional Qdrant + embedding pair for hybrid search.
+	 * @param mcpLoggingEnabled – when true, enables JSON tool-call file logging.
+	 * @param scopeStore – optional scope store for scope-aware search.
+	 */
 	constructor(
 		private readonly db: IMessageStore,
 		private readonly topicStore?: TopicStore,
@@ -64,20 +71,20 @@ export class MCPServer
 		const toolCount = 10; // search(2) + messages(5) + topics(3)
 		const resourceCount = 3 + 1; // static(3) + template(1)
 		const promptCount = 4; // explore_history, summarize_session, find_decisions, debug_history
-		logMcpInfo(`[MCP] Registered ${toolCount} tools, ${resourceCount} resources, and ${promptCount} prompts`);
+		logger.info(`[MCP] Registered ${toolCount} tools, ${resourceCount} resources, and ${promptCount} prompts`);
 
 		initMcpLogger(join(process.cwd(), "logs"), mcpLoggingEnabled);
 	}
 
 	/**
 	 * Connects to stdio and starts the MCP server.
-	 * Returns a Promise that resolves when the transport closes.
+	 * @returns Promise that resolves when the transport closes.
 	 */
 	async start(): Promise<void>
 	{
 		this.transport = new StdioServerTransport();
 		await this.server.connect(this.transport);
-		logMcpInfo("[MCP] Server running on stdio");
+		logger.info("[MCP] Server running on stdio");
 	}
 
 	/**

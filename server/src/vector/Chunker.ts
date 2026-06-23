@@ -1,9 +1,15 @@
 /**
  * Chunker – Routes content to appropriate LangChain text splitters.
  * Uses ContentClassifier to determine code vs prose, then applies optimal chunking strategy.
+ *
+ * Architecture: server/zz-reach2/architecture/archi-context-core-level0.md
+ * Logging: server/zz-reach2/upgrades/2026-06/r2wl-winston-logging.md
  */
 
 import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
+import { getLogger } from "../logging/logger.js";
+
+const logger = getLogger("vector:Chunker");
 import { classifyBlob, splitMixedContent, type ContentKind } from "./ContentClassifier.js";
 
 /** A chunk of message text with metadata about its content kind and position. */
@@ -59,7 +65,7 @@ export async function chunkMessage(text: string): Promise<MessageChunk[]>
 	} catch (error)
 	{
 		// Fallback: naive slicing if LangChain fails
-		console.warn(`[Chunker] LangChain splitter failed for ${kind} content: ${(error as Error).message}. Falling back to naive chunking.`);
+		logger.warn(`LangChain splitter failed for ${kind} content: ${(error as Error).message}. Falling back to naive chunking.`);
 		return naiveChunk(trimmed, kind);
 	}
 }
@@ -114,6 +120,8 @@ async function chunkMixed(text: string): Promise<MessageChunk[]>
 {
 	const spans = splitMixedContent(text);
 	const allChunks: MessageChunk[] = [];
+	// Business logic: this iteration walks every relevant item so vector indexing consistency reflects the complete source set instead of a partial snapshot.
+
 
 	for (const span of spans)
 	{
@@ -159,6 +167,8 @@ function naiveChunk(text: string, kind: ContentKind): MessageChunk[]
 	const chunkSize = 1000;
 	const chunks: MessageChunk[] = [];
 	let index = 0;
+	// Business logic: this iteration walks every relevant item so vector indexing consistency reflects the complete source set instead of a partial snapshot.
+
 
 	for (let i = 0; i < text.length; i += chunkSize)
 	{

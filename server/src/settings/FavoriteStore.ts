@@ -1,12 +1,18 @@
 /**
  * FavoriteStore — persistence layer for visualizer favorites snapshots.
  * Stores entries in .settings/favorites.json.
+ *
+ * Architecture: server/zz-reach2/architecture/archi-context-core-level0.md
+ * Logging: server/zz-reach2/upgrades/2026-06/r2wl-winston-logging.md
  */
 
 import { join } from "path";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { getLogger } from "../logging/logger.js";
 import type { FavoriteEntry, FavoriteViewSnapshot } from "../models/FavoriteEntry.js";
 import { normalizeFavoriteViewSnapshot } from "../models/FavoriteEntry.js";
+
+const logger = getLogger("settings:FavoriteStore");
 
 /** On-disk shape for favorites.json (legacy bare Array is still accepted on load). */
 export type FavoritesFilePayload = {
@@ -60,7 +66,8 @@ export class FavoriteStore
 				this.favorites = parsed as FavoriteEntry[];
 				this.favoriteViews = [];
 				return;
-			}
+			}			// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting synced settings durability from partial or invalid state.
+
 			if (!parsed || typeof parsed !== "object")
 			{
 				this.favorites = [];
@@ -74,6 +81,8 @@ export class FavoriteStore
 			const parsedViews: FavoriteViewSnapshot[] = [];
 			if (Array.isArray(rawViews))
 			{
+				// Business logic: this iteration walks every relevant item so synced settings durability reflects the complete source set instead of a partial snapshot.
+
 				for (const item of rawViews)
 				{
 					const row = normalizeFavoriteViewSnapshot(item);
@@ -84,8 +93,8 @@ export class FavoriteStore
 		}
 		catch (error)
 		{
-			console.warn(
-				`[FavoriteStore] Failed to parse favorites.json: ${(error as Error).message}. Starting with empty list.`
+			logger.warn(
+				`Failed to parse favorites.json: ${(error as Error).message}. Starting with empty list.`
 			);
 			this.favorites = [];
 			this.favoriteViews = [];

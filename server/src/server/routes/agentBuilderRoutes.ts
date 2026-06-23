@@ -1,12 +1,42 @@
+/**
+ * Agent Builder REST routes — canonical catalog, vault browser, and legacy artifact APIs.
+ *
+ * Architecture: server/zz-reach2/architecture/agents/archi-agent-builder.md
+ * Upgrade: server/zz-reach2/upgrades/2026-06/r2ap-agent-publisher-2.md, r2ve-vault-explorer.md
+ */
+
 import type { Express } from "express";
 import type { RouteContext } from "../RouteContext.js";
 import { CCSettings } from "../../settings/CCSettings.js";
+import { getHostname } from "../../config.js";
+import {
+	inspectVaultPath,
+	listVaultChildren,
+	listVaultRoots,
+} from "../../agentBuilder/vaultBrowser.js";
+import { configuredVaultPaths } from "../../agentBuilder/dataSourceMutation.js";
+import type { UpdateVaultInput } from "../../agentBuilder/dataSourceMutation.js";
+import type { AddVaultInput } from "../../agentBuilder/vaultDefaults.js";
+
+/** Normalizes thrown route errors into HTTP status + message. */
+function routeError(error: unknown): { status: number; message: string }
+{
+	const status = (error as { status?: number }).status ?? 500;
+	return { status, message: (error as Error).message || "Internal server error" };
+}
+
+/** Resolves live AgentBuilder from runtime (refreshed after Add Vault) or startup snapshot. */
+function resolveAgentBuilder(ctx: RouteContext)
+{
+	return ctx.agentBuilderRuntime?.getAgentBuilder() ?? ctx.agentBuilder;
+}
 
 export function register(app: Express, ctx: RouteContext): void
 {
 	app.post("/api/agent-builder/prepare", (req, res) =>
 	{
-		if (!ctx.agentBuilder)
+		const agentBuilder = resolveAgentBuilder(ctx);
+		if (!agentBuilder)
 		{
 			res.json({ error: "No data sources defined" });
 			return;
@@ -17,13 +47,14 @@ export function register(app: Express, ctx: RouteContext): void
 			? body.name.trim()
 			: undefined;
 
-		const response = ctx.agentBuilder.prepare(filterName);
+		const response = agentBuilder.prepare(filterName);
 		res.json(response);
 	});
 
 	app.post("/api/agent-builder/create", (req, res) =>
 	{
-		if (!ctx.agentBuilder)
+		const agentBuilder = resolveAgentBuilder(ctx);
+		if (!agentBuilder)
 		{
 			res.status(404).json({ error: "AgentBuilder not available (no dataSources configured)" });
 			return;
@@ -37,13 +68,13 @@ export function register(app: Express, ctx: RouteContext): void
 		const platform = typeof body.platform === "string" ? body.platform.trim() : "";
 		const codexDirectory = typeof body.codexDirectory === "string" ? body.codexDirectory.trim() : "";
 		const codexEntryId = typeof body.codexEntryId === "string" ? body.codexEntryId.trim() : "";
+		const canonicalId = typeof body.canonicalId === "string" ? body.canonicalId.trim() : "";
 
 		if (!projectName) { res.status(400).json({ error: "projectName is required" }); return; }
 		if (!agentName) { res.status(400).json({ error: "agentName is required" }); return; }
 		if (!description) { res.status(400).json({ error: "description is required" }); return; }
 		if (!argumentHint) { res.status(400).json({ error: "argument-hint is required" }); return; }
-		if (!platform) { res.status(400).json({ error: "platform is required" }); return; }
-		if (platform !== "github" && platform !== "claude" && platform !== "codex")
+		if (platform && platform !== "github" && platform !== "claude" && platform !== "codex")
 		{
 			res.status(400).json({ error: "platform must be \"github\", \"claude\", or \"codex\"" });
 			return;
@@ -57,7 +88,7 @@ export function register(app: Express, ctx: RouteContext): void
 
 		try
 		{
-			const result = ctx.agentBuilder.create({
+			const result = agentBuilder.create({
 				projectName,
 				agentName,
 				description,
@@ -66,7 +97,8 @@ export function register(app: Express, ctx: RouteContext): void
 				agentKnowledge,
 				codexDirectory: codexDirectory || undefined,
 				codexEntryId: codexEntryId || undefined,
-				platform,
+				canonicalId: canonicalId || undefined,
+				platform: platform ? (platform as "github" | "claude" | "codex") : undefined,
 			});
 			res.status(201).json(result);
 		} catch (error)
@@ -78,18 +110,39 @@ export function register(app: Express, ctx: RouteContext): void
 
 	app.get("/api/agent-builder/list", (_req, res) =>
 	{
-		if (!ctx.agentBuilder)
+		if (!ctx.agentBuilderRuntime)
 		{
-			res.status(404).json({ error: "AgentBuilder not available (no dataSources configured)" });
+			res.status(404).json({ error: "AgentBuilder runtime not available" });
 			return;
 		}
 
-		res.json(ctx.agentBuilder.list());
+		res.json(ctx.agentBuilderRuntime.listCanonicalAgents());
+	});
+
+	app.get("/api/agent-builder/get-definition", (req, res) =>
+	{
+		const canonicalId = typeof req.query.canonicalId === "string" ? req.query.canonicalId.trim() : "";
+		if (!canonicalId)
+		{
+			res.status(400).json({ error: "canonicalId query parameter is required" });
+			return;
+		}
+
+		const definition = ctx.agentBuilderRuntime?.getCanonicalDefinition(canonicalId)
+			?? ctx.agentBuilder?.getCanonicalDefinition(canonicalId);
+		if (!definition)
+		{
+			res.status(404).json({ error: `No canonical definition found for id "${canonicalId}"` });
+			return;
+		}
+
+		res.json({ definition });
 	});
 
 	app.get("/api/agent-builder/get-agent", (req, res) =>
 	{
-		if (!ctx.agentBuilder)
+		const agentBuilder = resolveAgentBuilder(ctx);
+		if (!agentBuilder)
 		{
 			res.status(404).json({ error: "AgentBuilder not available (no dataSources configured)" });
 			return;
@@ -105,7 +158,7 @@ export function register(app: Express, ctx: RouteContext): void
 
 		try
 		{
-			res.json(ctx.agentBuilder.getAgent(agentPath, codexEntryId || undefined));
+			res.json(agentBuilder.getAgent(agentPath, codexEntryId || undefined));
 		} catch (error)
 		{
 			const status = (error as { status?: number }).status ?? 500;
@@ -115,7 +168,8 @@ export function register(app: Express, ctx: RouteContext): void
 
 	app.get("/api/agent-builder/get-file-content", (req, res) =>
 	{
-		if (!ctx.agentBuilder)
+		const agentBuilder = resolveAgentBuilder(ctx);
+		if (!agentBuilder)
 		{
 			res.status(404).json({ error: "AgentBuilder not available (no dataSources configured)" });
 			return;
@@ -130,7 +184,7 @@ export function register(app: Express, ctx: RouteContext): void
 
 		try
 		{
-			res.json(ctx.agentBuilder.getFileContent(filePath));
+			res.json(agentBuilder.getFileContent(filePath));
 		} catch (error)
 		{
 			const status = (error as { status?: number }).status ?? 500;
@@ -138,9 +192,94 @@ export function register(app: Express, ctx: RouteContext): void
 		}
 	});
 
+	app.get("/api/agent-builder/vault-roots", (_req, res) =>
+	{
+		try
+		{
+			res.json(listVaultRoots());
+		} catch (error)
+		{
+			const { status, message } = routeError(error);
+			res.status(status).json({ error: message });
+		}
+	});
+
+	app.get("/api/agent-builder/vault-children", (req, res) =>
+	{
+		const path = typeof req.query.path === "string" ? req.query.path : "";
+		try
+		{
+			res.json(listVaultChildren(path));
+		} catch (error)
+		{
+			const { status, message } = routeError(error);
+			res.status(status).json({ error: message });
+		}
+	});
+
+	app.get("/api/agent-builder/vault-info", (req, res) =>
+	{
+		const path = typeof req.query.path === "string" ? req.query.path : "";
+		try
+		{
+			const machine = ctx.agentBuilderRuntime?.getMachine();
+			const configured = machine ? configuredVaultPaths(machine) : new Set<string>();
+			res.json(inspectVaultPath(path, configured));
+		} catch (error)
+		{
+			const { status, message } = routeError(error);
+			res.status(status).json({ error: message });
+		}
+	});
+
+	app.post("/api/agent-builder/vaults", async (req, res) =>
+	{
+		if (!ctx.agentBuilderRuntime)
+		{
+			res.status(503).json({ error: "AgentBuilder runtime not available" });
+			return;
+		}
+
+		const body = req.body as AddVaultInput;
+		const machineName = ctx.agentBuilderRuntime.getMachine().machine || getHostname();
+
+		try
+		{
+			const result = await ctx.agentBuilderRuntime.addVault(machineName, body);
+			res.status(201).json(result);
+		} catch (error)
+		{
+			const { status, message } = routeError(error);
+			res.status(status).json({ error: message });
+		}
+	});
+
+	app.patch("/api/agent-builder/vaults", async (req, res) =>
+	{
+		if (!ctx.agentBuilderRuntime)
+		{
+			res.status(503).json({ error: "AgentBuilder runtime not available" });
+			return;
+		}
+
+		const body = req.body as UpdateVaultInput;
+		const machineName = ctx.agentBuilderRuntime.getMachine().machine || getHostname();
+
+		try
+		{
+			const result = await ctx.agentBuilderRuntime.updateVault(machineName, body);
+			res.json(result);
+		} catch (error)
+		{
+			const { status, message } = routeError(error);
+			res.status(status).json({ error: message });
+		}
+	});
+
 	app.post("/api/agent-builder/add-template", (req, res) =>
 	{
-		if (!ctx.agentBuilder)
+		const agentBuilder = resolveAgentBuilder(ctx);
+		if (!agentBuilder)
 		{
 			res.status(404).json({ error: "AgentBuilder not available (no dataSources configured)" });
 			return;
@@ -162,7 +301,7 @@ export function register(app: Express, ctx: RouteContext): void
 		const agentKnowledge: string[] = (body.agentKnowledge as unknown[]).filter((k): k is string => typeof k === "string").map((k) => k.trim()).filter(Boolean);
 
 		const settings = CCSettings.getInstance();
-		const result = ctx.agentBuilder.addTemplate(settings.storage, {
+		const result = agentBuilder.addTemplate(settings.storage, {
 			templateName,
 			description,
 			"argument-hint": argumentHint,
@@ -174,13 +313,14 @@ export function register(app: Express, ctx: RouteContext): void
 
 	app.get("/api/agent-builder/list-templates", (_req, res) =>
 	{
-		if (!ctx.agentBuilder)
+		const agentBuilder = resolveAgentBuilder(ctx);
+		if (!agentBuilder)
 		{
 			res.status(404).json({ error: "AgentBuilder not available (no dataSources configured)" });
 			return;
 		}
 
 		const settings = CCSettings.getInstance();
-		res.json(ctx.agentBuilder.listTemplates(settings.storage));
+		res.json(agentBuilder.listTemplates(settings.storage));
 	});
 }

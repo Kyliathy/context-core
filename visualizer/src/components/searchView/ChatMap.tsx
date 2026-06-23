@@ -24,6 +24,7 @@ import type {
 	TitleClickEventDetail,
 	CardAddKnowledgeEventDetail,
 	CardEditAgentEventDetail,
+	CardPublishAgentEventDetail,
 	CardUseTemplateEventDetail,
 	ViewType,
 	CardPositionChangeEventDetail,
@@ -47,6 +48,7 @@ type ChatMapProps = {
 	onTitleClick?: (detail: TitleClickEventDetail) => void;
 	onCardAddKnowledge?: (detail: CardAddKnowledgeEventDetail) => void;
 	onCardEditAgent?: (detail: CardEditAgentEventDetail) => void;
+	onCardPublishAgent?: (detail: CardPublishAgentEventDetail) => void;
 	onCardUseTemplate?: (detail: CardUseTemplateEventDetail) => void;
 	onCardPositionChange?: (detail: CardPositionChangeEventDetail) => void;
 	starredCardIds?: Set<string>;
@@ -69,6 +71,7 @@ export default function ChatMap({
 	onTitleClick,
 	onCardAddKnowledge,
 	onCardEditAgent,
+	onCardPublishAgent,
 	onCardUseTemplate,
 	onCardPositionChange,
 	starredCardIds,
@@ -91,6 +94,7 @@ export default function ChatMap({
 		onTitleClick,
 		onCardAddKnowledge,
 		onCardEditAgent,
+		onCardPublishAgent,
 		onCardUseTemplate,
 		onCardPositionChange,
 	});

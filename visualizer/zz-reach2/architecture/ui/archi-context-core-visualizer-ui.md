@@ -378,7 +378,7 @@ Tall side panel for building agents and templates. Visible when active view is a
 
 | Mode                    | Header title                      | Create button     |
 | ----------------------- | --------------------------------- | ----------------- |
-| `"agent"`               | "🏗️ Agent Creator"                 | "🏗️ Create"        |
+| `"agent"`               | "🏗️ Agent Builder"                 | "💾 Save Definition" |
 | `"agent"` (edit)        | "✏️ Edit Agent"                    | "💾 Save"          |
 | `"template"`            | "📝 Template Creator"              | "📝 Save Template" |
 | `"agent-from-template"` | "🏗️ Agent Creator (from template)" | "🏗️ Create"        |
@@ -387,8 +387,7 @@ Tall side panel for building agents and templates. Visible when active view is a
 
 ```
 ┌─────────────────────────────────────────┐
-│ 🏗️ Agent Creator  [Cancel] [Create] [✕] │
-│  [ ☑ GitHub Copilot ]  [ ☐ Claude Code ]│  ← platform checkboxes (not in template mode)
+│ 🏗️ Agent Builder  [Cancel] [Save Definition] [Publish to Project] [✕] │
 │  ⚠ error / ✓ success banners           │
 │  Project  [▾ select ]                   │  ← not in template mode
 │  Name     [slug-input    ]              │  ← auto-slugified on blur
@@ -405,7 +404,8 @@ Tall side panel for building agents and templates. Visible when active view is a
 
 #### Key behaviours
 
-- **Platform checkboxes**: Default is GitHub only. Both can be checked — fires two sequential `POST /api/agent-builder/create` calls (one per platform). Not shown in template mode.
+- **Canonical save**: `POST /api/agent-builder/create` without `platform` saves the canonical definition only and stores `canonicalDefinition` in App state. **Publish to Project** opens `PublishAgentDialog` when a canonical definition exists.
+- **Platform selection moved to Publisher**: Copilot / Claude / Codex / (disabled) Kiro, Cursor, Windsurf, Antigravity checkboxes live only in `PublishAgentDialog`, not in AgentBuilder.
 - **Knowledge entries**: Three kinds: `"file"` (from 📎 on card), `"custom"` (from textarea), `"placeholder"` (template slots). Each has ⬆/✕/⬇ controls.
 - **Duplicate detection**: Adding a file already in the list flashes the existing entry instead of duplicating.
 - **Agent-from-template mode**: File additions replace the active placeholder rather than appending. The next unreplaced placeholder becomes active automatically. Removing a filled placeholder restores it to placeholder status. All placeholders must be replaced before Create is enabled.
@@ -415,7 +415,15 @@ Tall side panel for building agents and templates. Visible when active view is a
 
 ---
 
-### 4.11 `SourceFilterDropdown`
+### 4.11 `PublishAgentDialog`
+
+**Files**: [src/components/agentPublisher/PublishAgentDialog.tsx](../../src/components/agentPublisher/PublishAgentDialog.tsx), [src/api/agentPublisher.ts](../../src/api/agentPublisher.ts)
+
+Modal opened from Agent Builder (**Publish to Project**) or Agent List card header (**📤**). Loads `/api/agent-publisher/platforms`, optional `/heat` from knowledge file paths, directory tree from `/tree`, debounced `/preview`, and `/publish` on confirm. Path heat tree highlights suggested placement (70% subtree coverage). Agent-list publish loads the agent via `get-agent` and converts to `CanonicalAgentDefinition` client-side.
+
+---
+
+### 4.12 `SourceFilterDropdown`
 
 **Files**: [src/components/agentBuilder/SourceFilterDropdown.tsx](../../src/components/agentBuilder/SourceFilterDropdown.tsx), [src/components/agentBuilder/SourceFilterDropdown.css](../../src/components/agentBuilder/SourceFilterDropdown.css)
 

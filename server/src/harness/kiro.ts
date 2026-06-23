@@ -1,12 +1,15 @@
 /**
  * ContextCore – Kiro IDE harness.
  * Kiro persists chats in `.chat` JSON files keyed by workspace hash.
+ *
+ * Architecture: server/zz-reach2/architecture/archi-context-core-level0.md
+ * Logging: server/zz-reach2/upgrades/2026-06/r2wl-winston-logging.md
  */
 
 import { existsSync, readdirSync, readFileSync, statSync } from "fs";
 import { basename, join } from "path";
 import { DateTime } from "luxon";
-import chalk from "chalk";
+import { getLogger } from "../logging/logger.js";
 import { getHostname } from "../config.js";
 import { AgentMessage, type AgentRole } from "../models/AgentMessage.js";
 import { CCSettings } from "../settings/CCSettings.js";
@@ -14,6 +17,8 @@ import type { ToolCall } from "../types.js";
 import { generateMessageId } from "../utils/hashId.js";
 import { deriveProjectName, sanitizeFilename } from "../utils/pathHelpers.js";
 import { copyRawSourceFile, isSourceFileCached } from "../utils/rawCopier.js";
+
+const logger = getLogger("harness:kiro");
 
 type KiroChatEntry = {
 	role?: "human" | "bot" | "tool" | string;
@@ -101,6 +106,8 @@ function getFirstDirAfterPrefix(sourcePath: string, matchedPrefix: string): stri
  */
 function asKiroProjectMappingRule(value: unknown): KiroProjectMappingRule | null
 {
+	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 	if (!value || typeof value !== "object")
 	{
 		return null;
@@ -119,6 +126,8 @@ function asKiroProjectMappingRule(value: unknown): KiroProjectMappingRule | null
 			: typeof candidate.newPath === "string"
 				? candidate.newPath
 				: "";
+	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 	if (!pathValue.trim() || !rawNewProjectName.trim())
 	{
 		return null;
@@ -135,6 +144,8 @@ function asKiroProjectMappingRule(value: unknown): KiroProjectMappingRule | null
  */
 function asKiroGenericProjectMappingRule(value: unknown): KiroGenericProjectMappingRule | null
 {
+	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 	if (!value || typeof value !== "object")
 	{
 		return null;
@@ -143,10 +154,13 @@ function asKiroGenericProjectMappingRule(value: unknown): KiroGenericProjectMapp
 	const pathValue = typeof candidate.path === "string" ? candidate.path
 		: typeof candidate.paths === "string" ? candidate.paths
 		: null;
+	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 	if (!pathValue || typeof candidate.rule !== "string")
 	{
 		return null;
-	}
+	}	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 	if (!pathValue.trim() || !candidate.rule.trim())
 	{
 		return null;
@@ -188,12 +202,12 @@ function loadKiroProjectRuleSet(): KiroProjectRuleSet
 		const droppedExplicit = explicitRaw.length - explicitRules.length;
 		if (droppedExplicit > 0)
 		{
-			console.warn(chalk.yellow(`[Kiro] ⚠ ${droppedExplicit} projectMappingRules entry(ies) dropped — check that each has a "path" or "paths" key`));
+			logger.warn(`⚠ ${droppedExplicit} projectMappingRules entry(ies) dropped — check that each has a "path" or "paths" key`);
 		}
 		const droppedGeneric = genericSource.length - genericRules.length;
 		if (droppedGeneric > 0)
 		{
-			console.warn(chalk.yellow(`[Kiro] ⚠ ${droppedGeneric} genericProjectMappingRules entry(ies) dropped — check that each has a "path" or "paths" key`));
+			logger.warn(`⚠ ${droppedGeneric} genericProjectMappingRules entry(ies) dropped — check that each has a "path" or "paths" key`);
 		}
 
 		return {
@@ -244,11 +258,15 @@ function resolveKiroProjectResolutionFromPaths(
 		.map((pathValue) => pathValue.trim())
 		.filter(Boolean)
 		.map((pathValue) => pathValue.replace(/^file:\/\//i, "").replace(/[\\/]+$/, ""));
+	// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 
 	//<First pass: explicit remaps (indexOf match) always win.
 	for (const sourcePath of normalizedPaths)
 	{
 		const sourceKey = normalizeRulePath(sourcePath);
+		// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 		for (const rule of ruleSet.projectMappingRules)
 		{
 			if (sourceKey.indexOf(normalizeRulePath(rule.path)) !== -1)
@@ -260,12 +278,15 @@ function resolveKiroProjectResolutionFromPaths(
 				};
 			}
 		}
-	}
+	}	// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 
 	//<Second pass: generic rules (currently byFirstDir).
 	for (const sourcePath of normalizedPaths)
 	{
 		const sourceKey = normalizeRulePath(sourcePath);
+		// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 		for (const rule of ruleSet.genericProjectMappingRules)
 		{
 			if (sourceKey.indexOf(normalizeRulePath(rule.path)) === -1)
@@ -294,6 +315,8 @@ function resolveKiroProjectResolutionFromPaths(
 	if (bestPath)
 	{
 		const lastSegment = basename(bestPath);
+		// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 		if (KIRO_HASH_DIR.test(lastSegment) || KIRO_HASH_CHAT.test(lastSegment))
 		{
 			return {
@@ -329,10 +352,14 @@ function buildKiroGenericRuleSuggestions(paths: Array<string>): Array<KiroGeneri
 {
 	const basePrefixes = ["Codez\\Nexus", "Codez"];
 	const prefixSet = new Set<string>();
+	// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 
 	for (const rawPath of paths)
 	{
 		const normalized = rawPath.replace(/[\\/]+/g, "\\").replace(/^[\\]+/, "");
+		// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 		for (const base of basePrefixes)
 		{
 			if (normalizeRulePath(normalized).indexOf(normalizeRulePath(base)) !== -1)
@@ -357,6 +384,8 @@ function buildKiroGenericRuleSuggestions(paths: Array<string>): Array<KiroGeneri
 function isLikelyWorkspaceLabel(candidate: string): boolean
 {
 	const cleaned = candidate.trim().toLowerCase();
+	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 	if (!cleaned || cleaned.length < 2)
 	{
 		return false;
@@ -393,6 +422,8 @@ function isLikelyWorkspaceLabel(candidate: string): boolean
  */
 function findWorkspaceName(value: unknown): string | null
 {
+	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 	if (!value || typeof value !== "object")
 	{
 		return null;
@@ -400,6 +431,8 @@ function findWorkspaceName(value: unknown): string | null
 
 	if (Array.isArray(value))
 	{
+		// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 		for (const item of value)
 		{
 			const match = findWorkspaceName(item);
@@ -423,10 +456,14 @@ function findWorkspaceName(value: unknown): string | null
 		"cwd",
 		"path",
 	];
+	// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 
 	for (const key of directCandidates)
 	{
 		const raw = obj[key];
+		// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 		if (typeof raw !== "string" || !raw.trim())
 		{
 			continue;
@@ -437,7 +474,8 @@ function findWorkspaceName(value: unknown): string | null
 		{
 			return deriveProjectName("Kiro", fromPath);
 		}
-	}
+	}	// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 
 	for (const child of Object.values(obj))
 	{
@@ -470,7 +508,8 @@ function readKiroWorkspaceNameFromMetadata(storagePath: string): string | null
 	} catch
 	{
 		return null;
-	}
+	}	// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 	for (const entry of rootEntries)
 	{
 		const full = join(storagePath, entry.name);
@@ -481,6 +520,8 @@ function readKiroWorkspaceNameFromMetadata(storagePath: string): string | null
 			lowerName.includes("project") ||
 			lowerName.includes("meta") ||
 			lowerName.includes("state");
+		// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 		if (entry.isFile() && !entry.name.endsWith(".chat") && isMetadataLikeFile)
 		{
 			candidateFiles.push(full);
@@ -493,7 +534,8 @@ function readKiroWorkspaceNameFromMetadata(storagePath: string): string | null
 			} catch
 			{
 				continue;
-			}
+			}			// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 			for (const nestedEntry of nestedEntries)
 			{
 				if (!nestedEntry.isFile())
@@ -513,18 +555,23 @@ function readKiroWorkspaceNameFromMetadata(storagePath: string): string | null
 				}
 			}
 		}
-	}
+	}	// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 
 	for (const filePath of candidateFiles)
 	{
 		try
 		{
 			const size = statSync(filePath).size;
+			// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 			if (size <= 0 || size > 2_000_000)
 			{
 				continue;
 			}
 			const raw = readFileSync(filePath, "utf-8").trim();
+			// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 			if (!raw.startsWith("{") && !raw.startsWith("["))
 			{
 				continue;
@@ -561,8 +608,12 @@ function readKiroChatFiles(storagePath: string): Array<KiroParsedFile>
 	try
 	{
 		const entries = readdirSync(storagePath, { withFileTypes: true });
+		// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 		for (const entry of entries)
 		{
+			// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 			if (!entry.isFile() || !entry.name.endsWith(".chat"))
 			{
 				continue;
@@ -578,13 +629,15 @@ function readKiroChatFiles(storagePath: string): Array<KiroParsedFile>
 
 				// Only keep the most recent file for each executionId
 				const existing = sessionFiles.get(executionId);
+				// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 				if (!existing || mtime > existing.mtime)
 				{
 					sessionFiles.set(executionId, { filePath, payload, mtime });
 				}
 			} catch
 			{
-				console.warn(`[Kiro] Skipping malformed .chat file: ${filePath}`);
+				logger.warn(`Skipping malformed .chat file: ${filePath}`);
 			}
 		}
 	} catch
@@ -594,6 +647,8 @@ function readKiroChatFiles(storagePath: string): Array<KiroParsedFile>
 
 	// Extract just the filePath and payload for downstream processing
 	const results: Array<KiroParsedFile> = [];
+	// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 	for (const { filePath, payload } of sessionFiles.values())
 	{
 		results.push({ filePath, payload });
@@ -603,7 +658,7 @@ function readKiroChatFiles(storagePath: string): Array<KiroParsedFile>
 	const dedupedFiles = results.length;
 	if (totalFiles > dedupedFiles)
 	{
-		console.log(chalk.yellow(`[Kiro] Deduplicated ${totalFiles} files → ${dedupedFiles} sessions (skipped ${totalFiles - dedupedFiles} older snapshots)`));
+		logger.info(`Deduplicated ${totalFiles} files → ${dedupedFiles} sessions (skipped ${totalFiles - dedupedFiles} older snapshots)`);
 	}
 
 	return results;
@@ -619,10 +674,14 @@ function findSystemPromptInfo(chat: Array<KiroChatEntry>):
 		model: string | null;
 	}
 {
+	// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 	for (let i = 0; i < chat.length; i += 1)
 	{
 		const entry = chat[i];
 		const text = entry.content ?? "";
+		// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 		if (entry.role === "human" && text.includes("<identity>"))
 		{
 			const match = text.match(/Name:\s*(.+)/);
@@ -645,10 +704,14 @@ function extractKiroContextPaths(message: string, staticDirectoryView?: string):
 {
 	const paths = new Set<string>();
 	const fencedPathRegex = /```([^\n`]+?)\r?\n/g;
+	// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 
 	for (const match of message.matchAll(fencedPathRegex))
 	{
 		const maybePath = (match[1] ?? "").trim();
+		// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 		if (maybePath.includes("/") || maybePath.includes("\\"))
 		{
 			paths.add(maybePath);
@@ -657,13 +720,18 @@ function extractKiroContextPaths(message: string, staticDirectoryView?: string):
 
 	if (staticDirectoryView)
 	{
+		// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 		for (const rawLine of staticDirectoryView.split(/\r?\n/))
 		{
 			const line = rawLine.trim();
+			// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 			if (!line || line.endsWith("/"))
 			{
 				continue;
-			}
+			}			// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 			if (line.includes("/") || line.includes("\\"))
 			{
 				paths.add(line);
@@ -692,6 +760,8 @@ function deriveKiroProject(storagePath: string, staticDirectoryView?: string): s
 		{
 			const cleaned = packageLine.replace(/package\.json.*/i, "").replace(/[\\/]+$/, "");
 			const segment = cleaned.split(/[\\/]/).filter(Boolean).pop();
+			// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 			if (segment && isLikelyWorkspaceLabel(segment))
 			{
 				return deriveProjectName("Kiro", segment);
@@ -724,11 +794,15 @@ function deriveKiroProjectFromMessagePaths(chat: Array<KiroChatEntry>): string |
 {
 	const pathPattern = /(?:[a-zA-Z]:\\|\/)[^\s"'`]+/g;
 	const counts = new Map<string, number>();
+	// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 
 	for (const entry of chat)
 	{
 		const text = entry.content ?? "";
 		const matches = text.match(pathPattern) ?? [];
+		// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 		for (const pathValue of matches)
 		{
 			const segment = pathValue
@@ -736,6 +810,8 @@ function deriveKiroProjectFromMessagePaths(chat: Array<KiroChatEntry>): string |
 				.split(/[\\/]/)
 				.filter(Boolean)
 				.pop();
+			// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 			if (!segment || !isLikelyWorkspaceLabel(segment))
 			{
 				continue;
@@ -779,15 +855,18 @@ function inferKiroToolName(text: string): string
 	if (lower.includes("read"))
 	{
 		return "readFile";
-	}
+	}	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 	if (lower.includes("search") || lower.includes("find"))
 	{
 		return "search";
-	}
+	}	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 	if (lower.includes("write") || lower.includes("create"))
 	{
 		return "writeFile";
-	}
+	}	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 	if (lower.includes("edit") || lower.includes("update"))
 	{
 		return "editFile";
@@ -804,17 +883,60 @@ function inferKiroToolName(text: string): string
  * @param storagePath - Kiro workspace hash directory.
  * @param rawBase - Raw archive directory for this harness.
  */
-export function readKiroChats(storagePath: string, rawBase: string): Array<AgentMessage>
+function readKiroSpecificChatFiles(filePaths: Array<string>): Array<KiroParsedFile>
 {
-	const parsedFiles = readKiroChatFiles(storagePath);
+	const sessionFiles = new Map<string, { filePath: string; payload: KiroChatFile; mtime: number }>();
+	// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
+	for (const filePath of filePaths)
+	{
+		try
+		{
+			const raw = readFileSync(filePath, "utf-8");
+			const payload = JSON.parse(raw) as KiroChatFile;
+			const mtime = statSync(filePath).mtimeMs;
+			const executionId = payload.executionId ?? basename(filePath, ".chat");
+			const existing = sessionFiles.get(executionId);
+			// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
+			if (!existing || mtime > existing.mtime)
+			{
+				sessionFiles.set(executionId, { filePath, payload, mtime });
+			}
+		}
+		catch
+		{
+			logger.warn(`Skipping malformed .chat file: ${filePath}`);
+		}
+	}
+	return Array.from(sessionFiles.values()).map(({ filePath, payload }) => ({ filePath, payload }));
+}
+
+/**
+ * Reads data for readKiroParsedFiles without changing unrelated CXC state.
+ * @param storagePath - Path used by readKiroParsedFiles to locate the relevant CXC resource.
+ * @param rawBase - Value consumed by readKiroParsedFiles.
+ * @param parsedFiles - Value consumed by readKiroParsedFiles.
+ * @returns Result produced by readKiroParsedFiles.
+ */
+
+
+function readKiroParsedFiles(
+	storagePath: string,
+	rawBase: string,
+	parsedFiles: Array<KiroParsedFile>
+): Array<AgentMessage>
+{
 	const ruleSet = loadKiroProjectRuleSet();
 	const results: Array<AgentMessage> = [];
 	const autoDerivedSessions: Array<{ path: string }> = [];
 	const miscSessions: Array<{ candidates: Array<string> }> = [];
 	let skippedCount = 0;
-	console.log(
-		`[Kiro] Project rules: explicit=${ruleSet.projectMappingRules.length}, generic=${ruleSet.genericProjectMappingRules.length}, fallback=${MISC_KIRO_PROJECT}`
+	logger.info(
+		`Project rules: explicit=${ruleSet.projectMappingRules.length}, generic=${ruleSet.genericProjectMappingRules.length}, fallback=${MISC_KIRO_PROJECT}`
 	);
+	// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 
 	for (const parsedFile of parsedFiles)
 	{
@@ -828,6 +950,8 @@ export function readKiroChats(storagePath: string, rawBase: string): Array<Agent
 		const projectCandidates = new Set<string>([storagePath, parsedFile.filePath]);
 		if (staticDirectoryView)
 		{
+			// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 			for (const line of staticDirectoryView.split(/\r?\n/))
 			{
 				const trimmed = line.trim();
@@ -836,19 +960,24 @@ export function readKiroChats(storagePath: string, rawBase: string): Array<Agent
 					continue;
 				}
 				projectCandidates.add(trimmed);
-			}
+			}			// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 			for (const candidate of extractPathCandidates(staticDirectoryView))
 			{
 				projectCandidates.add(candidate);
 			}
-		}
+		}		// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 		for (const entry of chat)
 		{
 			const text = entry.content ?? "";
+			// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 			for (const candidate of extractPathCandidates(text))
 			{
 				projectCandidates.add(candidate);
-			}
+			}			// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 			for (const contextPath of extractKiroContextPaths(text, entry.context?.[0]?.staticDirectoryView))
 			{
 				projectCandidates.add(contextPath);
@@ -856,6 +985,8 @@ export function readKiroChats(storagePath: string, rawBase: string): Array<Agent
 		}
 		const projectResolution = resolveKiroProjectResolutionFromPaths(Array.from(projectCandidates), ruleSet);
 		const project = projectResolution.project;
+		// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 		if (projectResolution.mode === "auto-derived" && projectResolution.bestPath)
 		{
 			autoDerivedSessions.push({
@@ -880,6 +1011,8 @@ export function readKiroChats(storagePath: string, rawBase: string): Array<Agent
 
 		const rawDest = copyRawSourceFile(rawBase, project, parsedFile.filePath);
 		let previousId: string | null = null;
+		// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 
 		for (let i = startIndex; i < chat.length; i += 1)
 		{
@@ -895,6 +1028,8 @@ export function readKiroChats(storagePath: string, rawBase: string): Array<Agent
 			const id = generateMessageId(sessionId, role, `${mtimeMs}-${i}`, message.slice(0, 120));
 			const nextEntry = chat[i + 1];
 			const inferredToolCalls: Array<ToolCall> = [];
+			// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 
 			if (
 				role === "assistant" &&
@@ -940,13 +1075,13 @@ export function readKiroChats(storagePath: string, rawBase: string): Array<Agent
 
 	if (autoDerivedSessions.length > 0)
 	{
-		console.warn(`[Kiro] Auto-derived project names for ${autoDerivedSessions.length} session(s) from path segments.`);
+		logger.warn(`Auto-derived project names for ${autoDerivedSessions.length} session(s) from path segments.`);
 	}
 
 	if (miscSessions.length > 0)
 	{
-		console.warn(`[Kiro] Routed ${miscSessions.length} session(s) to Kiro-MISC due to unresolved or hash-like project names.`);
-		console.warn("[Kiro] Hint: run `bun run setup` and configure Kiro projectMappingRules for hash directories.");
+		logger.warn(`Routed ${miscSessions.length} session(s) to Kiro-MISC due to unresolved or hash-like project names.`);
+		logger.warn("Hint: run `bun run setup` and configure Kiro projectMappingRules for hash directories.");
 	}
 
 	const suggestedRules = buildKiroGenericRuleSuggestions([
@@ -955,8 +1090,8 @@ export function readKiroChats(storagePath: string, rawBase: string): Array<Agent
 	]);
 	if (suggestedRules.length > 0)
 	{
-		console.warn("[Kiro] Suggested cc.json genericProjectMappingRules snippet:");
-		console.warn(
+		logger.warn("Suggested cc.json genericProjectMappingRules snippet:");
+		logger.warn(
 			JSON.stringify(
 				{
 					genericProjectMappingRules: suggestedRules,
@@ -967,6 +1102,52 @@ export function readKiroChats(storagePath: string, rawBase: string): Array<Agent
 		);
 	}
 
-	console.log(`[Kiro] Processed ${parsedFiles.length} files: ${chalk.green(skippedCount + ' cached')}, ${chalk.blue((parsedFiles.length - skippedCount) + ' new/modified')}`);
+	logger.info(
+		`Processed ${parsedFiles.length} files: ${skippedCount} cached, ${parsedFiles.length - skippedCount} new/modified`
+	);
+	return results;
+}
+
+/**
+ * Reads data for readKiroChats without changing unrelated CXC state.
+ * @param storagePath - Path used by readKiroChats to locate the relevant CXC resource.
+ * @param rawBase - Value consumed by readKiroChats.
+ * @returns Result produced by readKiroChats.
+ */
+
+
+export function readKiroChats(storagePath: string, rawBase: string): Array<AgentMessage>
+{
+	return readKiroParsedFiles(storagePath, rawBase, readKiroChatFiles(storagePath));
+}
+
+/**
+ * Reads data for readKiroChatFilesScoped without changing unrelated CXC state.
+ * @param filePaths - Path used by readKiroChatFilesScoped to locate the relevant CXC resource.
+ * @param rawBase - Value consumed by readKiroChatFilesScoped.
+ * @returns Result produced by readKiroChatFilesScoped.
+ */
+
+
+export function readKiroChatFilesScoped(filePaths: Array<string>, rawBase: string): Array<AgentMessage>
+{
+	const grouped = new Map<string, Array<string>>();
+	// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
+	for (const filePath of filePaths)
+	{
+		const storagePath = filePath.replace(/[\\/][^\\/]+$/, "");
+		const files = grouped.get(storagePath) ?? [];
+		files.push(filePath);
+		grouped.set(storagePath, files);
+	}
+
+	const results: Array<AgentMessage> = [];
+	// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
+	for (const [storagePath, files] of grouped.entries())
+	{
+		results.push(...readKiroParsedFiles(storagePath, rawBase, readKiroSpecificChatFiles(files)));
+	}
 	return results;
 }

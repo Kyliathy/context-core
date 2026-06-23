@@ -36,6 +36,8 @@ type SearchBarProps = {
 	onEditView: () => void;
 	onLaunchAgentBuilder: () => void;
 	onListAgents: () => void;
+	onManageVaults: () => void;
+	onAddVault?: () => void;
 	onCreateTemplate: () => void;
 	onListTemplates: () => void;
 	showSourceFilter?: boolean;
@@ -78,6 +80,8 @@ const SearchBar = forwardRef<HTMLInputElement, SearchBarProps>(function SearchBa
 		onEditView,
 		onLaunchAgentBuilder,
 		onListAgents,
+		onManageVaults,
+		onAddVault,
 		onCreateTemplate,
 		onListTemplates,
 		showSourceFilter = false,
@@ -110,9 +114,10 @@ const SearchBar = forwardRef<HTMLInputElement, SearchBarProps>(function SearchBa
 	const triggerButtonRef = useRef<HTMLButtonElement>(null);
 	const launchButtonRef = useRef<HTMLButtonElement>(null);
 	const listAgentsButtonRef = useRef<HTMLButtonElement>(null);
+	const manageVaultsButtonRef = useRef<HTMLButtonElement>(null);
 	const createTemplateButtonRef = useRef<HTMLButtonElement>(null);
 	const listTemplatesButtonRef = useRef<HTMLButtonElement>(null);
-	const [rightColumnFocusIndex, setRightColumnFocusIndex] = useState(0); // 0 = launch, 1 = list agents, 2 = create template, 3 = list templates
+	const [rightColumnFocusIndex, setRightColumnFocusIndex] = useState(0); // 0 = launch, 1 = list agents, 2 = manage vaults, 3 = create template, 4 = list templates
 	const menuItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
 	const typeaheadBufferRef = useRef("");
 	const typeaheadTimerRef = useRef<number | null>(null);
@@ -592,23 +597,21 @@ const SearchBar = forwardRef<HTMLInputElement, SearchBarProps>(function SearchBa
 									if (event.key === "ArrowDown") {
 										event.preventDefault();
 										setRightColumnFocusIndex(2);
-										createTemplateButtonRef.current?.focus();
+										manageVaultsButtonRef.current?.focus();
 									}
 									if (event.key === "Escape") {
 										event.preventDefault();
 										closeDropdown();
 									}
-								}}>
+								}}							>
 								📋 List Agents
 							</button>
-							<div className="view-menu-divider" />
-							<div className="view-menu-group">Templates</div>
 							<button
 								type="button"
-								ref={createTemplateButtonRef}
-								className="agent-builder-launch-btn agent-template-btn"
+								ref={manageVaultsButtonRef}
+								className="agent-builder-launch-btn agent-list-btn"
 								onClick={() => {
-									onCreateTemplate();
+									onManageVaults();
 									closeDropdown();
 								}}
 								onKeyDown={(event) => {
@@ -625,6 +628,39 @@ const SearchBar = forwardRef<HTMLInputElement, SearchBarProps>(function SearchBa
 									if (event.key === "ArrowDown") {
 										event.preventDefault();
 										setRightColumnFocusIndex(3);
+										createTemplateButtonRef.current?.focus();
+									}
+									if (event.key === "Escape") {
+										event.preventDefault();
+										closeDropdown();
+									}
+								}}>
+								🗄️ Manage Vaults
+							</button>
+							<div className="view-menu-divider" />
+							<div className="view-menu-group">Templates</div>
+							<button
+								type="button"
+								ref={createTemplateButtonRef}
+								className="agent-builder-launch-btn agent-template-btn"
+								onClick={() => {
+									onCreateTemplate();
+									closeDropdown();
+								}}
+								onKeyDown={(event) => {
+									if (event.key === "ArrowLeft") {
+										event.preventDefault();
+										setRightColumnFocusIndex(3);
+										moveHighlight(highlightedIndex);
+									}
+									if (event.key === "ArrowUp") {
+										event.preventDefault();
+										setRightColumnFocusIndex(2);
+										manageVaultsButtonRef.current?.focus();
+									}
+									if (event.key === "ArrowDown") {
+										event.preventDefault();
+										setRightColumnFocusIndex(4);
 										listTemplatesButtonRef.current?.focus();
 									}
 									if (event.key === "Escape") {
@@ -645,12 +681,12 @@ const SearchBar = forwardRef<HTMLInputElement, SearchBarProps>(function SearchBa
 								onKeyDown={(event) => {
 									if (event.key === "ArrowLeft") {
 										event.preventDefault();
-										setRightColumnFocusIndex(3);
+										setRightColumnFocusIndex(4);
 										moveHighlight(highlightedIndex);
 									}
 									if (event.key === "ArrowUp") {
 										event.preventDefault();
-										setRightColumnFocusIndex(2);
+										setRightColumnFocusIndex(3);
 										createTemplateButtonRef.current?.focus();
 									}
 									if (event.key === "Escape") {
@@ -668,7 +704,12 @@ const SearchBar = forwardRef<HTMLInputElement, SearchBarProps>(function SearchBa
 				✏️
 			</button>
 			{showSourceFilter && onSourceFilterChange && (
-				<SourceFilterDropdown sources={sourceFilterSources} selected={sourceFilterSelected} onChange={onSourceFilterChange} />
+				<SourceFilterDropdown
+					sources={sourceFilterSources}
+					selected={sourceFilterSelected}
+					onChange={onSourceFilterChange}
+					onAddVault={onAddVault}
+				/>
 			)}
 			<div className="search-input-container">
 				<span className="search-icon" aria-hidden>

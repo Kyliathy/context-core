@@ -1,0 +1,387 @@
+/**
+ * Vault Explorer dialog styles — aligned with PublishAgentDialog visual language.
+ *
+ * Architecture: visualizer/zz-reach2/architecture/agents/archi-agent-builder-ui.md
+ * Upgrade: server/zz-reach2/upgrades/2026-06/r2ve-vault-explorer.md
+ */
+
+.vault-explorer-overlay {
+	position: fixed;
+	inset: 0;
+	background: rgba(15, 23, 42, 0.55);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	z-index: 1250;
+}
+
+.vault-explorer-dialog {
+	width: min(960px, 94vw);
+	max-height: 90vh;
+	overflow: auto;
+	background: #0f172a;
+	color: #e2e8f0;
+	border: 1px solid #334155;
+	border-radius: 12px;
+	padding: 16px 18px;
+	box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
+}
+
+.vault-explorer-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	margin-bottom: 12px;
+}
+
+.vault-explorer-header h2 {
+	margin: 0;
+	font-size: 1.05rem;
+	font-weight: 600;
+}
+
+.vault-explorer-subtitle {
+	margin: 4px 0 0;
+	font-size: 0.82rem;
+	color: #94a3b8;
+}
+
+.vault-explorer-field-hint {
+	font-size: 0.78rem;
+	color: #94a3b8;
+}
+
+.vault-explorer-field-primary {
+	margin-top: 0;
+}
+
+.vault-explorer-name-hint {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px;
+	margin-top: 6px;
+	padding: 8px 10px;
+	border: 1px solid #78350f;
+	border-radius: 6px;
+	background: rgba(120, 53, 15, 0.2);
+	color: #fcd34d;
+	font-size: 0.82rem;
+}
+
+.vault-explorer-name-hint button {
+	background: #1e293b;
+	color: #e2e8f0;
+	border: 1px solid #475569;
+	border-radius: 6px;
+	padding: 4px 10px;
+	cursor: pointer;
+	font: inherit;
+}
+
+.vault-explorer-close {
+	background: #1e293b;
+	color: #e2e8f0;
+	border: 1px solid #475569;
+	border-radius: 6px;
+	padding: 4px 10px;
+	cursor: pointer;
+}
+
+.vault-explorer-grid {
+	display: grid;
+	grid-template-columns: 1.2fr 0.8fr;
+	gap: 14px;
+}
+
+.vault-explorer-section {
+	border: 1px solid #334155;
+	border-radius: 8px;
+	padding: 10px;
+	background: #111827;
+}
+
+.vault-explorer-section h3 {
+	margin: 0 0 8px;
+	font-size: 0.95rem;
+}
+
+.vault-explorer-roots {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin-bottom: 8px;
+}
+
+.vault-explorer-root-chip {
+	background: #1e293b;
+	color: #cbd5e1;
+	border: 1px solid #475569;
+	border-radius: 999px;
+	padding: 4px 10px;
+	font-size: 0.82rem;
+	cursor: pointer;
+}
+
+.vault-explorer-root-chip.active {
+	border-color: #7c3aed;
+	color: #f5f3ff;
+}
+
+.vault-explorer-root-chip:focus-visible,
+.vault-explorer-breadcrumb:focus-visible,
+.vault-dir-row:focus-visible,
+.vault-dir-open-btn:focus-visible,
+.vault-explorer-up:focus-visible,
+.vault-explorer-manual button:focus-visible,
+.vault-explorer-actions button:focus-visible {
+	outline: 2px solid #7c3aed;
+	outline-offset: 2px;
+}
+
+.vault-explorer-up {
+	margin-bottom: 6px;
+	background: #1e293b;
+	color: #e2e8f0;
+	border: 1px solid #475569;
+	border-radius: 6px;
+	padding: 4px 8px;
+	cursor: pointer;
+	font-size: 0.82rem;
+}
+
+.vault-explorer-breadcrumbs {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 2px;
+	margin-bottom: 8px;
+	font-size: 0.82rem;
+}
+
+.vault-explorer-breadcrumb {
+	background: transparent;
+	border: none;
+	color: #7dd3fc;
+	cursor: pointer;
+	padding: 2px 4px;
+}
+
+.vault-explorer-crumb-sep {
+	color: #64748b;
+	margin: 0 2px;
+}
+
+.vault-explorer-dir-list {
+	border: 1px solid #334155;
+	border-radius: 6px;
+	max-height: 260px;
+	overflow: auto;
+	margin-bottom: 8px;
+}
+
+.vault-dir-row {
+	display: grid;
+	grid-template-columns: auto minmax(72px, 0.6fr) minmax(0, 1fr) auto auto;
+	align-items: center;
+	gap: 8px;
+	min-height: 36px;
+	padding: 6px 10px;
+	cursor: pointer;
+	border-bottom: 1px solid rgba(51, 65, 85, 0.5);
+}
+
+.vault-dir-row:last-child {
+	border-bottom: none;
+}
+
+.vault-dir-row:hover,
+.vault-dir-row.is-selected {
+	background: rgba(124, 58, 237, 0.14);
+}
+
+.vault-dir-row.is-unreadable {
+	opacity: 0.75;
+}
+
+.vault-dir-icon {
+	font-size: 0.9rem;
+}
+
+.vault-dir-name {
+	font-weight: 500;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.vault-dir-path-hint {
+	font-size: 0.72rem;
+	color: #94a3b8;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	max-width: 180px;
+}
+
+.vault-dir-badge {
+	font-size: 0.7rem;
+	color: #fbbf24;
+	border: 1px solid #92400e;
+	border-radius: 4px;
+	padding: 1px 4px;
+}
+
+.vault-dir-open-btn {
+	background: #1e293b;
+	color: #e2e8f0;
+	border: 1px solid #475569;
+	border-radius: 4px;
+	width: 28px;
+	height: 28px;
+	cursor: pointer;
+	flex-shrink: 0;
+}
+
+.vault-explorer-manual {
+	display: flex;
+	gap: 6px;
+	align-items: center;
+}
+
+.vault-explorer-manual input {
+	flex: 1;
+	min-width: 0;
+	background: #0f172a;
+	color: #e2e8f0;
+	border: 1px solid #475569;
+	border-radius: 6px;
+	padding: 6px 8px;
+}
+
+.vault-explorer-manual button {
+	background: #1e293b;
+	color: #e2e8f0;
+	border: 1px solid #475569;
+	border-radius: 6px;
+	padding: 6px 10px;
+	cursor: pointer;
+	font-size: 0.82rem;
+}
+
+.vault-explorer-info-row {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	margin-bottom: 8px;
+}
+
+.vault-explorer-label {
+	font-size: 0.78rem;
+	color: #94a3b8;
+}
+
+.vault-explorer-value {
+	font-size: 0.85rem;
+	word-break: break-all;
+}
+
+.vault-explorer-field {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	margin-top: 10px;
+}
+
+.vault-explorer-field input {
+	background: #0f172a;
+	color: #e2e8f0;
+	border: 1px solid #475569;
+	border-radius: 6px;
+	padding: 6px 8px;
+}
+
+.vault-explorer-empty {
+	color: #94a3b8;
+	font-size: 0.85rem;
+	padding: 12px 8px;
+}
+
+.vault-explorer-status {
+	color: #94a3b8;
+	margin-bottom: 8px;
+	font-size: 0.85rem;
+}
+
+.vault-explorer-error,
+.vault-explorer-error-inline {
+	color: #f87171;
+	font-size: 0.85rem;
+}
+
+.vault-explorer-error {
+	margin-bottom: 8px;
+	padding: 8px;
+	border: 1px solid #7f1d1d;
+	border-radius: 6px;
+	background: rgba(127, 29, 29, 0.2);
+}
+
+.vault-explorer-success {
+	color: #34d399;
+	margin-bottom: 8px;
+}
+
+.vault-explorer-warn {
+	color: #fbbf24;
+	font-size: 0.85rem;
+	margin-bottom: 6px;
+}
+
+.vault-explorer-warnings {
+	color: #fbbf24;
+	margin: 8px 0 0;
+	padding-left: 1.2rem;
+	font-size: 0.82rem;
+}
+
+.vault-explorer-actions {
+	display: flex;
+	justify-content: flex-end;
+	gap: 8px;
+	margin-top: 14px;
+	padding-top: 12px;
+	border-top: 1px solid #334155;
+}
+
+.vault-explorer-actions button {
+	background: #1e293b;
+	color: #e2e8f0;
+	border: 1px solid #475569;
+	border-radius: 6px;
+	padding: 8px 14px;
+	cursor: pointer;
+}
+
+.vault-explorer-primary {
+	background: #0d9488 !important;
+	border-color: #14b8a6 !important;
+	color: #f0fdfa !important;
+}
+
+.vault-explorer-primary:disabled {
+	opacity: 0.45;
+	cursor: not-allowed;
+}
+
+@media (max-width: 720px) {
+	.vault-explorer-grid {
+		grid-template-columns: 1fr;
+	}
+
+	.vault-explorer-actions {
+		position: sticky;
+		bottom: 0;
+		background: #0f172a;
+	}
+}

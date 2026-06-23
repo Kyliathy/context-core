@@ -60,7 +60,7 @@ export type ThreadSearchResponse = {
 	results: SerializedAgentThread[];
 };
 
-export type ViewType = "search" | "search-threads" | "latest" | "favorites" | "agent-builder" | "agent-list" | "template-create" | "template-list";
+export type ViewType = "search" | "search-threads" | "latest" | "favorites" | "agent-builder" | "agent-list" | "template-create" | "template-list" | "vault-manager";
 
 /** How Favorites-type views place cards on the map. */
 export type CardPositioningMode = "Auto" | "CustomCardPositioning";
@@ -149,44 +149,204 @@ export type CreateAgentInput = {
 	agentKnowledge: string[];
 	codexEntryId?: string;
 	codexDirectory?: string;
-	platform: "github" | "claude" | "codex";
+	/** Legacy platform-specific create; omit for canonical-only save. */
+	platform?: "github" | "claude" | "codex";
+	/** Preserve catalog id when saving an edited canonical definition. */
+	canonicalId?: string;
 };
 
 /** Response from POST /api/agent-builder/create. */
 export type CreateAgentResponse = {
 	created: boolean;
-	path: string;
 	agentName: string;
+	path?: string;
+	canonicalId?: string;
+	canonicalDefinition?: CanonicalAgentDefinition;
+	/** True when canonical-only create persisted to server store. */
+	persisted?: boolean;
+	/** Absolute path to agent-definitions.json when canonical-only create succeeded. */
+	canonicalStoragePath?: string;
 	codexEntryId?: string;
 };
 
-/** Per-platform location info within a consolidated agent list entry. */
-export type AgentListPlatformEntry = {
-	platform: "github" | "claude" | "codex";
-	path: string;
-	codexEntryId?: string;
-	codexDirectory?: string;
-	dataLength: number;
+/** Publish platform identifiers (mirrors server AgentPublisher). */
+export type PublishPlatform = "copilot" | "claude" | "codex" | "kiro" | "cursor" | "windsurf" | "antigravity";
+
+export type ArtifactKind = "agent" | "skill";
+
+export type KnowledgeRef = {
+	kind: "file" | "text";
+	value: string;
 };
 
-/** Summary entry for GET /api/agent-builder/list (consolidated across platforms). */
-export type AgentListEntry = {
+export type CanonicalAgentDefinition = {
+	id: string;
+	kind: ArtifactKind;
+	projectName: string;
 	name: string;
-	path: string;
+	description: string;
+	whenToUse?: string;
+	"argument-hint"?: string;
+	tools?: string[];
+	knowledge: KnowledgeRef[];
+	body?: string;
+	license?: string;
+	compatibility?: string;
+	metadata?: Record<string, string>;
+	paths?: string[];
+	disableModelInvocation?: boolean;
+	/** Append-only publish history for Publisher "Already published" UI. */
+	publishedArtifacts?: CanonicalPublishedArtifact[];
+};
+
+/** One historical publish record stored on agent-definitions.json. */
+export type CanonicalPublishedArtifact = {
+	platform: PublishPlatform;
+	artifactKind: ArtifactKind;
+	absolutePath: string;
+	publishedAt: string;
+	linkStrategy?: LinkStrategy;
+};
+
+export type LinkStrategy = "copy" | "import-shim" | "symlink";
+
+export type PublishTarget = {
+	platform: PublishPlatform;
+	artifactKind: ArtifactKind;
+	outputDir: string;
 	codexEntryId?: string;
-	codexDirectory?: string;
-	platform?: "github" | "claude" | "codex";
-	platforms: AgentListPlatformEntry[];
-	contentDiverged: boolean;
+	linkStrategy?: LinkStrategy;
+};
+
+export type RenderedArtifactPreview = {
+	absolutePath: string;
+	platform: PublishPlatform;
+	artifactKind: ArtifactKind;
+	previewStatus?: "new" | "replace-generated" | "backup-unmanaged" | "unknown";
+	materialization?: {
+		requestedLinkStrategy?: LinkStrategy;
+		actualLinkStrategy?: LinkStrategy;
+	};
+};
+
+export type PreviewResult = {
+	artifacts: RenderedArtifactPreview[];
+	warnings: string[];
+	errors: string[];
+};
+
+export type PublishResult = {
+	written: Array<{ absolutePath: string; platform: PublishPlatform; artifactKind: ArtifactKind }>;
+	warnings: string[];
+	errors: string[];
+};
+
+export type DirHeatNode = {
+	name: string;
+	absolutePath: string;
+	directHits: number;
+	subtreeHits: number;
+	heat: number;
+	children: DirHeatNode[];
+};
+
+export type PathHeatResult = {
+	projectName: string;
+	projectRoot: string;
+	totalHits: number;
+	tree: DirHeatNode[];
+	topPaths: Array<{ path: string; hits: number }>;
+	suggestedOutputDir?: string;
+	droppedPathCount: number;
+	/** Absolute paths of knowledge basket files included in this analysis. */
+	knowledgeFilePaths?: string[];
+	/** Per-markdown-source placement attribution for Publisher chip UI. */
+	mdSources?: PlacementMdSource[];
+};
+
+export type PlacementMdSource = {
+	absolutePath: string;
+	displayPath: string;
+	inBasket: boolean;
+	isRelated: boolean;
+	directoryPaths: Array<{ absolutePath: string; hits: number }>;
+};
+
+export type PlatformDefaultDirs = {
+	projectRoot: string;
+	agentOutputDir: string;
+	skillRootDir: string;
+};
+
+export type PlatformArtifactTemplate = {
+	artifactKind: ArtifactKind;
+	rootKey: "agentOutputDir" | "skillRootDir" | "projectRoot";
+	relativePathTemplate: string;
+	note?: string;
+};
+
+export type PlatformCapability = {
+	platform: PublishPlatform;
+	label: string;
+	supportedArtifactKinds: ArtifactKind[];
+	defaultDirs?: PlatformDefaultDirs;
+	artifactTemplates?: PlatformArtifactTemplate[];
+	notes?: string[];
+	/** @deprecated Prefer supportedLinkStrategiesByKind */
+	supportedLinkStrategies?: LinkStrategy[];
+	/** Per-artifact-kind link strategies exposed to the Publisher UI. */
+	supportedLinkStrategiesByKind?: Partial<Record<ArtifactKind, LinkStrategy[]>>;
+};
+
+export type DriftReport = {
+	canonicalId: string;
+	entries: Array<{
+		platform: PublishPlatform;
+		artifactKind: ArtifactKind;
+		absolutePath: string;
+		state: "clean" | "canonical-changed" | "disk-changed" | "missing-file" | "unknown";
+	}>;
+};
+
+/** Per-platform publish summary on a canonical Agent List card. */
+export type PublishedTargetSummary = {
+	platform: PublishPlatform;
+	artifactKind: ArtifactKind;
+	absolutePath: string;
+	publishedAt: string;
+	artifactFormat?: string;
+	actualLinkStrategy?: LinkStrategy;
+	codexEntryId?: string;
+	state?: "clean" | "disk-changed" | "missing-file" | "canonical-changed" | "unknown";
+};
+
+/**
+ * Canonical Agent List entry — backed by agent-definitions.json, not disk artifact scans.
+ * Disk files are publish output joined through publishedTo.
+ */
+export type AgentListEntry = {
+	canonicalId: string;
+	projectName: string;
+	name: string;
 	description: string;
 	hint: string;
-	excerpt: string;
+	kind: ArtifactKind;
+	savedAt?: string;
+	publishedTo: PublishedTargetSummary[];
+	unpublished: boolean;
 };
 
 /** Response from GET /api/agent-builder/list. */
 export type AgentListResponse = {
 	totalAgents: number;
 	agents: AgentListEntry[];
+};
+
+export type PublishStatusResponse = {
+	canonicalId: string;
+	publishedTo: PublishedTargetSummary[];
+	publishedArtifacts?: CanonicalPublishedArtifact[];
+	drift?: DriftReport;
 };
 
 /** Full agent definition returned by GET /api/agent-builder/get-agent. */
@@ -202,8 +362,12 @@ export type GetAgentResponse = {
 /** Emitted by D3 engine when user clicks ✏️ on an agent-list card. */
 export type CardEditAgentEventDetail = {
 	cardId: string;
-	agentPath: string;
-	codexEntryId?: string;
+	canonicalId: string;
+};
+
+export type CardPublishAgentEventDetail = {
+	cardId: string;
+	canonicalId: string;
 };
 
 export type CardUseTemplateEventDetail = {
@@ -302,8 +466,9 @@ export type CardData = {
 	customEmoji?: string;
 	agentPath?: string;
 	codexEntryId?: string;
-	platforms?: AgentListPlatformEntry[];
-	contentDiverged?: boolean;
+	canonicalId?: string;
+	publishedTo?: PublishedTargetSummary[];
+	unpublished?: boolean;
 	/** File size in bytes (agent-builder file cards only). */
 	fileSize?: number;
 	/** When built from Favorites: use taller min height so vertical action buttons are not clipped at high zoom. */

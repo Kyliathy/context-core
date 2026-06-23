@@ -1,18 +1,23 @@
 /**
  * ContextCore – VS Code harness.
  * Reads chat sessions from both full JSON and incremental JSONL formats.
+ *
+ * Architecture: server/zz-reach2/architecture/archi-context-core-level0.md
+ * Logging: server/zz-reach2/upgrades/2026-06/r2wl-winston-logging.md
  */
 
 import { existsSync, readdirSync, readFileSync, statSync } from "fs";
-import { basename, join } from "path";
+import { basename, dirname, join } from "path";
 import { DateTime } from "luxon";
-import chalk from "chalk";
+import { getLogger } from "../logging/logger.js";
 import { AgentMessage } from "../models/AgentMessage.js";
 import type { ToolCall } from "../types.js";
 import { generateMessageId } from "../utils/hashId.js";
 import { deriveProjectName } from "../utils/pathHelpers.js";
 import { copyRawSourceFile, isSourceFileCached } from "../utils/rawCopier.js";
 import { resolveVSCodeWorkspaceMetadata } from "../utils/vscodeWorkspace.js";
+
+const logger = getLogger("harness:vscode");
 
 type VSCodeVariable = {
 	kind?: string;
@@ -73,6 +78,8 @@ type JsonlToolPatch = {
 function resolveVSCodeProjectName(storagePath: string): string
 {
 	const meta = resolveVSCodeWorkspaceMetadata(storagePath);
+	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 	if (meta.workspaceMetaStatus === "ok" && meta.workspacePath)
 	{
 		return deriveProjectName("VSCode", meta.workspacePath);
@@ -138,9 +145,13 @@ function extractVSCodeToolCallsFromRequest(request: VSCodeRequest): Array<ToolCa
 {
 	const rounds = request.result?.metadata?.toolCallRounds ?? [];
 	const calls: Array<ToolCall> = [];
+	// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 
 	for (const round of rounds)
 	{
+		// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 		for (const call of round.toolCalls ?? [])
 		{
 			const results: Array<string> = [];
@@ -174,16 +185,22 @@ function collectToolInvocationPayloads(value: unknown): Array<Record<string, unk
 {
 	const collected: Array<Record<string, unknown>> = [];
 	const stack: Array<unknown> = [value];
+	// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 
 	while (stack.length > 0)
 	{
 		const current = stack.pop();
+		// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 		if (!current || typeof current !== "object")
 		{
 			continue;
 		}
 		if (Array.isArray(current))
 		{
+			// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 			for (let i = current.length - 1; i >= 0; i -= 1)
 			{
 				stack.push(current[i]);
@@ -195,7 +212,8 @@ function collectToolInvocationPayloads(value: unknown): Array<Record<string, unk
 		if (obj.kind === "toolInvocationSerialized")
 		{
 			collected.push(obj);
-		}
+		}		// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 		for (const child of Object.values(obj))
 		{
 			stack.push(child);
@@ -212,6 +230,8 @@ function collectToolInvocationPayloads(value: unknown): Array<Record<string, unk
 function extractToolCallsFromKind2(entries: Array<VSCodeJsonlEntry>): Array<JsonlToolPatch>
 {
 	const patches: Array<JsonlToolPatch> = [];
+	// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 
 	for (const entry of entries)
 	{
@@ -271,8 +291,12 @@ function appendByPath(root: Record<string, unknown>, path: Array<string | number
 	}
 
 	let current: unknown = root;
+	// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 	for (const segment of path)
 	{
+		// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 		if (current === undefined || current === null)
 		{
 			return;
@@ -310,6 +334,8 @@ function setByPath(root: Record<string, unknown>, path: Array<string | number>, 
 	}
 
 	let current: unknown = root;
+	// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 	for (let i = 0; i < path.length - 1; i += 1)
 	{
 		const segment = path[i];
@@ -328,6 +354,8 @@ function setByPath(root: Record<string, unknown>, path: Array<string | number>, 
 		} else
 		{
 			const obj = current as Record<string, unknown>;
+			// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 			if (!(segment in obj) || obj[segment] === undefined || obj[segment] === null)
 			{
 				obj[segment] = typeof nextSegment === "number" ? [] : {};
@@ -361,6 +389,8 @@ function reconstructVSCodeJsonlSession(filePath: string):
 {
 	const rows = readFileSync(filePath, "utf-8").split(/\r?\n/).filter(Boolean);
 	const entries: Array<VSCodeJsonlEntry> = [];
+	// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 
 	for (const row of rows)
 	{
@@ -376,6 +406,8 @@ function reconstructVSCodeJsonlSession(filePath: string):
 	const firstSkeleton = entries.find((entry) => entry.kind === 0);
 	const reconstructed = ((firstSkeleton?.v as VSCodeSessionJson) ?? {}) as VSCodeSessionJson;
 	const mutable = reconstructed as unknown as Record<string, unknown>;
+	// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 
 	for (const entry of entries)
 	{
@@ -388,7 +420,8 @@ function reconstructVSCodeJsonlSession(filePath: string):
 		{
 			setByPath(mutable, entry.k, entry.v);
 		}
-		else if (entry.kind === 2 && Array.isArray(entry.v))
+		else		// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+ if (entry.kind === 2 && Array.isArray(entry.v))
 		{
 			appendByPath(mutable, entry.k, entry.v as unknown[]);
 		}
@@ -410,6 +443,8 @@ function parseVSCodeJsonlFile(filePath: string, project: string): Array<AgentMes
 	const rebuilt = reconstructVSCodeJsonlSession(filePath);
 	const tempJsonPath = `${filePath}.reconstructed.json`;
 	const messages = parseVSCodeJsonObject(tempJsonPath, rebuilt.reconstructed, project);
+	// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 
 	//Apply incremental tool patches only for assistant messages that have no
 	//tool calls from the primary result.metadata extraction path.
@@ -452,10 +487,14 @@ function parseVSCodeJsonObject(
 		: Date.now();
 	const fileMtime = DateTime.fromMillis(sourceMtimeMs);
 	const messages: Array<AgentMessage> = [];
+	// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 
 	for (let i = 0; i < requests.length; i += 1)
 	{
 		const request = requests[i];
+		// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 		if (!request || typeof request !== "object")
 		{
 			continue;
@@ -470,6 +509,8 @@ function parseVSCodeJsonObject(
 		const responseItems = request.response ?? [];
 		const rationale: string[] = [];
 		const textParts: string[] = [];
+		// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 
 		for (const entry of responseItems)
 		{
@@ -481,7 +522,8 @@ function parseVSCodeJsonObject(
 					rationale.push(thinkingText);
 				}
 			}
-			else if (!entry.kind || entry.kind === "text" || entry.kind === "inlineReference")
+			else			// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+ if (!entry.kind || entry.kind === "text" || entry.kind === "inlineReference")
 			{
 				const text = typeof entry.value === "string" ? entry.value.trim() : "";
 				if (text)
@@ -578,12 +620,18 @@ function parseVSCodeJsonObject(
  * @param storagePath - path to `workspaceStorage/<hash>/`.
  * @param rawBase - Raw archive directory for this harness (`{storage}/{machine}-RAW/VSCode/`).
  */
-export function readVSCodeChats(storagePath: string, rawBase: string): Array<AgentMessage>
+function readVSCodeChatFilesFromList(
+	storagePath: string,
+	rawBase: string,
+	jsonFiles: Array<string>,
+	jsonlFiles: Array<string>
+): Array<AgentMessage>
 {
-	const { jsonFiles, jsonlFiles } = scanVSCodeChatSessionFiles(storagePath);
 	const project = resolveVSCodeProjectName(storagePath);
 	const results: Array<AgentMessage> = [];
 	let skippedCount = 0;
+	// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 
 	for (const jsonPath of jsonFiles)
 	{
@@ -600,6 +648,8 @@ export function readVSCodeChats(storagePath: string, rawBase: string): Array<Age
 			const parsed = JSON.parse(raw) as VSCodeSessionJson;
 			const messages = parseVSCodeJsonObject(jsonPath, parsed, project);
 			const rawDest = copyRawSourceFile(rawBase, project, jsonPath);
+			// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 			for (const message of messages)
 			{
 				message.source = rawDest;
@@ -607,9 +657,10 @@ export function readVSCodeChats(storagePath: string, rawBase: string): Array<Age
 			results.push(...messages);
 		} catch
 		{
-			console.warn(`[VSCode] Skipping malformed chat JSON file: ${jsonPath}`);
+			logger.warn(`Skipping malformed chat JSON file: ${jsonPath}`);
 		}
-	}
+	}	// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 
 	for (const jsonlPath of jsonlFiles)
 	{
@@ -624,6 +675,8 @@ export function readVSCodeChats(storagePath: string, rawBase: string): Array<Age
 		{
 			const messages = parseVSCodeJsonlFile(jsonlPath, project);
 			const rawDest = copyRawSourceFile(rawBase, project, jsonlPath);
+			// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 			for (const message of messages)
 			{
 				message.source = rawDest;
@@ -631,13 +684,67 @@ export function readVSCodeChats(storagePath: string, rawBase: string): Array<Age
 			results.push(...messages);
 		} catch (error)
 		{
-			console.warn(
-				`[VSCode] Skipping malformed chat JSONL file: ${jsonlPath} (${(error as Error).message})`
+			logger.warn(
+				`Skipping malformed chat JSONL file: ${jsonlPath} (${(error as Error).message})`
 			);
 		}
 	}
 
 	const totalFiles = jsonFiles.length + jsonlFiles.length;
-	console.log(`[VSCode] Processed ${totalFiles} files: ${chalk.green(skippedCount + ' cached')}, ${chalk.blue((totalFiles - skippedCount) + ' new/modified')}`);
+	logger.info(
+		`Processed ${totalFiles} files: ${skippedCount} cached, ${totalFiles - skippedCount} new/modified`
+	);
+	return results;
+}
+
+/**
+ * Reads data for readVSCodeChats without changing unrelated CXC state.
+ * @param storagePath - Path used by readVSCodeChats to locate the relevant CXC resource.
+ * @param rawBase - Value consumed by readVSCodeChats.
+ * @returns Result produced by readVSCodeChats.
+ */
+
+
+export function readVSCodeChats(storagePath: string, rawBase: string): Array<AgentMessage>
+{
+	const { jsonFiles, jsonlFiles } = scanVSCodeChatSessionFiles(storagePath);
+	return readVSCodeChatFilesFromList(storagePath, rawBase, jsonFiles, jsonlFiles);
+}
+
+/**
+ * Reads data for readVSCodeChatFiles without changing unrelated CXC state.
+ * @param filePaths - Path used by readVSCodeChatFiles to locate the relevant CXC resource.
+ * @param rawBase - Value consumed by readVSCodeChatFiles.
+ * @returns Result produced by readVSCodeChatFiles.
+ */
+
+
+export function readVSCodeChatFiles(filePaths: Array<string>, rawBase: string): Array<AgentMessage>
+{
+	const grouped = new Map<string, { jsonFiles: Array<string>; jsonlFiles: Array<string> }>();
+	// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
+	for (const filePath of filePaths)
+	{
+		const storagePath = dirname(dirname(filePath));
+		const group = grouped.get(storagePath) ?? { jsonFiles: [], jsonlFiles: [] };
+		if (filePath.toLowerCase().endsWith(".jsonl"))
+		{
+			group.jsonlFiles.push(filePath);
+		}
+		else if (filePath.toLowerCase().endsWith(".json"))
+		{
+			group.jsonFiles.push(filePath);
+		}
+		grouped.set(storagePath, group);
+	}
+
+	const results: Array<AgentMessage> = [];
+	// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
+	for (const [storagePath, group] of grouped.entries())
+	{
+		results.push(...readVSCodeChatFilesFromList(storagePath, rawBase, group.jsonFiles, group.jsonlFiles));
+	}
 	return results;
 }

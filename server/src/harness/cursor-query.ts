@@ -1,13 +1,19 @@
 /**
  * ContextCore – Cursor IDE harness: SQLite query layer.
  * All functions that read from state.vscdb and parse raw Cursor payloads.
+ *
+ * Architecture: server/zz-reach2/architecture/archi-context-core-level0.md
+ * Logging: server/zz-reach2/upgrades/2026-06/r2wl-winston-logging.md
  */
 
 import { Database } from "bun:sqlite";
-import chalk from "chalk";
 import { DateTime } from "luxon";
+import { getLogger } from "../logging/logger.js";
 import { AgentMessage } from "../models/AgentMessage.js";
 import { generateMessageId } from "../utils/hashId.js";
+import { getCursorIngestBatchSize } from "../ingest/IngestConfig.js";
+
+const logger = getLogger("harness:cursor-query");
 
 // ---------------------------------------------------------------------------
 // Types
@@ -87,12 +93,23 @@ export type CursorBubbleRecord = {
 	context: Array<string>;
 };
 
+export type CursorBubblePage = {
+	records: Array<CursorBubbleRecord>;
+	firstRowId: number;
+	lastRowId: number;
+	selectedRows: number;
+	parsedRecords: number;
+	malformedRows: number;
+	sessionTimestampFallbacks: number;
+	dateNowFallbacks: number;
+};
+
 // ---------------------------------------------------------------------------
 // Shared constants (also used by cursor-matcher and cursor)
 // ---------------------------------------------------------------------------
 
-export const CUR = chalk.hex("#00CED1")("[Cursor]");
-export const CUR_LINE = chalk.hex("#00CED1")("━".repeat(60));
+export const CUR = "[Cursor]";
+export const CUR_LINE = "━".repeat(60);
 export const CURSOR_PROGRESS_EVERY = 5000;
 
 // ---------------------------------------------------------------------------
@@ -107,9 +124,11 @@ export const CURSOR_PROGRESS_EVERY = 5000;
  */
 export function logCursorProgress(phase: string, index: number, total: number): void
 {
+	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 	if (index === 0 || index === total || index % CURSOR_PROGRESS_EVERY === 0)
 	{
-		console.log(`${CUR}${chalk.dim(`[${phase}]`)} ${index}/${total}`);
+		logger.debug(`[${phase}] ${index}/${total}`);
 	}
 }
 
@@ -126,7 +145,8 @@ export function toDatabaseText(value: unknown): string
 	if (typeof value === "string")
 	{
 		return value;
-	}
+	}	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 	if (value === null || value === undefined)
 	{
 		return "";
@@ -139,11 +159,249 @@ export function toDatabaseText(value: unknown): string
 }
 
 /**
+ * Reads data for readCursorKvPage without changing unrelated CXC state.
+ * @param db - Database dependency used by readCursorKvPage.
+ * @param lastRowId - Value consumed by readCursorKvPage.
+ * @param limit - Numeric value used by readCursorKvPage.
+ * @param whereSql - Value consumed by readCursorKvPage.
+ * @returns Result produced by readCursorKvPage.
+ */
+
+
+export function readCursorKvPage(
+	db: Database,
+	lastRowId: number,
+	limit: number,
+	whereSql: string
+): Array<CursorKVRowWithRowId>
+{
+	const safeLimit = Math.min(Math.max(1, Math.floor(limit)), getCursorIngestBatchSize());
+	return db
+		.query<CursorKVRowWithRowId, [number, number]>(
+			`SELECT rowid, key, value FROM cursorDiskKV WHERE ${whereSql} AND rowid > ? ORDER BY rowid LIMIT ?`
+		)
+		.all(Math.max(0, Math.floor(lastRowId)), safeLimit);
+}
+
+/**
+ * Reads data for readCursorBubblePage without changing unrelated CXC state.
+ * @param db - Database dependency used by readCursorBubblePage.
+ * @param sessionModelMap - Session identifier or session data used by readCursorBubblePage.
+ * @param sessionTimestampMap - Session identifier or session data used by readCursorBubblePage.
+ * @param lastRowId - Value consumed by readCursorBubblePage.
+ * @param phase - Value consumed by readCursorBubblePage.
+ * @returns Result produced by readCursorBubblePage.
+ */
+
+
+export function readCursorBubblePage(
+	db: Database,
+	sessionModelMap: Map<string, string>,
+	sessionTimestampMap: Map<string, DateTime>,
+	lastRowId: number,
+	phase: string
+): CursorBubblePage
+{
+	const rows = readCursorKvPage(db, lastRowId, getCursorIngestBatchSize(), "key LIKE 'bubbleId:%'");
+	const records: Array<CursorBubbleRecord> = [];
+	let malformedRows = 0;
+	let sessionTimestampFallbacks = 0;
+	let dateNowFallbacks = 0;
+	let sampleBubbleFieldsLogged = false;
+	// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
+
+	for (const row of rows)
+	{
+		const keyParts = row.key.split(":");
+		if (keyParts.length < 3)
+		{
+			malformedRows += 1;
+			continue;
+		}
+
+		const sessionId = keyParts[1] || "cursor-session";
+		const bubbleId = keyParts[2] || row.key;
+		try
+		{
+			const rawValue = toDatabaseText(row.value);
+			if (!rawValue)
+			{
+				continue;
+			}
+			const parsed = JSON.parse(rawValue) as Record<string, unknown>;
+
+			if (!sampleBubbleFieldsLogged)
+			{
+				const fieldNames = Object.keys(parsed);
+				logger.debug(`[${phase}] Sample bubble fields: ${fieldNames.join(", ")}`);
+				sampleBubbleFieldsLogged = true;
+			}
+
+			const role = mapBubbleTypeToRole(parsed.type);
+			if (!role)
+			{
+				continue;
+			}
+
+			const message = typeof parsed.text === "string" ? parsed.text.trim() : "";
+			if (!message)
+			{
+				continue;
+			}
+
+			const model = pickModel(parsed) ?? sessionModelMap.get(sessionId) ?? null;
+			let dateTime = parseCursorBubbleDateTime(parsed);
+			if (dateTime === null)
+			{
+				const sessionTs = sessionTimestampMap.get(sessionId);
+				if (sessionTs)
+				{
+					dateTime = sessionTs;
+					sessionTimestampFallbacks += 1;
+				}
+				else
+				{
+					dateTime = DateTime.now();
+					dateNowFallbacks += 1;
+				}
+			}
+			const contextPaths = new Set<string>(extractContextPaths(message));
+			collectPathLikeValues(parsed.context, contextPaths);
+			collectPathLikeValues(parsed.codeBlocks, contextPaths);
+			collectPathLikeValues(parsed.toolResults, contextPaths);
+
+			records.push({
+				sessionId,
+				bubbleId,
+				role,
+				message,
+				model,
+				dateTime,
+				context: Array.from(contextPaths),
+			});
+		}
+		catch
+		{
+			malformedRows += 1;
+		}
+	}
+
+	records.sort((a, b) =>
+	{
+		const timeDiff = a.dateTime.toMillis() - b.dateTime.toMillis();
+		if (timeDiff !== 0)
+		{
+			return timeDiff;
+		}
+		return a.bubbleId.localeCompare(b.bubbleId);
+	});
+
+	const firstRowId = rows[0]?.rowid ?? lastRowId;
+	const pageLastRowId = rows[rows.length - 1]?.rowid ?? lastRowId;
+	logger.debug(
+		`[bubble-page] rowid=${firstRowId}..${pageLastRowId} selected=${rows.length} parsed=${records.length}`
+	);
+
+	return {
+		records,
+		firstRowId,
+		lastRowId: pageLastRowId,
+		selectedRows: rows.length,
+		parsedRecords: records.length,
+		malformedRows,
+		sessionTimestampFallbacks,
+		dateNowFallbacks,
+	};
+}
+
+/**
+ * Handles extractCursorBubbleMessagesPaged behavior for this CXC module.
+ * @param db - Database dependency used by extractCursorBubbleMessagesPaged.
+ * @param sessionModelMap - Session identifier or session data used by extractCursorBubbleMessagesPaged.
+ * @param sessionTimestampMap - Session identifier or session data used by extractCursorBubbleMessagesPaged.
+ * @param sinceRowId - Value consumed by extractCursorBubbleMessagesPaged.
+ * @param phase - Value consumed by extractCursorBubbleMessagesPaged.
+ * @returns Result produced by extractCursorBubbleMessagesPaged.
+ */
+
+
+export function extractCursorBubbleMessagesPaged(
+	db: Database,
+	sessionModelMap: Map<string, string>,
+	sessionTimestampMap: Map<string, DateTime>,
+	sinceRowId = 0,
+	phase = "bubble-scan"
+): CursorBubblePage
+{
+	const records: Array<CursorBubbleRecord> = [];
+	let firstRowId = 0;
+	let lastRowId = Math.max(0, Math.floor(sinceRowId));
+	let selectedRows = 0;
+	let parsedRecords = 0;
+	let malformedRows = 0;
+	let sessionTimestampFallbacks = 0;
+	let dateNowFallbacks = 0;
+	// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
+
+	while (true)
+	{
+		const page = readCursorBubblePage(db, sessionModelMap, sessionTimestampMap, lastRowId, phase);
+		if (page.selectedRows === 0)
+		{
+			break;
+		}
+
+		if (firstRowId === 0)
+		{
+			firstRowId = page.firstRowId;
+		}
+		lastRowId = page.lastRowId;
+		selectedRows += page.selectedRows;
+		parsedRecords += page.parsedRecords;
+		malformedRows += page.malformedRows;
+		sessionTimestampFallbacks += page.sessionTimestampFallbacks;
+		dateNowFallbacks += page.dateNowFallbacks;
+		records.push(...page.records);
+	}
+
+	if (sessionTimestampFallbacks > 0)
+	{
+		logger.warn(
+			`${sessionTimestampFallbacks} bubbles used session-level timestamp fallback (no per-bubble timestamp)`
+		);
+	}
+	if (dateNowFallbacks > 0)
+	{
+		logger.warn(
+			`WARNING: ${dateNowFallbacks} bubbles fell back to DateTime.now() - these messages will appear dated to today`
+		);
+	}
+	logger.debug(
+		`[${phase}] rows=${selectedRows} parsed=${parsedRecords} malformed=${malformedRows}`
+	);
+
+	return {
+		records,
+		firstRowId,
+		lastRowId,
+		selectedRows,
+		parsedRecords,
+		malformedRows,
+		sessionTimestampFallbacks,
+		dateNowFallbacks,
+	};
+}
+
+/**
  * Picks a model candidate from a generic object.
  * @param value - Unknown object potentially containing model metadata.
  */
 export function pickModel(value: unknown): string | null
 {
+	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 	if (!value || typeof value !== "object")
 	{
 		return null;
@@ -157,7 +415,8 @@ export function pickModel(value: unknown): string | null
 	if (direct)
 	{
 		return direct;
-	}
+	}	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 
 	if (obj.selectedModel && typeof obj.selectedModel === "object")
 	{
@@ -165,7 +424,8 @@ export function pickModel(value: unknown): string | null
 		if (typeof selected.identifier === "string")
 		{
 			return selected.identifier;
-		}
+		}		// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 		if (selected.metadata && typeof selected.metadata === "object")
 		{
 			const metadata = selected.metadata as Record<string, unknown>;
@@ -192,7 +452,8 @@ export function normalizeMessageText(value: unknown): string
 	if (Array.isArray(value))
 	{
 		return value.map((item) => normalizeMessageText(item)).filter(Boolean).join("\n").trim();
-	}
+	}	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 	if (value && typeof value === "object")
 	{
 		const obj = value as Record<string, unknown>;
@@ -234,6 +495,8 @@ export function extractContextPaths(text: unknown): Array<string>
 export function mapCursorRole(rawRole: string): "user" | "assistant" | "tool" | "system"
 {
 	const role = rawRole.toLowerCase();
+	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 	if (role.includes("assistant") || role === "bot" || role === "ai")
 	{
 		return "assistant";
@@ -285,6 +548,8 @@ export function parseCursorDateTimeStrict(timestamp: string | number | null): Da
 	if (typeof timestamp === "number")
 	{
 		const dt = timestamp > 10_000_000_000 ? DateTime.fromMillis(timestamp) : DateTime.fromSeconds(timestamp);
+		// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 		if (!dt.isValid || dt.year < 2020)
 		{
 			return null;
@@ -307,6 +572,8 @@ export function parseCursorDateTimeStrict(timestamp: string | number | null): Da
 		}
 
 		const iso = DateTime.fromISO(trimmed);
+		// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 		if (!iso.isValid || iso.year < 2020)
 		{
 			return null;
@@ -323,6 +590,8 @@ export function parseCursorDateTimeStrict(timestamp: string | number | null): Da
  */
 export function findDeepTimestamp(obj: unknown, depth: number = 0): number | null
 {
+	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 	if (depth > 4 || !obj || typeof obj !== "object")
 	{
 		return null;
@@ -330,6 +599,8 @@ export function findDeepTimestamp(obj: unknown, depth: number = 0): number | nul
 
 	if (Array.isArray(obj))
 	{
+		// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 		for (const item of obj)
 		{
 			const found = findDeepTimestamp(item, depth + 1);
@@ -343,20 +614,29 @@ export function findDeepTimestamp(obj: unknown, depth: number = 0): number | nul
 
 	const record = obj as Record<string, unknown>;
 	const TIMESTAMP_FIELD_HINTS = /^(timestamp|time|created|updated|date|start|end|sent|complete|first)/i;
+	// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 	for (const [key, value] of Object.entries(record))
 	{
+		// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 		if (typeof value === "number" && TIMESTAMP_FIELD_HINTS.test(key))
 		{
+			// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 			// Plausible epoch seconds (after 2020) or epoch milliseconds (after 2020).
 			if ((value > 1_577_836_800 && value < 10_000_000_000) ||
 				(value > 1_577_836_800_000 && value < 10_000_000_000_000))
 			{
 				return value;
 			}
-		}
+		}		// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 		if (typeof value === "string" && TIMESTAMP_FIELD_HINTS.test(key))
 		{
 			const num = Number(value);
+			// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 			if (!Number.isNaN(num) &&
 				((num > 1_577_836_800 && num < 10_000_000_000) ||
 					(num > 1_577_836_800_000 && num < 10_000_000_000_000)))
@@ -369,10 +649,13 @@ export function findDeepTimestamp(obj: unknown, depth: number = 0): number | nul
 				return iso.toMillis();
 			}
 		}
-	}
+	}	// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 	// Recurse into nested objects.
 	for (const value of Object.values(record))
 	{
+		// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 		if (value && typeof value === "object")
 		{
 			const found = findDeepTimestamp(value, depth + 1);
@@ -391,10 +674,13 @@ export function findDeepTimestamp(obj: unknown, depth: number = 0): number | nul
  */
 export function mapBubbleTypeToRole(bubbleType: unknown): "user" | "assistant" | null
 {
+	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 	if (bubbleType === 1 || bubbleType === "1")
 	{
 		return "user";
-	}
+	}	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 	if (bubbleType === 2 || bubbleType === "2")
 	{
 		return "assistant";
@@ -426,9 +712,13 @@ export function parseCursorBubbleDateTime(parsed: Record<string, unknown>): Date
 		timingInfo?.completeAt,
 		timingInfo?.endTime,
 	];
+	// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 
 	for (const candidate of candidates)
 	{
+		// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 		if (typeof candidate === "string" || typeof candidate === "number")
 		{
 			const parsedCandidate = parseCursorDateTimeStrict(candidate);
@@ -462,16 +752,21 @@ export function collectPathLikeValues(value: unknown, out: Set<string>): void
 {
 	if (Array.isArray(value))
 	{
+		// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 		for (const item of value)
 		{
 			collectPathLikeValues(item, out);
 		}
 		return;
-	}
+	}	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 	if (!value || typeof value !== "object")
 	{
 		if (typeof value === "string")
 		{
+			// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 			for (const textPath of extractContextPaths(value))
 			{
 				out.add(textPath);
@@ -481,15 +776,21 @@ export function collectPathLikeValues(value: unknown, out: Set<string>): void
 	}
 
 	const obj = value as Record<string, unknown>;
+	// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 	for (const [key, nested] of Object.entries(obj))
 	{
 		const lower = key.toLowerCase();
+		// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 		if (
 			(lower.includes("path") || lower.includes("uri") || lower.includes("file")) &&
 			typeof nested === "string"
 		)
 		{
 			const normalized = nested.replace(/^file:\/\//i, "");
+			// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 			if (normalized.includes("/") || normalized.includes("\\"))
 			{
 				out.add(normalized);
@@ -525,12 +826,16 @@ export function extractSessionHintsFromKey(key: string): Array<string>
 {
 	const hints = new Set<string>();
 	const parts = key.split(":");
+	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 	if (parts[0] === "bubbleId" && parts[1])
 	{
 		hints.add(parts[1]);
 	}
 
 	const tokenPattern = /[A-Za-z0-9-]{16,}/g;
+	// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 	for (const token of key.match(tokenPattern) ?? [])
 	{
 		if (!token.includes("bubbleId"))
@@ -548,6 +853,8 @@ export function extractSessionHintsFromKey(key: string): Array<string>
 export function isCursorChatKeyCandidate(key: string): boolean
 {
 	const lower = key.toLowerCase();
+	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 	if (!lower.includes("chat") && !lower.includes("composer") && !lower.includes("conversation"))
 	{
 		return false;
@@ -588,6 +895,8 @@ export function buildCursorSessionModelMap(db: Database): Map<string, string>
 	const rows = db
 		.query<CursorKVRow, []>("SELECT key, value FROM cursorDiskKV WHERE key LIKE 'composerData:%'")
 		.all();
+	// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 
 	for (const row of rows)
 	{
@@ -606,6 +915,8 @@ export function buildCursorSessionModelMap(db: Database): Map<string, string>
 			const parsed = JSON.parse(rawValue) as Record<string, unknown>;
 			const modelConfig = parsed.modelConfig as { modelName?: string } | undefined;
 			const modelName = modelConfig?.modelName;
+			// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 			if (modelName && modelName !== "default")
 			{
 				map.set(sessionId, modelName);
@@ -615,7 +926,7 @@ export function buildCursorSessionModelMap(db: Database): Map<string, string>
 			// Skip malformed composerData entries.
 		}
 	}
-	console.log(`${CUR} Session model map: ${chalk.green(map.size + '')} sessions with explicit model (from ${rows.length} composerData entries)`);
+	logger.debug(`Session model map: ${map.size} sessions with explicit model (from ${rows.length} composerData entries)`);
 	return map;
 }
 
@@ -629,6 +940,8 @@ export function buildCursorSessionTimestampMap(db: Database): Map<string, DateTi
 	const rows = db
 		.query<CursorKVRow, []>("SELECT key, value FROM cursorDiskKV WHERE key LIKE 'composerData:%'")
 		.all();
+	// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 
 	for (const row of rows)
 	{
@@ -650,8 +963,12 @@ export function buildCursorSessionTimestampMap(db: Database): Map<string, DateTi
 				parsed.lastSendTime, parsed.creationDate, parsed.startTime,
 			];
 			let found = false;
+			// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 			for (const candidate of tsFields)
 			{
+				// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 				if (typeof candidate === "string" || typeof candidate === "number")
 				{
 					const dt = parseCursorDateTimeStrict(candidate);
@@ -669,6 +986,8 @@ export function buildCursorSessionTimestampMap(db: Database): Map<string, DateTi
 				if (deepTs !== null)
 				{
 					const dt = parseCursorDateTime(deepTs);
+					// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 					if (dt.isValid && dt.year >= 2020)
 					{
 						map.set(sessionId, dt);
@@ -680,7 +999,7 @@ export function buildCursorSessionTimestampMap(db: Database): Map<string, DateTi
 			// Skip malformed composerData entries.
 		}
 	}
-	console.log(`${CUR} Session timestamp map: ${chalk.green(map.size + '')} sessions with timestamps (from ${rows.length} composerData entries)`);
+	logger.debug(`Session timestamp map: ${map.size} sessions with timestamps (from ${rows.length} composerData entries)`);
 	return map;
 }
 
@@ -700,6 +1019,9 @@ export function extractCursorBubbleMessages(
 	sessionTimestampMap: Map<string, DateTime>
 ): Array<CursorBubbleRecord>
 {
+	return extractCursorBubbleMessagesPaged(db, sessionModelMap, sessionTimestampMap, 0, "bubble-scan").records;
+
+	/*
 	const rows = db.query<CursorKVRow, []>("SELECT key, value FROM cursorDiskKV WHERE key LIKE 'bubbleId:%'").all();
 	const records: Array<CursorBubbleRecord> = [];
 	let dateNowFallbacks = 0;
@@ -803,6 +1125,7 @@ export function extractCursorBubbleMessages(
 	});
 
 	return records;
+	*/
 }
 
 /**
@@ -819,6 +1142,15 @@ export function extractCursorBubbleMessagesSinceRowId(
 	sinceRowId: number
 ): Array<CursorBubbleRecord>
 {
+	return extractCursorBubbleMessagesPaged(
+		db,
+		sessionModelMap,
+		sessionTimestampMap,
+		sinceRowId,
+		`bubble-delta>${sinceRowId}`
+	).records;
+
+	/*
 	const rows = db
 		.query<CursorKVRowWithRowId, [number]>(
 			"SELECT rowid, key, value FROM cursorDiskKV WHERE key LIKE 'bubbleId:%' AND rowid > ?"
@@ -933,6 +1265,7 @@ export function extractCursorBubbleMessagesSinceRowId(
 	});
 
 	return records;
+	*/
 }
 
 // ---------------------------------------------------------------------------
@@ -996,10 +1329,14 @@ export function extractFromRequestLikeSessions(
 {
 	const results: Array<AgentMessage> = [];
 	const stack: Array<unknown> = [parsed];
+	// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 
 	while (stack.length > 0)
 	{
 		const current = stack.pop();
+		// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 		if (!current || typeof current !== "object")
 		{
 			continue;
@@ -1007,6 +1344,8 @@ export function extractFromRequestLikeSessions(
 
 		if (Array.isArray(current))
 		{
+			// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 			for (let i = current.length - 1; i >= 0; i -= 1)
 			{
 				stack.push(current[i]);
@@ -1026,6 +1365,8 @@ export function extractFromRequestLikeSessions(
 			const containerTimestamp = obj.creationDate ?? null;
 			const containerSessionId = obj.sessionId ?? key;
 			let previousAssistantId: string | null = null;
+			// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 
 			for (let i = 0; i < requests.length; i += 1)
 			{
@@ -1105,7 +1446,8 @@ export function extractFromRequestLikeSessions(
 					previousAssistantId = assistantId;
 				}
 			}
-		}
+		}		// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 
 		for (const nested of Object.values(current as Record<string, unknown>))
 		{
@@ -1134,12 +1476,15 @@ export function walkMessageLikeNodes(
 {
 	if (Array.isArray(value))
 	{
+		// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 		for (const item of value)
 		{
 			walkMessageLikeNodes(item, state, out);
 		}
 		return;
-	}
+	}	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 
 	if (!value || typeof value !== "object")
 	{
@@ -1152,6 +1497,8 @@ export function walkMessageLikeNodes(
 		(typeof obj.sessionId === "string" && obj.sessionId) ||
 		(typeof obj.conversationId === "string" && obj.conversationId) ||
 		state.sessionHint;
+	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 
 	if (typeof obj.role === "string" && obj.content !== undefined)
 	{
@@ -1168,6 +1515,8 @@ export function walkMessageLikeNodes(
 	}
 
 	const childState: CursorWalkerState = { sessionHint, modelHint: currentModel };
+	// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 	for (const nested of Object.values(obj))
 	{
 		walkMessageLikeNodes(nested, childState, out);

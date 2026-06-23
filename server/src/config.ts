@@ -1,5 +1,8 @@
 /**
  * ContextCore – config loading and hostname-based machine selection.
+ *
+ * Architecture: server/zz-reach2/architecture/archi-context-core-level0.md
+ * Logging audit: server/zz-reach2/upgrades/2026-06/r2wl-winston-logging.md (T62 — no runtime logging)
  */
 
 import { hostname } from "os";
@@ -15,6 +18,8 @@ const CONFIG_PATH = "cc.json";
  */
 export function getHostname(): string
 {
+	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting ContextCore runtime behavior from partial or invalid state.
+
 	if (process.platform === "win32" && process.env.COMPUTERNAME)
 	{
 		return process.env.COMPUTERNAME;

@@ -1,17 +1,22 @@
 /**
  * ContextCore - Codex harness.
  * Codex stores conversations as JSONL event logs under `.codex/sessions/...`.
+ *
+ * Architecture: server/zz-reach2/architecture/archi-context-core-level0.md
+ * Logging: server/zz-reach2/upgrades/2026-06/r2wl-winston-logging.md
  */
 
 import { existsSync, readdirSync, readFileSync } from "fs";
 import { basename, dirname, join, normalize } from "path";
 import { DateTime } from "luxon";
-import chalk from "chalk";
+import { getLogger } from "../logging/logger.js";
 import { AgentMessage, type AgentRole } from "../models/AgentMessage.js";
 import type { ToolCall } from "../types.js";
 import { generateMessageId } from "../utils/hashId.js";
 import { deriveProjectName } from "../utils/pathHelpers.js";
 import { copyRawSourceFile, isSourceFileCached } from "../utils/rawCopier.js";
+
+const logger = getLogger("harness:codex");
 
 type JsonRecord = {
 	timestamp?: string;
@@ -50,16 +55,31 @@ const MAX_TOOL_OUTPUT_LEN = 2000;
 const MAX_CONTEXT_VALUE_LEN = 300;
 const MAX_CONTEXT_ITEMS = 16;
 
+/**
+ * Handles asObject behavior for this CXC module.
+ * @param value - Value consumed by asObject.
+ * @returns Result produced by asObject.
+ */
 function asObject(value: unknown): Record<string, unknown> | null
 {
 	return value && typeof value === "object" ? (value as Record<string, unknown>) : null;
 }
 
+/**
+ * Handles asString behavior for this CXC module.
+ * @param value - Value consumed by asString.
+ * @returns Result produced by asString.
+ */
 function asString(value: unknown): string | null
 {
 	return typeof value === "string" ? value : null;
 }
 
+/**
+ * Parses input into the shape expected by parseIsoOrNow.
+ * @param value - Value consumed by parseIsoOrNow.
+ * @returns Result produced by parseIsoOrNow.
+ */
 function parseIsoOrNow(value: string | undefined): DateTime
 {
 	if (!value)
@@ -70,6 +90,11 @@ function parseIsoOrNow(value: string | undefined): DateTime
 	return parsed.isValid ? parsed : DateTime.now();
 }
 
+/**
+ * Handles normalizeText behavior for this CXC module.
+ * @param value - Value consumed by normalizeText.
+ * @returns Result produced by normalizeText.
+ */
 function normalizeText(value: unknown): string
 {
 	if (typeof value !== "string")
@@ -79,6 +104,11 @@ function normalizeText(value: unknown): string
 	return value.trim();
 }
 
+/**
+ * Handles isWrapperText behavior for this CXC module.
+ * @param text - Value consumed by isWrapperText.
+ * @returns Result produced by isWrapperText.
+ */
 function isWrapperText(text: string): boolean
 {
 	const normalized = text.trim().toLowerCase();
@@ -91,6 +121,12 @@ function isWrapperText(text: string): boolean
 	);
 }
 
+/**
+ * Handles truncate behavior for this CXC module.
+ * @param value - Value consumed by truncate.
+ * @param maxLen - Value consumed by truncate.
+ * @returns Result produced by truncate.
+ */
 function truncate(value: string, maxLen: number): string
 {
 	if (value.length <= maxLen)
@@ -100,6 +136,11 @@ function truncate(value: string, maxLen: number): string
 	return `${value.slice(0, maxLen)}…`;
 }
 
+/**
+ * Handles safeParseJsonString behavior for this CXC module.
+ * @param value - Value consumed by safeParseJsonString.
+ * @returns Result produced by safeParseJsonString.
+ */
 function safeParseJsonString(value: string): unknown | null
 {
 	try
@@ -112,6 +153,12 @@ function safeParseJsonString(value: string): unknown | null
 	}
 }
 
+/**
+ * Handles collectPathLikeValues behavior for this CXC module.
+ * @param value - Value consumed by collectPathLikeValues.
+ * @param parentKey - Value consumed by collectPathLikeValues.
+ * @returns Result produced by collectPathLikeValues.
+ */
 function collectPathLikeValues(value: unknown, parentKey = ""): string[]
 {
 	const results: string[] = [];
@@ -120,6 +167,8 @@ function collectPathLikeValues(value: unknown, parentKey = ""): string[]
 	{
 		const key = parentKey.toLowerCase();
 		const looksLikePath = value.includes("\\") || value.includes("/") || value.includes(":");
+		// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 		if (
 			key.includes("path")
 			|| key.includes("file")
@@ -138,6 +187,8 @@ function collectPathLikeValues(value: unknown, parentKey = ""): string[]
 
 	if (Array.isArray(value))
 	{
+		// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 		for (const item of value)
 		{
 			results.push(...collectPathLikeValues(item, parentKey));
@@ -149,7 +200,8 @@ function collectPathLikeValues(value: unknown, parentKey = ""): string[]
 	if (!obj)
 	{
 		return results;
-	}
+	}	// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 
 	for (const [key, child] of Object.entries(obj))
 	{
@@ -159,6 +211,11 @@ function collectPathLikeValues(value: unknown, parentKey = ""): string[]
 	return results;
 }
 
+/**
+ * Handles extractApplyPatchPaths behavior for this CXC module.
+ * @param input - Value consumed by extractApplyPatchPaths.
+ * @returns Result produced by extractApplyPatchPaths.
+ */
 function extractApplyPatchPaths(input: string): string[]
 {
 	const matches = input.matchAll(/^\*\*\* (?:Add|Update|Delete) File:\s+(.+)$/gm);
@@ -168,9 +225,17 @@ function extractApplyPatchPaths(input: string): string[]
 		.map((p) => truncate(p, MAX_CONTEXT_VALUE_LEN));
 }
 
+/**
+ * Handles dedupeStrings behavior for this CXC module.
+ * @param values - Value consumed by dedupeStrings.
+ * @param maxItems - Value consumed by dedupeStrings.
+ * @returns Result produced by dedupeStrings.
+ */
 function dedupeStrings(values: string[], maxItems = MAX_CONTEXT_ITEMS): string[]
 {
 	const unique = new Set<string>();
+	// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 	for (const value of values)
 	{
 		const normalized = value.trim();
@@ -187,6 +252,12 @@ function dedupeStrings(values: string[], maxItems = MAX_CONTEXT_ITEMS): string[]
 	return [...unique];
 }
 
+/**
+ * Handles extractToolContext behavior for this CXC module.
+ * @param name - Value consumed by extractToolContext.
+ * @param rawInput - Value consumed by extractToolContext.
+ * @returns Result produced by extractToolContext.
+ */
 function extractToolContext(name: string, rawInput: unknown): string[]
 {
 	if (typeof rawInput === "string")
@@ -201,6 +272,8 @@ function extractToolContext(name: string, rawInput: unknown): string[]
 		{
 			const context = collectPathLikeValues(parsed);
 			const obj = asObject(parsed);
+			// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 			if (name === "shell_command" && obj)
 			{
 				const command = asString(obj.command);
@@ -223,12 +296,18 @@ function extractToolContext(name: string, rawInput: unknown): string[]
 	return dedupeStrings(collectPathLikeValues(rawInput));
 }
 
+/**
+ * Handles normalizeToolOutput behavior for this CXC module.
+ * @param value - Value consumed by normalizeToolOutput.
+ * @returns Result produced by normalizeToolOutput.
+ */
 function normalizeToolOutput(value: unknown): string
 {
 	if (typeof value === "string")
 	{
 		return truncate(value.trim(), MAX_TOOL_OUTPUT_LEN);
-	}
+	}	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 	if (value === null || value === undefined)
 	{
 		return "";
@@ -243,12 +322,22 @@ function normalizeToolOutput(value: unknown): string
 	}
 }
 
+/**
+ * Resolves the value needed by resolveCodexRoot.
+ * @param configuredPath - Path used by resolveCodexRoot to locate the relevant CXC resource.
+ * @returns Result produced by resolveCodexRoot.
+ */
 function resolveCodexRoot(configuredPath: string): string | null
 {
 	const normalized = normalize(configuredPath).replace(/[\\/]+$/, "");
 	return existsSync(normalized) ? normalized : null;
 }
 
+/**
+ * Handles scanCodexSessionFiles behavior for this CXC module.
+ * @param rootPath - Path used by scanCodexSessionFiles to locate the relevant CXC resource.
+ * @returns Result produced by scanCodexSessionFiles.
+ */
 function scanCodexSessionFiles(rootPath: string): string[]
 {
 	if (!existsSync(rootPath))
@@ -258,6 +347,8 @@ function scanCodexSessionFiles(rootPath: string): string[]
 
 	const results: string[] = [];
 	const queue: string[] = [rootPath];
+	// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 
 	while (queue.length > 0)
 	{
@@ -270,7 +361,8 @@ function scanCodexSessionFiles(rootPath: string): string[]
 		catch
 		{
 			continue;
-		}
+		}		// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 
 		for (const entry of entries)
 		{
@@ -300,6 +392,11 @@ function scanCodexSessionFiles(rootPath: string): string[]
 	return results.sort();
 }
 
+/**
+ * Parses input into the shape expected by parseSessionMeta.
+ * @param lines - Value consumed by parseSessionMeta.
+ * @returns Result produced by parseSessionMeta.
+ */
 function parseSessionMeta(lines: string[]): SessionMeta
 {
 	const fallbackSessionId = "";
@@ -309,6 +406,8 @@ function parseSessionMeta(lines: string[]): SessionMeta
 		modelProvider: null,
 		startedAt: null,
 	};
+	// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 
 	for (const line of lines)
 	{
@@ -354,6 +453,11 @@ function parseSessionMeta(lines: string[]): SessionMeta
 	return meta;
 }
 
+/**
+ * Handles toToolCall behavior for this CXC module.
+ * @param call - Value consumed by toToolCall.
+ * @returns Result produced by toToolCall.
+ */
 function toToolCall(call: PendingToolCall): ToolCall
 {
 	return {
@@ -363,22 +467,23 @@ function toToolCall(call: PendingToolCall): ToolCall
 	};
 }
 
-export function readCodexChats(configuredPath: string, rawBase: string): AgentMessage[]
+/**
+ * Reads data for readCodexSessionFilesFromList without changing unrelated CXC state.
+ * @param resolvedRoot - Value consumed by readCodexSessionFilesFromList.
+ * @param rawBase - Value consumed by readCodexSessionFilesFromList.
+ * @param sessionFiles - Session identifier or session data used by readCodexSessionFilesFromList.
+ * @returns Result produced by readCodexSessionFilesFromList.
+ */
+function readCodexSessionFilesFromList(
+	resolvedRoot: string,
+	rawBase: string,
+	sessionFiles: string[]
+): AgentMessage[]
 {
-	console.trace(chalk.cyan(`########## CODEX HERE readCodexChats configuredPath=${configuredPath} rawBase=${rawBase}`));
-
-	const resolvedRoot = resolveCodexRoot(configuredPath);
-	if (!resolvedRoot)
-	{
-		console.trace(chalk.red(`########## CODEX HERE Path not found: ${configuredPath} - skipping entire harness`));
-		return [];
-	}
-
-	const sessionFiles = scanCodexSessionFiles(resolvedRoot);
-	console.trace(chalk.cyan(`########## CODEX HERE scan root=${resolvedRoot} rolloutFiles=${sessionFiles.length}`));
+	logger.debug(`scan root=${resolvedRoot} rolloutFiles=${sessionFiles.length}`);
 	if (sessionFiles.length === 0)
 	{
-		console.trace(chalk.red(`########## CODEX HERE No rollout JSONL files found under ${resolvedRoot}`));
+		logger.debug(`No rollout JSONL files found under ${resolvedRoot}`);
 		return [];
 	}
 
@@ -387,16 +492,18 @@ export function readCodexChats(configuredPath: string, rawBase: string): AgentMe
 	let skippedCount = 0;
 	let malformedLineCount = 0;
 	let emptySessionCount = 0;
+	// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 
 	for (const filePath of sessionFiles)
 	{
 		const rolloutBasename = basename(filePath);
-		console.trace(chalk.cyan(`########## CODEX HERE session mark file=${rolloutBasename}`));
+		logger.silly(`session mark file=${rolloutBasename}`);
 
 		if (isSourceFileCached(filePath, rawBase, rawProject))
 		{
 			skippedCount++;
-			console.trace(chalk.yellow(`########## CODEX HERE session skipped (cached) file=${rolloutBasename} cacheProject=${rawProject}`));
+			logger.silly(`session skipped (cached) file=${rolloutBasename} cacheProject=${rawProject}`);
 			continue;
 		}
 
@@ -407,14 +514,14 @@ export function readCodexChats(configuredPath: string, rawBase: string): AgentMe
 		}
 		catch (err)
 		{
-			console.trace(chalk.red(`########## CODEX HERE session read failed file=${rolloutBasename} err=${String(err)}`));
+			logger.debug(`session read failed file=${rolloutBasename} err=${String(err)}`);
 			continue;
 		}
 
 		const lines = rawText.split(/\r?\n/);
 		const sessionMeta = parseSessionMeta(lines);
 		const sessionId = sessionMeta.sessionId || basename(filePath, ".jsonl");
-		console.trace(chalk.cyan(`########## CODEX HERE session parsing file=${rolloutBasename} sessionId=${sessionId} cwd=${sessionMeta.cwd ?? "(none)"}`));
+		logger.silly(`session parsing file=${rolloutBasename} sessionId=${sessionId} cwd=${sessionMeta.cwd ?? "(none)"}`);
 		const project = sessionMeta.cwd
 			? deriveProjectName("Codex", sessionMeta.cwd)
 			: deriveProjectName("Codex", dirname(filePath));
@@ -430,6 +537,8 @@ export function readCodexChats(configuredPath: string, rawBase: string): AgentMe
 
 		let activeTurnId: string | null = null;
 		let order = 0;
+		// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 
 		for (const line of lines)
 		{
@@ -461,6 +570,8 @@ export function readCodexChats(configuredPath: string, rawBase: string): AgentMe
 				}
 				const turnId = asString(payload.turn_id);
 				const model = asString(payload.model);
+				// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 				if (turnId && model)
 				{
 					turnModels.set(turnId, model);
@@ -494,11 +605,14 @@ export function readCodexChats(configuredPath: string, rawBase: string): AgentMe
 						}
 					}
 					continue;
-				}
+				}				// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 
 				if (eventType === "task_complete" || eventType === "turn_aborted")
 				{
 					const turnId = asString(payload.turn_id);
+					// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 					if (turnId && activeTurnId === turnId)
 					{
 						activeTurnId = null;
@@ -509,6 +623,8 @@ export function readCodexChats(configuredPath: string, rawBase: string): AgentMe
 				if (eventType === "user_message")
 				{
 					const text = normalizeText(payload.message);
+					// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 					if (!text || isWrapperText(text))
 					{
 						continue;
@@ -595,6 +711,8 @@ export function readCodexChats(configuredPath: string, rawBase: string): AgentMe
 				const bufferedResults = waitingOutputs.get(callId);
 				if (bufferedResults)
 				{
+					// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 					for (const output of bufferedResults)
 					{
 						if (output)
@@ -654,7 +772,8 @@ export function readCodexChats(configuredPath: string, rawBase: string): AgentMe
 				}
 				waitingOutputs.get(callId)!.push(output);
 			}
-		}
+		}		// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 
 		// Assign model names to assistant staged messages.
 		for (const message of staged)
@@ -671,12 +790,15 @@ export function readCodexChats(configuredPath: string, rawBase: string): AgentMe
 			{
 				message.model = sessionMeta.modelProvider ?? null;
 			}
-		}
+		}		// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 
 		// Attach turn-level tool calls to the terminal assistant message in each turn.
 		for (const turnId of turnOrder)
 		{
 			const callMap = turnCalls.get(turnId);
+			// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 			if (!callMap || callMap.size === 0)
 			{
 				continue;
@@ -745,6 +867,8 @@ export function readCodexChats(configuredPath: string, rawBase: string): AgentMe
 		// Final deduplication by message id.
 		const seen = new Set<string>();
 		const deduped: AgentMessage[] = [];
+		// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 		for (const msg of emitted)
 		{
 			if (seen.has(msg.id))
@@ -757,6 +881,8 @@ export function readCodexChats(configuredPath: string, rawBase: string): AgentMe
 
 		// Parent chaining after dedup.
 		let previousId: string | null = null;
+		// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 		for (const msg of deduped)
 		{
 			msg.parentId = previousId;
@@ -766,44 +892,78 @@ export function readCodexChats(configuredPath: string, rawBase: string): AgentMe
 		if (deduped.length === 0)
 		{
 			emptySessionCount++;
-			console.trace(
-				chalk.red(
-					`########## CODEX HERE session produced 0 messages file=${rolloutBasename} `
-					+ `sessionId=${sessionId} staged=${staged.length} lines=${lines.length}`
-				)
+			logger.debug(
+				`session produced 0 messages file=${rolloutBasename} `
+				+ `sessionId=${sessionId} staged=${staged.length} lines=${lines.length}`
 			);
 		}
 		else
 		{
-			console.trace(
-				chalk.green(
-					`########## CODEX HERE session ingested file=${rolloutBasename} `
-					+ `sessionId=${sessionId} messages=${deduped.length} project=${project}`
-				)
+			logger.silly(
+				`session ingested file=${rolloutBasename} `
+				+ `sessionId=${sessionId} messages=${deduped.length} project=${project}`
 			);
 		}
 
 		results.push(...deduped);
 	}
 
-	console.log(
-		`[Codex] Processed ${sessionFiles.length} files: `
-		+ `${chalk.green(`${skippedCount} cached`)}, `
-		+ `${chalk.blue(`${sessionFiles.length - skippedCount} new/modified`)}, `
-		+ `${chalk.magenta(`${results.length} messages`)}`
+	logger.info(
+		`Processed ${sessionFiles.length} files: `
+		+ `${skippedCount} cached, `
+		+ `${sessionFiles.length - skippedCount} new/modified, `
+		+ `${results.length} messages`
 	);
 
 	if (malformedLineCount > 0)
 	{
-		console.log(chalk.yellow(`[Codex] Skipped ${malformedLineCount} malformed JSONL lines.`));
+		logger.info(`Skipped ${malformedLineCount} malformed JSONL lines.`);
 	}
 
 	if (emptySessionCount > 0)
 	{
-		console.trace(chalk.red(`########## CODEX HERE ${emptySessionCount} rollout file(s) produced zero AgentMessages`));
+		logger.debug(`${emptySessionCount} rollout file(s) produced zero AgentMessages`);
 	}
 
-	console.trace(chalk.cyan(`########## CODEX HERE readCodexChats done totalMessages=${results.length}`));
+	logger.debug(`readCodexChats done totalMessages=${results.length}`);
 
 	return results;
+}
+
+/**
+ * Reads data for readCodexChats without changing unrelated CXC state.
+ * @param configuredPath - Path used by readCodexChats to locate the relevant CXC resource.
+ * @param rawBase - Value consumed by readCodexChats.
+ * @returns Result produced by readCodexChats.
+ */
+export function readCodexChats(configuredPath: string, rawBase: string): AgentMessage[]
+{
+	logger.debug(`readCodexChats configuredPath=${configuredPath} rawBase=${rawBase}`);
+
+	const resolvedRoot = resolveCodexRoot(configuredPath);
+	if (!resolvedRoot)
+	{
+		logger.debug(`Path not found: ${configuredPath} - skipping entire harness`);
+		return [];
+	}
+
+	return readCodexSessionFilesFromList(resolvedRoot, rawBase, scanCodexSessionFiles(resolvedRoot));
+}
+
+/**
+ * Reads data for readCodexChatFiles without changing unrelated CXC state.
+ * @param filePaths - Path used by readCodexChatFiles to locate the relevant CXC resource.
+ * @param rawBase - Value consumed by readCodexChatFiles.
+ * @returns Result produced by readCodexChatFiles.
+ */
+export function readCodexChatFiles(filePaths: Array<string>, rawBase: string): AgentMessage[]
+{
+	const existingFiles = filePaths.filter((filePath) => existsSync(filePath));
+	if (existingFiles.length === 0)
+	{
+		return [];
+	}
+
+	const commonRoot = dirname(existingFiles[0]);
+	return readCodexSessionFilesFromList(commonRoot, rawBase, existingFiles);
 }

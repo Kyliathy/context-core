@@ -12,18 +12,23 @@
  *   curl -H "Authorization: Bearer <token>" http://localhost:3210/mcp/sse
  *
  * CORS is inherited from the parent Express app's cors() middleware.
+ *
+ * Upgrade plan: server/zz-reach2/upgrades/2026-06/r2wl-winston-logging.md (T55)
  */
 
 import type { Express, Request, Response } from "express";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
-import chalk from "chalk";
 import type { IMessageStore } from "../../db/IMessageStore.js";
 import type { TopicStore } from "../../settings/TopicStore.js";
 import type { ScopeStore } from "../../settings/ScopeStore.js";
+import { getLogger, serializeError } from "../../logging/logger.js";
 import type { VectorServices } from "../MCPServer.js";
 import { registerAll } from "../registry.js";
+
+/** HTTP/SSE MCP logger — not stdout-constrained like stdio transport. */
+const logger = getLogger("mcp:sse");
 
 interface SseSession
 {
@@ -34,14 +39,11 @@ interface SseSession
 /** Active SSE sessions, keyed by MCP session ID. */
 const sessions = new Map<string, SseSession>();
 
-function logMcpSseInfo(message: string): void
-{
-	console.log(chalk.blue(message));
-}
-
 /**
  * Validates bearer token authentication if MCP_AUTH_TOKEN is set.
- * Returns true if the request is authorized, false otherwise (and sends 401).
+ * @param req – incoming Express request.
+ * @param res – Express response used to send 401 when auth fails.
+ * @returns true if the request is authorized, false otherwise (and sends 401).
  */
 function checkAuth(req: Request, res: Response): boolean
 {
@@ -49,6 +51,8 @@ function checkAuth(req: Request, res: Response): boolean
 	if (!token) return true; // No auth configured — allow all
 
 	const authHeader = req.headers.authorization;
+	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting query and MCP response correctness from partial or invalid state.
+
 	if (!authHeader || authHeader !== `Bearer ${token}`)
 	{
 		res.status(401).json({ error: "Unauthorized: invalid or missing Bearer token" });
@@ -64,11 +68,11 @@ function checkAuth(req: Request, res: Response): boolean
  * to ContextCore over HTTP/SSE, complementing the stdio transport used by
  * local clients (Claude Code, Cursor).
  *
- * @param app - Express application to mount routes on.
- * @param db - Shared MessageDB instance.
- * @param topicStore - Optional TopicStore for topic resolution.
- * @param vectorServices - Optional Qdrant + embedding services (hybrid search).
- * @param scopeStore - Optional ScopeStore for scope-aware search (`scope` param).
+ * @param app – Express application to mount routes on.
+ * @param db – shared MessageDB instance.
+ * @param topicStore – optional TopicStore for topic resolution.
+ * @param vectorServices – optional Qdrant + embedding services (hybrid search).
+ * @param scopeStore – optional ScopeStore for scope-aware search (`scope` param).
  */
 export function mountMcpSse(
 	app: Express,
@@ -105,13 +109,13 @@ export function mountMcpSse(
 		const sessionId = transport.sessionId;
 		sessions.set(sessionId, { transport, server });
 
-		logMcpSseInfo(`[MCP/SSE] New session: ${sessionId} (${sessions.size} active)`);
+		logger.info(`[MCP/SSE] New session: ${sessionId} (${sessions.size} active)`);
 
 		// Cleanup on transport close (client disconnect)
 		transport.onclose = () =>
 		{
 			sessions.delete(sessionId);
-			logMcpSseInfo(`[MCP/SSE] Session closed: ${sessionId} (${sessions.size} active)`);
+			logger.info(`[MCP/SSE] Session closed: ${sessionId} (${sessions.size} active)`);
 		};
 
 		// Safety net: also clean up if the underlying HTTP connection drops
@@ -121,7 +125,7 @@ export function mountMcpSse(
 			{
 				sessions.delete(sessionId);
 				server.close().catch(() => { /* ignore */ });
-				logMcpSseInfo(`[MCP/SSE] HTTP connection dropped: ${sessionId} (${sessions.size} active)`);
+				logger.info(`[MCP/SSE] HTTP connection dropped: ${sessionId} (${sessions.size} active)`);
 			}
 		});
 
@@ -130,7 +134,7 @@ export function mountMcpSse(
 			await server.connect(transport);
 		} catch (err)
 		{
-			console.error(`[MCP/SSE] Connection error for ${sessionId}:`, err);
+			logger.error(`[MCP/SSE] Connection error for ${sessionId}`, { error: serializeError(err) });
 			sessions.delete(sessionId);
 		}
 	});
@@ -143,7 +147,7 @@ export function mountMcpSse(
 		const sessionId = req.query.sessionId as string;
 		const method = typeof req.body?.method === "string" ? req.body.method : "unknown";
 		const requestId = req.body?.id !== undefined ? String(req.body.id) : "(notification)";
-		logMcpSseInfo(`[MCP/SSE] Incoming message: session=${sessionId ?? "missing"} method=${method} id=${requestId}`);
+		logger.info(`[MCP/SSE] Incoming message: session=${sessionId ?? "missing"} method=${method} id=${requestId}`);
 		if (!sessionId)
 		{
 			res.status(400).json({ error: "Missing sessionId query parameter" });
@@ -166,7 +170,7 @@ export function mountMcpSse(
 			);
 		} catch (err)
 		{
-			console.error(`[MCP/SSE] Message handling error for ${sessionId}:`, err);
+			logger.error(`[MCP/SSE] Message handling error for ${sessionId}`, { error: serializeError(err) });
 			if (!res.headersSent)
 			{
 				res.status(500).json({ error: "Internal MCP transport error" });
@@ -174,9 +178,9 @@ export function mountMcpSse(
 		}
 	});
 
-	logMcpSseInfo(`[MCP/SSE] Routes mounted: GET /mcp/sse, POST /mcp/messages`);
+	logger.info(`[MCP/SSE] Routes mounted: GET /mcp/sse, POST /mcp/messages`);
 	if (process.env.MCP_AUTH_TOKEN)
 	{
-		logMcpSseInfo(`[MCP/SSE] Bearer token authentication enabled`);
+		logger.info(`[MCP/SSE] Bearer token authentication enabled`);
 	}
 }

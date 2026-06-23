@@ -265,6 +265,7 @@ export async function fetchAgentBuilderList(): Promise<AgentListResponse>
 	return response.json() as Promise<AgentListResponse>;
 }
 
+
 export async function fetchAgentBuilderGetAgent(path: string, codexEntryId?: string): Promise<GetAgentResponse>
 {
 	const query = new URLSearchParams({ path });

@@ -1,6 +1,6 @@
 import { useEffect, useRef, type RefObject } from "react";
 import { createChatMapEngine, type ChatMapEngine } from "../d3/chatMapEngine";
-import type { CardData, ThreadCardData, MasterCardData, HoverEventDetail, ViewportChangeDetail, LineClickEventDetail, CardStarEventDetail, TitleClickEventDetail, CardAddKnowledgeEventDetail, CardEditAgentEventDetail, CardUseTemplateEventDetail, ViewType, CardPositionChangeEventDetail } from "../types";
+import type { CardData, ThreadCardData, MasterCardData, HoverEventDetail, ViewportChangeDetail, LineClickEventDetail, CardStarEventDetail, TitleClickEventDetail, CardAddKnowledgeEventDetail, CardEditAgentEventDetail, CardPublishAgentEventDetail, CardUseTemplateEventDetail, ViewType, CardPositionChangeEventDetail } from "../types";
 
 type UseChatMapParams = {
 	containerRef: RefObject<HTMLDivElement | null>;
@@ -19,6 +19,7 @@ type UseChatMapParams = {
 	onTitleClick?: (detail: TitleClickEventDetail) => void;
 	onCardAddKnowledge?: (detail: CardAddKnowledgeEventDetail) => void;
 	onCardEditAgent?: (detail: CardEditAgentEventDetail) => void;
+	onCardPublishAgent?: (detail: CardPublishAgentEventDetail) => void;
 	onCardUseTemplate?: (detail: CardUseTemplateEventDetail) => void;
 	onCardPositionChange?: (detail: CardPositionChangeEventDetail) => void;
 };
@@ -39,6 +40,7 @@ export function useChatMap({
 	onTitleClick,
 	onCardAddKnowledge,
 	onCardEditAgent,
+	onCardPublishAgent,
 	onCardUseTemplate,
 	onCardPositionChange,
 }: UseChatMapParams)
@@ -55,6 +57,7 @@ export function useChatMap({
 	const onTitleClickRef = useRef<typeof onTitleClick>(onTitleClick);
 	const onCardAddKnowledgeRef = useRef<typeof onCardAddKnowledge>(onCardAddKnowledge);
 	const onCardEditAgentRef = useRef<typeof onCardEditAgent>(onCardEditAgent);
+	const onCardPublishAgentRef = useRef<typeof onCardPublishAgent>(onCardPublishAgent);
 	const onCardUseTemplateRef = useRef<typeof onCardUseTemplate>(onCardUseTemplate);
 	const onCardPositionChangeRef = useRef<typeof onCardPositionChange>(onCardPositionChange);
 
@@ -107,6 +110,11 @@ export function useChatMap({
 	{
 		onCardEditAgentRef.current = onCardEditAgent;
 	}, [onCardEditAgent]);
+
+	useEffect(() =>
+	{
+		onCardPublishAgentRef.current = onCardPublishAgent;
+	}, [onCardPublishAgent]);
 
 	useEffect(() =>
 	{
@@ -177,6 +185,10 @@ export function useChatMap({
 				if (type === "card-edit-agent" && onCardEditAgentRef.current)
 				{
 					onCardEditAgentRef.current(detail as CardEditAgentEventDetail);
+				}
+				if (type === "card-publish-agent" && onCardPublishAgentRef.current)
+				{
+					onCardPublishAgentRef.current(detail as CardPublishAgentEventDetail);
 				}
 				if (type === "card-use-template" && onCardUseTemplateRef.current)
 				{

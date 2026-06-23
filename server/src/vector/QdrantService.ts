@@ -1,9 +1,15 @@
 /**
  * QdrantService – Qdrant client with multi-collection support.
  * Manages per-harness collections, point upsertion, search, and deduplication.
+ *
+ * Architecture: server/zz-reach2/architecture/archi-context-core-level0.md
+ * Logging: server/zz-reach2/upgrades/2026-06/r2wl-winston-logging.md
  */
 
 import { QdrantClient } from "@qdrant/js-client-rest";
+import { getLogger } from "../logging/logger.js";
+
+const logger = getLogger("vector:QdrantService");
 import { v5 as uuidv5 } from "uuid";
 import { EMBEDDING_DIMENSIONS } from "./EmbeddingService.js";
 
@@ -167,10 +173,10 @@ export class QdrantService
 						summary: { size: EMBEDDING_DIMENSIONS, distance: "Cosine" },
 					},
 				});
-				console.log(`[QdrantService] Created collection: ${collectionName} (chunk + summary vectors)`);
+				logger.info(`Created collection: ${collectionName} (chunk + summary vectors)`);
 			} catch (createError)
 			{
-				console.warn(`[QdrantService] Failed to create collection "${collectionName}": ${(createError as Error).message}`);
+				logger.warn(`Failed to create collection "${collectionName}": ${(createError as Error).message}`);
 				throw createError;
 			}
 		}
@@ -189,7 +195,9 @@ export class QdrantService
 		}
 
 		const collectionName = this.getCollectionName(harness);
-		const batchSize = 100; // Qdrant safe batch size
+		const batchSize = 100;
+		// Business logic: this iteration walks every relevant item so vector indexing consistency reflects the complete source set instead of a partial snapshot.
+ // Qdrant safe batch size
 
 		// Split into batches
 		for (let i = 0; i < points.length; i += batchSize)
@@ -211,8 +219,8 @@ export class QdrantService
 				const err = error as any;
 				const detail = err?.data?.status?.error || err?.response?.data || err?.cause || "";
 				const sampleVector = batch[0]?.vector;
-				console.warn(
-					`[QdrantService] Failed to upsert batch ${i / batchSize + 1} to "${collectionName}": ${(error as Error).message}` +
+				logger.warn(
+					`Failed to upsert batch ${i / batchSize + 1} to "${collectionName}": ${(error as Error).message}` +
 					(detail ? `\n  Detail: ${typeof detail === "string" ? detail : JSON.stringify(detail)}` : "") +
 					`\n  Points in batch: ${batch.length}, IDs: [${batch.slice(0, 3).map(p => p.id).join(", ")}${batch.length > 3 ? ", ..." : ""}]` +
 					`\n  Vector dims: chunk=${sampleVector?.chunk?.length ?? "N/A"}, summary=${sampleVector?.summary?.length ?? "none"}`
@@ -242,6 +250,8 @@ export class QdrantService
 	): Promise<QdrantSearchResult[]>
 	{
 		const allResults: QdrantSearchResult[] = [];
+		// Business logic: this iteration walks every relevant item so vector indexing consistency reflects the complete source set instead of a partial snapshot.
+
 
 		for (const harness of harnesses)
 		{
@@ -260,7 +270,9 @@ export class QdrantService
 					...(filter ? { filter } : {}),
 				});
 
-				console.log(`[QdrantService] Search[${vectorName}] hits in "${collectionName}": ${results.length}`);
+				logger.debug(`Search[${vectorName}] hits in "${collectionName}": ${results.length}`);
+				// Business logic: this iteration walks every relevant item so vector indexing consistency reflects the complete source set instead of a partial snapshot.
+
 
 				// Map results to our format
 				for (const result of results)
@@ -273,7 +285,7 @@ export class QdrantService
 			} catch (error)
 			{
 				// Skip this collection if it doesn't exist or search fails
-				console.warn(`[QdrantService] Failed to search[${vectorName}] collection "${collectionName}": ${(error as Error).message}`);
+				logger.warn(`Failed to search[${vectorName}] collection "${collectionName}": ${(error as Error).message}`);
 			}
 		}
 
@@ -333,6 +345,8 @@ export class QdrantService
 		try
 		{
 			let offset: string | number | Record<string, unknown> | undefined = undefined;
+			// Business logic: this iteration walks every relevant item so vector indexing consistency reflects the complete source set instead of a partial snapshot.
+
 
 			while (true)
 			{
@@ -342,11 +356,15 @@ export class QdrantService
 					with_payload: true,
 					with_vector: false,
 				});
+				// Business logic: this iteration walks every relevant item so vector indexing consistency reflects the complete source set instead of a partial snapshot.
+
 
 				for (const point of result.points)
 				{
 					const payload = point.payload as Partial<QdrantPointPayload> | null | undefined;
 					const messageId = payload?.messageId;
+					// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting vector indexing consistency from partial or invalid state.
+
 					if (typeof messageId === "string" && messageId.length > 0)
 					{
 						indexedMessageIds.add(messageId);
@@ -409,6 +427,8 @@ export class QdrantService
 
 		const collectionName = this.getCollectionName(harness);
 		const batchSize = 100;
+		// Business logic: this iteration walks every relevant item so vector indexing consistency reflects the complete source set instead of a partial snapshot.
+
 
 		for (let i = 0; i < points.length; i += batchSize)
 		{
@@ -425,8 +445,8 @@ export class QdrantService
 				});
 			} catch (error)
 			{
-				console.warn(
-					`[QdrantService] Failed to updateVectors batch ${i / batchSize + 1} in "${collectionName}": ${(error as Error).message}`
+				logger.warn(
+					`Failed to updateVectors batch ${i / batchSize + 1} in "${collectionName}": ${(error as Error).message}`
 				);
 				throw error;
 			}
@@ -459,8 +479,8 @@ export class QdrantService
 			});
 		} catch (error)
 		{
-			console.warn(
-				`[QdrantService] Failed to setPayload on ${pointIds.length} points in "${collectionName}": ${(error as Error).message}`
+			logger.warn(
+				`Failed to setPayload on ${pointIds.length} points in "${collectionName}": ${(error as Error).message}`
 			);
 			throw error;
 		}

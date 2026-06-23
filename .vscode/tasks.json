@@ -1,0 +1,29 @@
+// ContextCore workspace task helpers.
+// Architecture: server/zz-reach2/architecture/archi-context-core-level0.md
+// Related logging/CLI work: server/zz-reach2/upgrades/2026-06/r2wl-winston-logging.md
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "clipboard-path-to-filename",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-Command",
+				"Get-Clipboard | ForEach-Object { Split-Path $_ -Leaf } | Set-Clipboard"
+			],
+			"presentation": {
+				"echo": false,
+				"reveal": "never",
+				"focus": false,
+				"panel": "dedicated",
+				"showReuseMessage": false,
+				"clear": false
+			},
+			"problemMatcher": []
+		}
+	]
+}

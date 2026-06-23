@@ -3,6 +3,8 @@ import type { EmbeddingService } from "../vector/EmbeddingService.js";
 import type { QdrantService } from "../vector/QdrantService.js";
 import type { TopicStore } from "../settings/TopicStore.js";
 import type { AgentBuilder } from "../agentBuilder/AgentBuilder.js";
+import type { AgentBuilderRuntime } from "../agentBuilder/AgentBuilderRuntime.js";
+import type { AgentPublisher } from "../agentPublisher/AgentPublisher.js";
 import type { ScopeStore } from "../settings/ScopeStore.js";
 import type { FavoriteStore } from "../settings/FavoriteStore.js";
 import type { SummaryEmbeddingCache } from "../vector/SummaryEmbeddingCache.js";
@@ -14,6 +16,9 @@ export interface RouteContext
 	scopeStore?: ScopeStore;
 	favoriteStore?: FavoriteStore;
 	agentBuilder?: AgentBuilder;
+	agentPublisher?: AgentPublisher;
+	/** Runtime holder for canonical list, Add Vault, and live source refresh. */
+	agentBuilderRuntime?: AgentBuilderRuntime;
 	summaryEmbeddingCache?: SummaryEmbeddingCache;
 	vectorServices?: {
 		embeddingService: EmbeddingService;

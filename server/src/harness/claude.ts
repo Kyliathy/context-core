@@ -1,17 +1,22 @@
 /**
  * ContextCore – Claude Code harness.
  * Claude stores one session per `.jsonl` file at the project-root level.
+ *
+ * Architecture: server/zz-reach2/architecture/archi-context-core-level0.md
+ * Logging: server/zz-reach2/upgrades/2026-06/r2wl-winston-logging.md
  */
 
 import { existsSync, readdirSync, readFileSync } from "fs";
 import { basename, join } from "path";
 import { DateTime } from "luxon";
-import chalk from "chalk";
+import { getLogger } from "../logging/logger.js";
 import { AgentMessage } from "../models/AgentMessage.js";
 import type { ToolCall } from "../types.js";
 import { generateMessageId } from "../utils/hashId.js";
 import { deriveProjectName } from "../utils/pathHelpers.js";
 import { copyRawSourceFile, isSourceFileCached } from "../utils/rawCopier.js";
+
+const logger = getLogger("harness:claude");
 
 type ClaudeContentItem = {
 	type?: string;
@@ -76,6 +81,8 @@ function parseClaudeJsonl(filePath: string): Array<ClaudeLine>
 	const parsedLines: Array<ClaudeLine> = [];
 	const raw = readFileSync(filePath, "utf-8");
 	const lines = raw.split(/\r?\n/);
+	// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 
 	for (const line of lines)
 	{
@@ -88,13 +95,15 @@ function parseClaudeJsonl(filePath: string): Array<ClaudeLine>
 		try
 		{
 			const obj = JSON.parse(trimmed) as ClaudeLine;
+			// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 			if (obj.type === "user" || obj.type === "assistant")
 			{
 				parsedLines.push(obj);
 			}
 		} catch
 		{
-			console.warn(`[ClaudeCode] Skipping malformed JSONL line in ${filePath}`);
+			logger.warn(`Skipping malformed JSONL line in ${filePath}`);
 		}
 	}
 
@@ -113,6 +122,8 @@ function collectPathValues(value: unknown, parentKey = ""): Array<string>
 	if (typeof value === "string")
 	{
 		const key = parentKey.toLowerCase();
+		// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 		if (key.includes("path") || key.includes("file") || key.includes("uri"))
 		{
 			results.push(value);
@@ -122,15 +133,20 @@ function collectPathValues(value: unknown, parentKey = ""): Array<string>
 
 	if (Array.isArray(value))
 	{
+		// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 		for (const item of value)
 		{
 			results.push(...collectPathValues(item, parentKey));
 		}
 		return results;
-	}
+	}	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 
 	if (value && typeof value === "object")
 	{
+		// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 		for (const [key, child] of Object.entries(value as Record<string, unknown>))
 		{
 			results.push(...collectPathValues(child, key));
@@ -153,7 +169,8 @@ function toolResultToText(value: unknown): string
 	if (Array.isArray(value))
 	{
 		return value.map((item) => toolResultToText(item)).filter(Boolean).join("\n");
-	}
+	}	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 	if (value && typeof value === "object")
 	{
 		const maybeText = (value as { text?: unknown }).text;
@@ -202,6 +219,8 @@ function extractUserTextAndContext(content: Array<ClaudeContentItem>):
 	const messageParts: Array<string> = [];
 	const toolResults: Array<{ toolUseId: string; text: string }> = [];
 	const openedFileTagRegex = /<ide_opened_file>(.*?)<\/ide_opened_file>/g;
+	// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 
 	for (const item of content)
 	{
@@ -209,12 +228,15 @@ function extractUserTextAndContext(content: Array<ClaudeContentItem>):
 		{
 			const toolUseId = item.tool_use_id ?? "";
 			const text = toolResultToText(item.content).slice(0, 2000);
+			// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 			if (toolUseId && text)
 			{
 				toolResults.push({ toolUseId, text });
 			}
 			continue;
-		}
+		}		// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 
 		if (item.type !== "text" || !item.text)
 		{
@@ -222,6 +244,8 @@ function extractUserTextAndContext(content: Array<ClaudeContentItem>):
 		}
 
 		messageParts.push(item.text);
+		// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 		for (const match of item.text.matchAll(openedFileTagRegex))
 		{
 			const value = (match[1] ?? "").trim();
@@ -252,6 +276,8 @@ function extractClaudeToolCalls(content: Array<ClaudeContentItem>):
 {
 	const toolCalls: Array<ToolCall> = [];
 	const toolUseIndex = new Map<string, ToolCall>();
+	// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 
 	for (const item of content)
 	{
@@ -281,12 +307,17 @@ function extractClaudeToolCalls(content: Array<ClaudeContentItem>):
  * @param projectPath - path to `.claude/projects/<project>/`.
  * @param rawBase - Raw archive directory for this harness.
  */
-export function readClaudeChats(projectPath: string, rawBase: string): Array<AgentMessage>
+function readClaudeChatFilesFromList(
+	projectPath: string,
+	rawBase: string,
+	sessionFiles: Array<string>
+): Array<AgentMessage>
 {
-	const sessionFiles = scanClaudeSessionFiles(projectPath);
 	const project = deriveProjectName("ClaudeCode", projectPath);
 	const results: Array<AgentMessage> = [];
 	let skippedCount = 0;
+	// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 
 	for (const filePath of sessionFiles)
 	{
@@ -308,6 +339,8 @@ export function readClaudeChats(projectPath: string, rawBase: string): Array<Age
 		const first = lines[0];
 		const sessionId = first.sessionId ?? basename(filePath, ".jsonl");
 		const toolUseMap = new Map<string, ToolCall>();
+		// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 
 		for (const line of lines)
 		{
@@ -322,6 +355,8 @@ export function readClaudeChats(projectPath: string, rawBase: string): Array<Age
 				// Skip empty user messages (e.g. tool-result-only protocol lines)
 				if (!extracted.message)
 				{
+					// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 					// Still correlate tool results even for skipped messages
 					for (const result of extracted.toolResults)
 					{
@@ -362,6 +397,8 @@ export function readClaudeChats(projectPath: string, rawBase: string): Array<Age
 						dateTime,
 					})
 				);
+				// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 
 				for (const result of extracted.toolResults)
 				{
@@ -388,10 +425,13 @@ export function readClaudeChats(projectPath: string, rawBase: string): Array<Age
 					}
 					: null;
 				const extractedTools = extractClaudeToolCalls(assistantContent);
+				// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
 				for (const [toolUseId, toolCall] of extractedTools.toolUseIndex.entries())
 				{
 					toolUseMap.set(toolUseId, toolCall);
-				}
+				}				// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting harness ingest and source normalization from partial or invalid state.
+
 
 				// Skip empty assistant messages (e.g. tool-use-only lines with no text)
 				if (!assistantMessage && extractedTools.toolCalls.length === 0)
@@ -431,6 +471,52 @@ export function readClaudeChats(projectPath: string, rawBase: string): Array<Age
 		}
 	}
 
-	console.log(`[ClaudeCode] Processed ${sessionFiles.length} files: ${chalk.green(skippedCount + ' cached')}, ${chalk.blue((sessionFiles.length - skippedCount) + ' new/modified')}`);
+	logger.info(
+		`Processed ${sessionFiles.length} files: ${skippedCount} cached, ${sessionFiles.length - skippedCount} new/modified`
+	);
+	return results;
+}
+
+/**
+ * Reads data for readClaudeChats without changing unrelated CXC state.
+ * @param projectPath - Path used by readClaudeChats to locate the relevant CXC resource.
+ * @param rawBase - Value consumed by readClaudeChats.
+ * @returns Result produced by readClaudeChats.
+ */
+
+
+export function readClaudeChats(projectPath: string, rawBase: string): Array<AgentMessage>
+{
+	return readClaudeChatFilesFromList(projectPath, rawBase, scanClaudeSessionFiles(projectPath));
+}
+
+/**
+ * Reads data for readClaudeChatFiles without changing unrelated CXC state.
+ * @param filePaths - Path used by readClaudeChatFiles to locate the relevant CXC resource.
+ * @param rawBase - Value consumed by readClaudeChatFiles.
+ * @returns Result produced by readClaudeChatFiles.
+ */
+
+
+export function readClaudeChatFiles(filePaths: Array<string>, rawBase: string): Array<AgentMessage>
+{
+	const grouped = new Map<string, Array<string>>();
+	// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
+	for (const filePath of filePaths)
+	{
+		const projectPath = filePath.replace(/[\\/][^\\/]+$/, "");
+		const files = grouped.get(projectPath) ?? [];
+		files.push(filePath);
+		grouped.set(projectPath, files);
+	}
+
+	const results: Array<AgentMessage> = [];
+	// Business logic: this iteration walks every relevant item so harness ingest and source normalization reflects the complete source set instead of a partial snapshot.
+
+	for (const [projectPath, files] of grouped.entries())
+	{
+		results.push(...readClaudeChatFilesFromList(projectPath, rawBase, files));
+	}
 	return results;
 }

@@ -955,10 +955,10 @@ This matrix shows which harness populates which `AgentMessage` fields with meani
 | Harness | Caching Strategy | Cache Granularity | Skip Mechanism |
 |---|---|---|---|
 | **Claude Code** | Size + mtime comparison | Per `.jsonl` file | `isSourceFileCached()` before parsing |
-| **Cursor** | None | N/A (single DB file) | Full re-read every run |
+| **Cursor** | Rowid bookmark | `cursorDiskKV` / `ItemTable` rowids | Startup planner skips unchanged DBs or reads rowid deltas; full/recovery uses bounded batches |
 | **Kiro** | Size + mtime comparison | Per `.chat` file | `isSourceFileCached()` after project resolution |
 | **VS Code** | Size + mtime comparison | Per `.json`/`.jsonl` file | `isSourceFileCached()` before parsing |
-| **OpenCode** | None | N/A (single DB file) | Full re-read every run (like Cursor) |
+| **OpenCode** | Rowid bookmark | `session` / `message` / `part` rowids | Startup planner skips unchanged DBs or reads affected-session deltas |
 | **Codex** | Size + mtime comparison | Per `rollout-*.jsonl` file | `isSourceFileCached()` before parsing |
 
 ### 7.4 Raw Archival Strategy
@@ -990,6 +990,19 @@ flowchart TD
 
     Simple ~~~ Complex
 ```
+
+---
+
+### 7.6 Startup Reader Contract
+
+Harness readers now have two startup modes:
+
+| Mode | Contract |
+|---|---|
+| Full/recovery | May inspect all source data, but database-backed harnesses must emit bounded `HarnessIngestBatch` chunks instead of returning one giant array. Cursor caps emitted batches at 5,000 messages. |
+| Delta | Reads only the planner-selected scope: Cursor rowids above the stored `cursorDiskKV` checkpoint, OpenCode sessions affected by rowids above stored table checkpoints, or manifest-changed files for file harnesses. |
+
+File-based harnesses keep their existing full-root readers and add scoped readers through `readHarnessFiles(harnessName, filePaths, rawBase)`. Scoped readers still use raw-source cache checks as a second safety layer.
 
 ---
 

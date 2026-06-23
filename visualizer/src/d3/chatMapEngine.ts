@@ -3,7 +3,7 @@ import { getHarnessColor, getProjectColor, getProjectTextColor } from "./colors"
 import { computeGridLayout, computeWorldBounds, computeThreadGridLayout, computeMixedGridLayout, computeMixedWorldBounds, computeMasterCardLayout, computeMasterCardWorldBounds, computeCustomFavoritesLayout } from "./layout";
 import { formatDateTime, formatDateTimeRange } from "./dateFormat";
 import { GREEN_FLASH_COLOR, GREEN_FLASH_FILTER, runGreenFlash } from "../shared/greenFlash";
-import type { CardData, ThreadCardData, MasterCardData, HoverEventDetail, ViewportChangeDetail, LineClickEventDetail, CardStarEventDetail, FavoriteSource, CardAddKnowledgeEventDetail, CardEditAgentEventDetail, CardUseTemplateEventDetail, CardPositionChangeEventDetail, CardPositioningMode } from "../types";
+import type { CardData, ThreadCardData, MasterCardData, HoverEventDetail, ViewportChangeDetail, LineClickEventDetail, CardStarEventDetail, FavoriteSource, CardAddKnowledgeEventDetail, CardEditAgentEventDetail, CardPublishAgentEventDetail, CardUseTemplateEventDetail, CardPositionChangeEventDetail, CardPositioningMode } from "../types";
 
 type ThreadHoverEventDetail = {
 	phase: "enter" | "move" | "leave";
@@ -146,6 +146,7 @@ type EngineEventMap = {
 	"card-star": CardStarEventDetail;
 	"card-add-knowledge": CardAddKnowledgeEventDetail;
 	"card-edit-agent": CardEditAgentEventDetail;
+	"card-publish-agent": CardPublishAgentEventDetail;
 	"card-use-template": CardUseTemplateEventDetail;
 	"thread-star": CardStarEventDetail;
 	"line-star": { cardId: string; source: any };
@@ -340,13 +341,29 @@ function renderCardHtml(card: CardData, lod: LOD, starredIds: Set<string>, mode:
 	const harnessBadge = `<span class="harness-badge" style="background-color:${badgeColor}">${escapeHtml(harnessDisplay)}</span>`;
 	const projectLabel = card.project || "MISC";
 	const projectBadge = `<span class="project-badge" style="background-color:${getProjectColor(projectLabel)};color:${getProjectTextColor(projectLabel)}">${escapeHtml(projectLabel)}</span>`;
-	// Platform badges for agent-list cards (e.g. "GH", "CL", "CX").
+	// Platform badges for agent-list cards from canonical publish summaries.
 	let platformBadges = "";
-	if (mode === "agent-list" && card.platforms && card.platforms.length > 0)
+	if (mode === "agent-list" && card.publishedTo && card.publishedTo.length > 0)
 	{
-		const labels: Record<string, string> = { github: "GH", claude: "CL", codex: "CX" };
-		const colors: Record<string, string> = { github: "#1f6feb", claude: "#d97706", codex: "#059669" };
-		platformBadges = card.platforms
+		const labels: Record<string, string> = {
+			copilot: "GH",
+			claude: "CL",
+			codex: "CX",
+			cursor: "CU",
+			windsurf: "WS",
+			kiro: "KI",
+			antigravity: "AG",
+		};
+		const colors: Record<string, string> = {
+			copilot: "#1f6feb",
+			claude: "#d97706",
+			codex: "#059669",
+			cursor: "#7c3aed",
+			windsurf: "#0ea5e9",
+			kiro: "#db2777",
+			antigravity: "#64748b",
+		};
+		platformBadges = card.publishedTo
 			.map((p) => `<span class="platform-badge" style="background:${colors[p.platform] ?? "#555"}">${labels[p.platform] ?? p.platform}</span>`)
 			.join("");
 	}
@@ -354,7 +371,7 @@ function renderCardHtml(card: CardData, lod: LOD, starredIds: Set<string>, mode:
 	// List card modes use header actions instead of envelope.
 	const customEditBtn = card.harness === "custom" ? `<span class="card-edit-btn" title="Edit custom text">✏️</span>` : "";
 	const headerBtn = mode === "agent-list"
-		? `<span class="card-edit-btn" title="Edit agent">✏️</span>`
+		? `<span class="card-publish-btn" title="Publish agent">📤</span><span class="card-edit-btn" title="Edit agent">✏️</span>`
 		: mode === "template-list"
 			? `<span class="card-use-template-btn" title="Create agent from template">🎓</span><span class="card-edit-btn" title="Edit template">✏️</span>`
 			: `${customEditBtn}<span class="card-envelope-btn" title="Copy message JSON">📧</span>`;
@@ -883,10 +900,16 @@ export function createChatMapEngine(
 					emit("card-use-template", { cardId: card.id, templateName: card.title });
 					return;
 				}
+				if (target.classList.contains("card-publish-btn"))
+				{
+					event.stopPropagation();
+					emit("card-publish-agent", { cardId: card.id, canonicalId: card.canonicalId ?? card.id });
+					return;
+				}
 				if (target.classList.contains("card-edit-btn"))
 				{
 					event.stopPropagation();
-					emit("card-edit-agent", { cardId: card.id, agentPath: card.agentPath ?? card.id, codexEntryId: card.codexEntryId });
+					emit("card-edit-agent", { cardId: card.id, canonicalId: card.canonicalId ?? card.id });
 					return;
 				}
 				if (target.classList.contains("card-envelope-btn"))

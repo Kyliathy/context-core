@@ -117,32 +117,32 @@ function toAgentListCards(agents: AgentListEntry[]): CardData[]
 {
 	return agents.map((agent) =>
 	{
-		const cardId = agent.codexEntryId ? `${agent.path}::${agent.codexEntryId}` : agent.path;
-		const projectLabel = agent.codexDirectory ?? agent.name;
-		const platformLabels = (agent.platforms ?? []).map((p) => p.platform).join(", ");
+		const platformLabels = agent.unpublished
+			? "Not published"
+			: agent.publishedTo.map((p) => p.platform).join(", ");
 		const fakeSource: SerializedAgentMessage = {
-			id: cardId,
+			id: agent.canonicalId,
 			sessionId: agent.name,
 			harness: "AgentCard",
 			machine: "",
 			role: "system",
 			model: null,
-			message: agent.excerpt,
+			message: agent.description,
 			subject: agent.name,
 			context: [],
 			symbols: [],
 			history: [],
 			tags: [],
-			project: agent.name,
+			project: agent.projectName,
 			parentId: null,
 			tokenUsage: null,
 			toolCalls: [],
 			rationale: [],
 			source: "",
-			dateTime: new Date().toISOString(),
+			dateTime: agent.savedAt ?? new Date().toISOString(),
 		};
 		return {
-			id: cardId,
+			id: agent.canonicalId,
 			sessionId: agent.name,
 			x: 0,
 			y: 0,
@@ -150,21 +150,20 @@ function toAgentListCards(agents: AgentListEntry[]): CardData[]
 			h: 0,
 			title: agent.name,
 			harness: "AgentCard",
-			project: projectLabel,
+			project: agent.projectName,
 			model: null,
 			role: "system",
-			dateTime: new Date().toISOString(),
+			dateTime: agent.savedAt ?? new Date().toISOString(),
 			score: 1.0,
 			hits: 0,
 			symbols: [],
 			excerptShort: agent.description + (platformLabels ? ` [${platformLabels}]` : ""),
-			excerptMedium: agent.description + (agent.hint ? `\nhint: ${agent.hint}` : "") + (platformLabels ? `\nplatforms: ${platformLabels}` : ""),
-			excerptLong: agent.excerpt,
+			excerptMedium: agent.description + (agent.hint ? `\nhint: ${agent.hint}` : "") + (platformLabels ? `\n${platformLabels}` : ""),
+			excerptLong: agent.description,
 			source: fakeSource,
-			agentPath: agent.path,
-			codexEntryId: agent.codexEntryId,
-			platforms: agent.platforms,
-			contentDiverged: agent.contentDiverged,
+			canonicalId: agent.canonicalId,
+			publishedTo: agent.publishedTo,
+			unpublished: agent.unpublished,
 		};
 	});
 }
@@ -362,6 +361,12 @@ export function useSearch({ activeView, favoritesForActiveView, fromDate, limit 
 				const listed = await fetchAgentBuilderListTemplates();
 				setResults([]);
 				setCards(toTemplateListCards(listed.templates));
+				setThreadCards([]);
+			}
+			else if (activeView.type === "vault-manager")
+			{
+				setResults([]);
+				setCards([]);
 				setThreadCards([]);
 			}
 			else if (activeView.type === "template-create")

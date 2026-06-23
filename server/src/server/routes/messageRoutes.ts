@@ -1,4 +1,14 @@
+/**
+ * messageRoutes – Message query and search API endpoints.
+ *
+ * Architecture: server/zz-reach2/architecture/archi-context-core-level0.md
+ * Logging: server/zz-reach2/upgrades/2026-06/r2wl-winston-logging.md
+ */
+
 import type { Express } from "express";
+import { getLogger } from "../../logging/logger.js";
+
+const logger = getLogger("server:messageRoutes");
 import type { MessageQueryFilters } from "../../db/IMessageStore.js";
 import type { RouteContext } from "../RouteContext.js";
 import { SearchResults } from "../../models/SearchResults.js";
@@ -13,6 +23,13 @@ import
 	filterMessagesBySymbols,
 	filterMessagesBySubject,
 } from "../../search/fieldFilters.js";
+
+/**
+ * Handles register behavior for this CXC module.
+ * @param app - Value consumed by register.
+ * @param ctx - Value consumed by register.
+ */
+
 
 export function register(app: Express, ctx: RouteContext): void
 {
@@ -48,12 +65,14 @@ export function register(app: Express, ctx: RouteContext): void
 			.filter(([_, value]) => value !== undefined)
 			.map(([key, value]) => `${key}=${value}`)
 			.join(", ");
-		console.log(`[Query] Active filters: ${activeFilters || "none"}`);
+		logger.debug(`[Query] Active filters: ${activeFilters || "none"}`);
 
 		const result = ctx.messageDB.queryMessages(filters);
 
 		// Log breakdown by harness
 		const harnessCounts = new Map<string, number>();
+		// Business logic: this iteration walks every relevant item so HTTP API behavior reflects the complete source set instead of a partial snapshot.
+
 		for (const message of result.results)
 		{
 			const count = harnessCounts.get(message.harness) || 0;
@@ -62,7 +81,7 @@ export function register(app: Express, ctx: RouteContext): void
 		const breakdown = Array.from(harnessCounts.entries())
 			.map(([harness, count]) => `${harness}=${count}`)
 			.join(", ");
-		console.log(`[Query] Returned ${result.results.length}/${result.total} messages (page ${result.page}): ${breakdown}`);
+		logger.debug(`[Query] Returned ${result.results.length}/${result.total} messages (page ${result.page}): ${breakdown}`);
 
 		res.json({
 			total: result.total,
@@ -132,7 +151,7 @@ export function register(app: Express, ctx: RouteContext): void
 					// Sort by date descending (no relevance score available)
 					messages = messages.slice().sort((a, b) => b.dateTime.toMillis() - a.dateTime.toMillis());
 
-					console.log(`[Messages/POST] Field-only search: symbols="${symbolsTerm}" subject="${subjectTerm}" → ${messages.length} results`);
+					logger.debug(`[Messages/POST] Field-only search: symbols="${symbolsTerm}" subject="${subjectTerm}" → ${messages.length} results`);
 
 					res.json({
 						total: messages.length,
@@ -146,7 +165,7 @@ export function register(app: Express, ctx: RouteContext): void
 					});
 				} catch (error)
 				{
-					console.error(`[Messages/POST] Field-only search error: ${(error as Error).message}`);
+					logger.error(`[Messages/POST] Field-only search error: ${(error as Error).message}`);
 					res.status(500).json({ error: "Search failed" });
 				}
 				return;
@@ -172,7 +191,7 @@ export function register(app: Express, ctx: RouteContext): void
 				results = results.filter((message) => projectFilterSet.has(`${message.harness}::${message.project}`));
 			}
 
-			console.log(`[Messages/POST] Sending ${results.length} results (paginated browse, page ${queryResult.page})`);
+			logger.debug(`[Messages/POST] Sending ${results.length} results (paginated browse, page ${queryResult.page})`);
 			res.json({
 				total: results.length,
 				page: queryResult.page,
@@ -201,7 +220,7 @@ export function register(app: Express, ctx: RouteContext): void
 			const { data: responseData, cached } = await withCache(cacheKey, async () =>
 			{
 				const parsedQuery = parseSearchQuery(searchTerms);
-				console.log(
+				logger.debug(
 					`[Messages/POST] Parsed query: mode=${parsedQuery.mode}, tokens=${parsedQuery.tokens.length}, query="${searchTerms}", symbols="${symbolsTerm}", subject="${subjectTerm}", projects=${projectFilters.length}`
 				);
 
@@ -236,6 +255,8 @@ export function register(app: Express, ctx: RouteContext): void
 
 				// Subject-aware dual-channel Qdrant search
 				let qdrantHits: Array<{ score: number; payload: any }> = [];
+				// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting HTTP API behavior from partial or invalid state.
+
 				if ((searchTerms || subjectTerm) && ctx.vectorServices)
 				{
 					try
@@ -246,7 +267,7 @@ export function register(app: Express, ctx: RouteContext): void
 						);
 					} catch (error)
 					{
-						console.warn(`[Messages/POST] Qdrant search failed: ${(error as Error).message}`);
+						logger.warn(`[Messages/POST] Qdrant search failed: ${(error as Error).message}`);
 					}
 				}
 
@@ -269,7 +290,7 @@ export function register(app: Express, ctx: RouteContext): void
 				}
 
 				const data = merged.serialize();
-				console.log(`[Messages/POST] Sending ${data.results?.length ?? 0} results`);
+				logger.debug(`[Messages/POST] Sending ${data.results?.length ?? 0} results`);
 
 				applyTopicSubjects(data, ctx);
 
@@ -278,11 +299,13 @@ export function register(app: Express, ctx: RouteContext): void
 
 			res.setHeader('X-Cache', cached ? 'HIT' : 'MISS');
 			if (cached)
-				console.log(`[Messages/POST] Cache HIT for "${searchTerms}"`);
+				logger.debug(`[Messages/POST] Cache HIT for "${searchTerms}"`);
 			res.json(responseData);
 		} catch (error)
 		{
-			console.error(`[Messages/POST] Error: ${(error as Error).message}`);
+			logger.error(`[Messages/POST] Error: ${(error as Error).message}`);
+			// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting HTTP API behavior from partial or invalid state.
+
 			if ((error as Error).message.includes("parse") || (error as Error).message.includes("unbalanced"))
 			{
 				res.status(400).json({ error: "Malformed query", details: (error as Error).message });

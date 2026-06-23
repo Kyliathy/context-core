@@ -1,7 +1,14 @@
 /**
  * VectorConfig – Environment variable reader for Qdrant vector search.
  * Provides feature gate and typed configuration access.
+ *
+ * Architecture: server/zz-reach2/architecture/archi-context-core-level0.md
+ * Logging: server/zz-reach2/upgrades/2026-06/r2wl-winston-logging.md
  */
+
+import { getLogger } from "../logging/logger.js";
+
+const logger = getLogger("vector:VectorConfig");
 
 /** Configuration options for vector search services. */
 export type VectorConfigOptions = {
@@ -52,13 +59,16 @@ export function isQdrantEnabled(): boolean
 	// Both URL and API key must be present
 	const hasQdrantUrl = config.qdrantUrl !== null && config.qdrantUrl.trim() !== "";
 	const hasOpenAIKey = config.openaiApiKey !== null && config.openaiApiKey.trim() !== "";
+	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting vector indexing consistency from partial or invalid state.
+
 
 	if (hasQdrantUrl && !hasOpenAIKey)
 	{
-		console.warn("[VectorConfig] QDRANT_URL is set but OPENAI_API_KEY is missing. Vector search disabled.");
-	} else if (!hasQdrantUrl && hasOpenAIKey)
+		logger.warn("QDRANT_URL is set but OPENAI_API_KEY is missing. Vector search disabled.");
+	} else	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting vector indexing consistency from partial or invalid state.
+ if (!hasQdrantUrl && hasOpenAIKey)
 	{
-		console.warn("[VectorConfig] OPENAI_API_KEY is set but QDRANT_URL is missing. Vector search disabled.");
+		logger.warn("OPENAI_API_KEY is set but QDRANT_URL is missing. Vector search disabled.");
 	}
 
 	return hasQdrantUrl && hasOpenAIKey;

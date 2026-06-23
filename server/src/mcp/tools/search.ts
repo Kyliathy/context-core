@@ -21,8 +21,11 @@
  *     dual-channel with combined scoring; falls back to Fuse-only gracefully)
  *   - Enhanced score display: "Score: X% (Q:Y% | F:Z%)" when Qdrant is active,
  *     plain "Score: X%" otherwise (detected via duck-typing on AgentMessageFound)
+ *
+ * Upgrade plan: server/zz-reach2/upgrades/2026-06/r2wl-winston-logging.md (T56)
  */
 
+import { getLogger, serializeError } from "../../logging/logger.js";
 import type { IMessageStore } from "../../db/IMessageStore.js";
 import type { TopicStore } from "../../settings/TopicStore.js";
 import type { ScopeStore } from "../../settings/ScopeStore.js";
@@ -51,6 +54,9 @@ import
 		formatThreadSearchResults,
 	} from "../formatters.js";
 
+/** Logger for non-fatal Qdrant failures during hybrid search merge. */
+const logger = getLogger("mcp:tools:search");
+
 /** Maximum query length to guard against pathological Fuse.js inputs. */
 const MAX_QUERY_LENGTH = 500;
 
@@ -60,6 +66,8 @@ const MAX_QUERY_LENGTH = 500;
  */
 function extractProjectFilter(projects: unknown): string[]
 {
+	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting query and MCP response correctness from partial or invalid state.
+
 	if (!Array.isArray(projects) || projects.length === 0) return [];
 	return projects.filter((p): p is string => typeof p === "string" && p.trim() !== "").map((p) => p.trim());
 }
@@ -80,6 +88,13 @@ type ParsedDateRange = {
 	to?: DateTime;
 	error?: string;
 };
+
+/**
+ * Parses input into the shape expected by parseDateRange.
+ * @param args - Value consumed by parseDateRange.
+ * @returns Result produced by parseDateRange.
+ */
+
 
 function parseDateRange(args: Record<string, unknown>): ParsedDateRange
 {
@@ -105,13 +120,15 @@ function parseDateRange(args: Record<string, unknown>): ParsedDateRange
 		{
 			return { error: "Error: 'to' must be a valid ISO datetime (e.g., '2026-03-15' or '2026-03-15T23:59:59Z')." };
 		}
-	}
+	}	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting query and MCP response correctness from partial or invalid state.
+
 
 	// Intuitive default: specifying only `from` means "from that date until now".
 	if (from && !to)
 	{
 		to = DateTime.now();
-	}
+	}	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting query and MCP response correctness from partial or invalid state.
+
 
 	if (from && to && from.toMillis() > to.toMillis())
 	{
@@ -121,22 +138,46 @@ function parseDateRange(args: Record<string, unknown>): ParsedDateRange
 	return { from, to };
 }
 
+/**
+ * Filters data according to filterByDateRange.
+ * @param results - Value consumed by filterByDateRange.
+ * @param from - Value consumed by filterByDateRange.
+ * @param to - Value consumed by filterByDateRange.
+ * @returns Result produced by filterByDateRange.
+ */
+
+
 function filterByDateRange<T extends { message: AgentMessage }>(
 	results: T[],
 	from?: DateTime,
 	to?: DateTime
 ): T[]
 {
+	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting query and MCP response correctness from partial or invalid state.
+
 	if (!from && !to) return results;
 
 	return results.filter((r) =>
 	{
 		const ts = r.message.dateTime.toMillis();
+		// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting query and MCP response correctness from partial or invalid state.
+
 		if (from && ts < from.toMillis()) return false;
+		// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting query and MCP response correctness from partial or invalid state.
+
 		if (to && ts > to.toMillis()) return false;
 		return true;
 	});
 }
+
+/**
+ * Filters data according to filterMessagesByDateRange.
+ * @param messages - Message data processed by filterMessagesByDateRange.
+ * @param from - Value consumed by filterMessagesByDateRange.
+ * @param to - Value consumed by filterMessagesByDateRange.
+ * @returns Result produced by filterMessagesByDateRange.
+ */
+
 
 function filterMessagesByDateRange(
 	messages: AgentMessage[],
@@ -144,12 +185,18 @@ function filterMessagesByDateRange(
 	to?: DateTime
 ): AgentMessage[]
 {
+	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting query and MCP response correctness from partial or invalid state.
+
 	if (!from && !to) return messages;
 
 	return messages.filter((m) =>
 	{
 		const ts = m.dateTime.toMillis();
+		// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting query and MCP response correctness from partial or invalid state.
+
 		if (from && ts < from.toMillis()) return false;
+		// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting query and MCP response correctness from partial or invalid state.
+
 		if (to && ts > to.toMillis()) return false;
 		return true;
 	});
@@ -415,6 +462,8 @@ async function hybridMerge(
 	vectorServices?: VectorServices
 ): Promise<SearchResult[]>
 {
+	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting query and MCP response correctness from partial or invalid state.
+
 	if (!vectorServices || (!query && !subjectTerm)) return fuseResults;
 
 	// Build a RouteContext-compatible object (runQdrantSearch only reads vectorServices)
@@ -440,7 +489,8 @@ async function hybridMerge(
 		);
 	} catch (error)
 	{
-		console.error(`[MCP/Search] Qdrant search failed: ${(error as Error).message}`);
+		//Qdrant failures are non-fatal — hybrid merge continues with Fuse-only results.
+		logger.error("[MCP/Search] Qdrant search failed", { error: serializeError(error) });
 	}
 
 	if (qdrantHits.length === 0) return fuseResults;
@@ -466,6 +516,8 @@ async function hybridMerge(
 
 	// Build matchedTerms lookup from original Fuse results
 	const termsMap = new Map<string, string[]>();
+	// Business logic: this iteration walks every relevant item so query and MCP response correctness reflects the complete source set instead of a partial snapshot.
+
 	for (const r of fuseResults)
 	{
 		termsMap.set(r.message.id, r.matchedTerms);
@@ -534,11 +586,14 @@ export async function handleSearchTool(
 				const subjectTerm = String(args.subject ?? "").trim();
 				const symbolsTerm = String(args.symbols ?? "").trim();
 				const includeAssistant = args.includeAssistantMessages === true;
+				// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting query and MCP response correctness from partial or invalid state.
+
 
 				if (!query && !subjectTerm && !symbolsTerm)
 				{
 					return "Error: At least one of 'query', 'subject', or 'symbols' is required.";
-				}
+				}				// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting query and MCP response correctness from partial or invalid state.
+
 
 				if (query && query.length > MAX_QUERY_LENGTH)
 				{
@@ -641,11 +696,14 @@ export async function handleSearchTool(
 				const query = String(args.query ?? "").trim();
 				const subjectTerm = String(args.subject ?? "").trim();
 				const symbolsTerm = String(args.symbols ?? "").trim();
+				// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting query and MCP response correctness from partial or invalid state.
+
 
 				if (!query && !subjectTerm && !symbolsTerm)
 				{
 					return "Error: At least one of 'query', 'subject', or 'symbols' is required.";
-				}
+				}				// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting query and MCP response correctness from partial or invalid state.
+
 
 				if (query && query.length > MAX_QUERY_LENGTH)
 				{
@@ -732,11 +790,14 @@ export async function handleSearchTool(
 				const subjectTerm = String(args.subject ?? "").trim();
 				const symbolsTerm = String(args.symbols ?? "").trim();
 				const includeAssistant = args.includeAssistantMessages === true;
+				// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting query and MCP response correctness from partial or invalid state.
+
 
 				if (!query && !subjectTerm && !symbolsTerm)
 				{
 					return "Error: At least one of 'query', 'subject', or 'symbols' is required.";
-				}
+				}				// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting query and MCP response correctness from partial or invalid state.
+
 
 				if (query && query.length > MAX_QUERY_LENGTH)
 				{
@@ -831,9 +892,13 @@ export async function handleSearchTool(
 				// Get all messages and count occurrences
 				const allMessages = db.getAllMessages();
 				const results: Array<{ message: AgentMessage; occurrenceCount: number; score: number }> = [];
+				// Business logic: this iteration walks every relevant item so query and MCP response correctness reflects the complete source set instead of a partial snapshot.
+
 
 				for (const message of allMessages)
 				{
+					// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting query and MCP response correctness from partial or invalid state.
+
 					// Skip non-human messages by default; include them only when explicitly requested
 					if (!includeAssistant && message.role !== "user") continue;
 
@@ -855,6 +920,8 @@ export async function handleSearchTool(
 
 				// Normalize scores (count / maxCount)
 				const maxCount = results[0].occurrenceCount;
+				// Business logic: this iteration walks every relevant item so query and MCP response correctness reflects the complete source set instead of a partial snapshot.
+
 				for (const result of results)
 				{
 					result.score = result.occurrenceCount / maxCount;

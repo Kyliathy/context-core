@@ -1,11 +1,17 @@
 /**
  * ScopeStore — persistence layer for visualizer saved scopes.
  * Stores scope entries in .settings/scopes.json.
+ *
+ * Architecture: server/zz-reach2/architecture/archi-context-core-level0.md
+ * Logging: server/zz-reach2/upgrades/2026-06/r2wl-winston-logging.md
  */
 
 import { join } from "path";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { getLogger } from "../logging/logger.js";
 import type { ScopeEntry } from "../models/ScopeEntry.js";
+
+const logger = getLogger("settings:ScopeStore");
 
 export class ScopeStore
 {
@@ -49,8 +55,8 @@ export class ScopeStore
     }
     catch (error)
     {
-      console.warn(
-        `[ScopeStore] Failed to parse scopes.json: ${(error as Error).message}. Starting with empty list.`
+      logger.warn(
+        `Failed to parse scopes.json: ${(error as Error).message}. Starting with empty list.`
       );
       this.entries = [];
     }

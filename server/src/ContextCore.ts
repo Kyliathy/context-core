@@ -2,25 +2,23 @@
  * ContextCore – entry point.
  * Runs full ingestion pipeline and starts the API server.
  *
+ * Architecture: server/zz-reach2/architecture/archi-context-core-level0.md
+ * Logging: server/zz-reach2/upgrades/2026-06/r2wl-winston-logging.md
+ *
  * API Endpoints Definition: ../interop/insomnia-context-core.json
  */
 
 import { getHostname } from "./config.js";
+import { getLogger, serializeError } from "./logging/logger.js";
 import { existsSync, writeFileSync, unlinkSync } from "fs";
-import { join, relative, resolve } from "path";
+import { resolve } from "path";
 import type { Server } from "http";
-import type { AgentMessage } from "./models/AgentMessage.js";
 import { createMessageStore, type IMessageStore } from "./db/IMessageStore.js";
-import { readHarnessChats } from "./harness/index.js";
-import { getCursorRowIdCheckpoint } from "./harness/cursor.js";
 import { startServer } from "./server/ContextServer.js";
 import { CCSettings } from "./settings/CCSettings.js";
 import { GlobalSettingsStore } from "./settings/GlobalSettingsStore.js";
 import { StorageWriter } from "./storage/StorageWriter.js";
-import { getHarnessEntries, getHarnessNames } from "./types.js";
-import { deriveProjectName } from "./utils/pathHelpers.js";
-import { HarnessMatcher } from "./harness/HarnessMatcher.js";
-import { loadCursorProjectRuleSet } from "./harness/cursor-matcher.js";
+import { getHarnessNames } from "./types.js";
 import { isQdrantEnabled, isQdrantUpdateSkipped, isQdrantUsageDisabled, getVectorConfig } from "./vector/VectorConfig.js";
 import { EmbeddingService } from "./vector/EmbeddingService.js";
 import { QdrantService } from "./vector/QdrantService.js";
@@ -35,49 +33,24 @@ import { mountMcpSse } from "./mcp/transports/sse.js";
 import { FileWatcher } from "./watcher/FileWatcher.js";
 import { IncrementalPipeline } from "./watcher/IncrementalPipeline.js";
 import { AgentBuilder } from "./agentBuilder/AgentBuilder.js";
+import { AgentBuilderRuntime } from "./agentBuilder/AgentBuilderRuntime.js";
+import { AgentPublisher } from "./agentPublisher/AgentPublisher.js";
+import { CanonicalAgentStore } from "./agentPublisher/CanonicalAgentStore.js";
+import { collectDbFingerprint, validateDbFingerprint } from "./ingest/DbFingerprint.js";
+import { StartupIngestCoordinator } from "./ingest/StartupIngestCoordinator.js";
 
-type HarnessStats = {
-	/** Harness name from machine configuration (e.g. ClaudeCode, Cursor). */
-	harness: string;
-	/** Number of distinct sessions discovered after message grouping. */
-	sessionsFound: number;
-	/** Number of messages written to storage for this harness run. */
-	messagesWritten: number;
-	/** Number of recoverable failures encountered for this harness. */
-	errors: number;
-};
-
-function formatCursorCheckpoint(checkpoint: { cursorDiskKVRowId: number; itemTableRowId: number }): string
-{
-	return `cursorDiskKV=${checkpoint.cursorDiskKVRowId}, ItemTable=${checkpoint.itemTableRowId}`;
-}
+const logger = getLogger("ContextCore");
+const startupDbLoadLogger = getLogger("startup-db-load");
+const startupIngestPlanLogger = getLogger("startup-ingest-plan");
+const messageDbLogger = getLogger("MessageDB");
+const topicLogger = getLogger("analysis:TopicSummarizer");
+const vectorLogger = getLogger("vector:VectorPipeline");
+const agentBuilderLogger = getLogger("agentBuilder:AgentBuilder");
 
 /** Active HTTP server handle for lifecycle hooks and cleanup wiring. */
 let activeServer: Server | null = null;
 /** Keep-alive timer used to prevent early process exit on this runtime. */
 let keepAliveTimer: ReturnType<typeof setInterval> | null = null;
-
-/**
- * Groups normalized messages into sessions for one harness.
- * @param messages - Flat message collection from a harness reader.
- * @returns Map keyed by "sessionId::project" with all messages for that session.
- */
-function groupBySession(messages: Array<AgentMessage>): Map<string, Array<AgentMessage>>
-{
-	const sessions = new Map<string, Array<AgentMessage>>();
-	for (const message of messages)
-	{
-		// SessionId alone is not sufficient because some sources can reuse ids across projects.
-		// Include project in the key so persisted session files remain correctly partitioned.
-		const groupKey = `${message.sessionId}::${message.project || "project"}`;
-		if (!sessions.has(groupKey))
-		{
-			sessions.set(groupKey, []);
-		}
-		sessions.get(groupKey)?.push(message);
-	}
-	return sessions;
-}
 
 /**
  * Executes the full pipeline from harness read through API start.
@@ -100,6 +73,7 @@ async function main(): Promise<void>
 	const ccJsonPath = resolve(process.cwd(), "cc.json");
 	if (!existsSync(ccJsonPath))
 	{
+		//Intentional console exception: first-run guidance is user-facing CLI output, not runtime diagnostics.
 		console.error(`\ncc.json not found at: ${ccJsonPath}`);
 		console.error(`\nRun the interactive setup wizard to generate it:\n`);
 		console.error(`  bun run setup\n`);
@@ -110,154 +84,152 @@ async function main(): Promise<void>
 	const settings = CCSettings.getInstance();
 	const machine = settings.getMachineConfig(hostname);
 	const storageWriter = new StorageWriter(settings.storage);
-	const globalSettingsStore = new GlobalSettingsStore(settings.storage);
-	globalSettingsStore.load();
 
-	console.log(`ContextCore – hostname: ${hostname}`);
-	console.log(`Storage root: ${settings.storage}`);
+	logger.info(`ContextCore – hostname: ${hostname}`);
+	logger.info(`Storage root: ${settings.storage}`);
 
 	if (!machine)
 	{
-		// Missing machine config is a valid state during setup; exit gracefully with guidance.
-		console.warn(`No config for hostname "${hostname}". No matching machine entry in cc.json.`);
-		console.warn(`Run "bun run setup" to add a config for this machine, or add one manually.`);
+		//Missing machine config is a valid state during setup; exit gracefully with guidance.
+		logger.warn(`No config for hostname "${hostname}". No matching machine entry in cc.json.`);
+		logger.warn(`Run "bun run setup" to add a config for this machine, or add one manually.`);
 		return;
 	}
 
-	console.log(`Selected machine config: ${machine.machine}`);
+	logger.info(`Selected machine config: ${machine.machine}`);
 
-	const harnessStats: Array<HarnessStats> = [];
-	for (const [harnessName, harnessConfig] of getHarnessEntries(machine.harnesses))
-	{
-		// Track each harness independently so one failing source does not hide others.
-		const stats: HarnessStats = {
-			harness: harnessName,
-			sessionsFound: 0,
-			messagesWritten: 0,
-			errors: 0,
-		};
-
-		try
-		{
-			// Read + normalize all messages for the current harness.
-			const rawBase = join(settings.storage, `${machine.machine}-RAW`, harnessName);
-			const messages = readHarnessChats(harnessName, harnessConfig, rawBase);
-			for (const message of messages)
-			{
-				// Stamp runtime context before persistence for cross-machine traceability.
-				message.machine = machine.machine;
-				message.harness = harnessName;
-				if (message.source)
-				{
-					message.source = relative(settings.storage, message.source);
-				}
-			}
-
-			if (harnessName === "Cursor")
-			{
-				const cursorPaths = Array.isArray(harnessConfig.paths) ? harnessConfig.paths : [harnessConfig.paths];
-				const cursorDbPath = cursorPaths[0];
-				if (cursorDbPath)
-				{
-					const previousCheckpoint = globalSettingsStore.getCursorCheckpoint();
-					const checkpoint = getCursorRowIdCheckpoint(cursorDbPath);
-					globalSettingsStore.setCursorState(checkpoint);
-					console.log(
-						`[Cursor][Checkpoint] Startup full refresh: ` +
-						`${formatCursorCheckpoint(previousCheckpoint)} -> ${formatCursorCheckpoint(checkpoint)}`
-					);
-				}
-			}
-
-			// Build and write per-session + per-project symbol frequency maps for rule-matched Cursor projects.
-			if (harnessName === "Cursor" && messages.length > 0)
-			{
-				const ruleSet = loadCursorProjectRuleSet();
-				const ruleMatchedProjects = ruleSet.projectMappingRules.map((r) => r.newProjectName);
-				if (ruleMatchedProjects.length > 0)
-				{
-					const matcher = new HarnessMatcher(messages, ruleMatchedProjects);
-					matcher.buildSessionSymbolMaps();
-					matcher.buildProjectSymbolMaps();
-					matcher.logDiagnostics();
-					const sessionFiles = matcher.writeSessionSymbolFiles(settings.storage, machine.machine, harnessName);
-					const projectFiles = matcher.writeProjectSymbolFiles(settings.storage, machine.machine, harnessName);
-					console.log(`[Pipeline] Cursor symbol maps: ${sessionFiles} session files, ${projectFiles} project files written`);
-				}
-			}
-
-			const sessions = groupBySession(messages);
-			stats.sessionsFound = sessions.size;
-
-			for (const [groupKey, sessionMessages] of sessions.entries())
-			{
-				try
-				{
-					const first = sessionMessages[0];
-					// Prefer explicit project extracted by harness; fallback to path-derived heuristic.
-					const project = first?.project || deriveProjectName(harnessName, groupKey);
-					const outPath = storageWriter.writeSession(
-						sessionMessages,
-						machine.machine,
-						harnessName,
-						project
-					);
-					if (outPath)
-					{
-						// Count messages only when a new file is written (writer may skip duplicates).
-						stats.messagesWritten += sessionMessages.length;
-					}
-				} catch
-				{
-					// Session-level errors are isolated so remaining sessions can still be persisted.
-					stats.errors += 1;
-				}
-			}
-		} catch (error)
-		{
-			// Harness-level failure should not abort startup; continue with other configured harnesses.
-			stats.errors += 1;
-			console.warn(`[Pipeline] Harness "${harnessName}" failed: ${(error as Error).message}`);
-		}
-
-		harnessStats.push(stats);
-		console.log(
-			`[Pipeline] ${stats.harness}: sessions=${stats.sessionsFound}, messagesWritten=${stats.messagesWritten}, errors=${stats.errors}`
-		);
-	}
+	const globalSettingsStore = new GlobalSettingsStore(settings.storage, machine.machine);
+	globalSettingsStore.load();
 
 	const messageDB: IMessageStore = await createMessageStore(settings);
-	console.log(`[Pipeline] Database mode: ${settings.IN_MEMORY_DB ? "in-memory" : `disk (${settings.databaseFile})`}`);
-	// Load the persisted corpus into the query database.
+	logger.info(`Database mode: ${settings.IN_MEMORY_DB ? "in-memory" : `disk (${settings.databaseFile})`}`);
+	//Load the persisted corpus into the query database.
 	const loadedCount = messageDB.loadFromStorage(settings.storage);
+	const initialFingerprint = collectDbFingerprint(settings.databaseFile, messageDB);
+	startupDbLoadLogger.info(
+		`loadedFromStorage=${loadedCount}, dbMessages=${initialFingerprint.messageCount}, ` +
+		`sessions=${initialFingerprint.sessionCount}, dbFileBytes=${initialFingerprint.fileSizeBytes}`
+	);
+	const storedFingerprint = globalSettingsStore.getDbFingerprint();
+	const fingerprintValidation = validateDbFingerprint(storedFingerprint, initialFingerprint);
+	const dbFingerprintValid = !!storedFingerprint && fingerprintValidation.ok;
+	const dbFingerprintFailed = !!storedFingerprint && !fingerprintValidation.ok;
+	// Business logic: a stored active-machine fingerprint that no longer matches
+	// means only this machine's local DB-dependent ingest decisions are unsafe.
+	if (storedFingerprint && !fingerprintValidation.ok)
+	{
+		startupDbLoadLogger.warn(
+			`DB fingerprint invalid: ${fingerprintValidation.reason}. ` +
+			"Resetting ingest bookmarks; next startup ingest will be recovery full."
+		);
+		globalSettingsStore.resetAllIngestBookmarks();
+	}
+	let recoveryRequired = dbFingerprintFailed;
+	let previousRunInProgress = globalSettingsStore.isRunInProgress();
+	if (previousRunInProgress)
+	{
+		if (dbFingerprintValid)
+		{
+			//Bookmarks commit only after each harness stage succeeds, so a kill mid-pipeline
+			//usually leaves bookmarks consistent with the loaded DB — no need for recovery-full.
+			startupIngestPlanLogger.warn(
+				"Previous startup ingest did not call endIngestRun() (process likely killed mid-pipeline). " +
+				"DB fingerprint matches stored state; trusting existing harness bookmarks."
+			);
+			globalSettingsStore.clearStaleIngestRun();
+			previousRunInProgress = false;
+		}
+		else
+		{
+			startupIngestPlanLogger.warn("Previous ingest run did not complete. Startup will use conservative compatibility reads.");
+			recoveryRequired = true;
+		}
+	}
+
+	let startupIngestSucceeded = false;
+	let ingestPipelineActive = true;
+
+	/**
+	 * Handles finalizeIngestRun behavior for this CXC module.
+	 * @param success - Value consumed by finalizeIngestRun.
+	 */
+	const finalizeIngestRun = (success: boolean): void =>
+	{
+		if (!ingestPipelineActive)
+		{
+			return;
+		}
+		ingestPipelineActive = false;
+		const finalFingerprint = collectDbFingerprint(settings.databaseFile, messageDB);
+		globalSettingsStore.endIngestRun(success, finalFingerprint);
+	};
+
+	/**
+	 * Handles abortIngestOnSignal behavior for this CXC module.
+	 * @param signal - Value consumed by abortIngestOnSignal.
+	 */
+	const abortIngestOnSignal = (signal: NodeJS.Signals): void =>
+	{
+		if (!ingestPipelineActive)
+		{
+			return;
+		}
+		startupIngestPlanLogger.warn(`Received ${signal} during startup ingest; clearing runInProgress flag.`);
+		finalizeIngestRun(false);
+		process.exit(signal === "SIGTERM" ? 0 : 130);
+	};
+	process.once("SIGINT", abortIngestOnSignal);
+	process.once("SIGTERM", abortIngestOnSignal);
+
+	globalSettingsStore.beginIngestRun();
+	try
+	{
+		const startupIngest = new StartupIngestCoordinator(
+			messageDB,
+			storageWriter,
+			settings.storage,
+			machine,
+			globalSettingsStore,
+			recoveryRequired,
+			dbFingerprintValid
+		);
+		startupIngest.run();
+		startupIngestSucceeded = true;
+	}
+	finally
+	{
+		finalizeIngestRun(startupIngestSucceeded);
+	}
 
 	// Load persisted AI topic summaries (isolated from AgentMessage storage)
 	const topicStore = new TopicStore(settings.storage);
 	topicStore.load();
-	console.log(`[Topics] Loaded ${topicStore.count} topic entries from topics.json`);
+	topicLogger.info(`Loaded ${topicStore.count} topic entries from topics.json`);
 
 	const scopeStore = new ScopeStore(settings.storage);
 	scopeStore.load();
-	console.log(`[Scopes] Loaded ${scopeStore.list().length} scope entries from scopes.json`);
+	logger.info(`Loaded ${scopeStore.list().length} scope entries from scopes.json`);
 
 	const favoriteStore = new FavoriteStore(settings.storage);
 	favoriteStore.load();
-	console.log(
-		`[Favorites] Loaded ${favoriteStore.list().length} favorite rows and ${favoriteStore.listFavoriteViews().length} favorite view snapshots from favorites.json`,
+	logger.info(
+		`Loaded ${favoriteStore.list().length} favorite rows and ${favoriteStore.listFavoriteViews().length} favorite view snapshots from favorites.json`,
 	);
 
-	// Log breakdown by harness for diagnostics
+	//Log breakdown by harness for startup diagnostics visible in the MessageDB namespace.
 	const harnessCounts = messageDB.getHarnessCounts();
-	console.log(
-		`[MessageDB] Breakdown by harness: ${harnessCounts.map((h) => `${h.harness}=${h.count}`).join(", ")}`
+	messageDbLogger.info(
+		`Breakdown by harness: ${harnessCounts.map((h) => `${h.harness}=${h.count}`).join(", ")}`
 	);
 
-	// Log date ranges per harness
+	//Log date ranges per harness so operators can spot stale or empty sources at startup.
 	const harnessDateRanges = messageDB.getHarnessDateRanges();
-	console.log(`[MessageDB] Date ranges per harness (newest first):`);
+	messageDbLogger.info(`Date ranges per harness (newest first):`);
+	// Business logic: this iteration walks every relevant item so ContextCore runtime behavior reflects the complete source set instead of a partial snapshot.
+
 	for (const range of harnessDateRanges)
 	{
-		console.log(`  ${range.harness}: ${range.earliest} → ${range.latest} (${range.count} messages)`);
+		messageDbLogger.info(`  ${range.harness}: ${range.earliest} → ${range.latest} (${range.count} messages)`);
 	}
 
 	// === AI Topic Summarization ===
@@ -268,7 +240,7 @@ async function main(): Promise<void>
 	const skipSummarization = (process.env.SKIP_AI_SUMMARIZATION ?? "true").trim().toLowerCase() !== "false";
 	if (skipSummarization)
 	{
-		console.log("[Topics] AI summarization skipped (set SKIP_AI_SUMMARIZATION=false to enable).");
+		topicLogger.info("AI summarization skipped (set SKIP_AI_SUMMARIZATION=false to enable).");
 	} else
 	{
 		const pass1Model = (process.env.AI_SUMMARIZATION_MODEL_PASS_1 ?? "gpt-5-nano").trim();
@@ -278,16 +250,16 @@ async function main(): Promise<void>
 			await topicSummarizer.runPipeline();
 		} catch (error)
 		{
-			console.warn(`[Topics] Summarization pipeline failed: ${(error as Error).message}`);
-			console.warn("[Topics] Continuing without topic summaries...");
+			topicLogger.warn(`Summarization pipeline failed: ${(error as Error).message}`);
+			topicLogger.warn("Continuing without topic summaries...");
 			topicSummarizer = undefined;
 		}
 
-		// Pass 2: re-summarize entries whose aiSummary exceeds 1500 chars using a smarter model.
+		//Pass 2: re-summarize entries whose aiSummary exceeds 1500 chars using a smarter model.
 		const skipPass2 = (process.env.SKIP_AI_SUMMARIZATION_PASS_2 ?? "false").trim().toLowerCase() === "true";
 		if (skipPass2)
 		{
-			console.log("[Topics/Pass2] Skipped (set SKIP_AI_SUMMARIZATION_PASS_2=false to enable).");
+			topicLogger.info("Pass 2 skipped (set SKIP_AI_SUMMARIZATION_PASS_2=false to enable).");
 		} else
 		{
 			const pass2Model = (process.env.AI_SUMMARIZATION_MODEL_PASS_2 ?? "gpt-5-mini").trim();
@@ -297,8 +269,8 @@ async function main(): Promise<void>
 				await pass2Summarizer.runPass2(1500);
 			} catch (error)
 			{
-				console.warn(`[Topics/Pass2] Re-summarization pipeline failed: ${(error as Error).message}`);
-				console.warn("[Topics/Pass2] Continuing without pass 2 summaries...");
+				topicLogger.warn(`Pass 2 re-summarization pipeline failed: ${(error as Error).message}`);
+				topicLogger.warn("Continuing without pass 2 summaries...");
 			}
 		}
 	}
@@ -314,7 +286,7 @@ async function main(): Promise<void>
 
 	if (isQdrantUsageDisabled())
 	{
-		console.log("[Pipeline] Qdrant usage disabled (DO_NOT_USE_QDRANT=true).");
+		vectorLogger.info("Qdrant usage disabled (DO_NOT_USE_QDRANT=true).");
 	} else if (isQdrantEnabled())
 	{
 		const vectorConfig = getVectorConfig();
@@ -322,7 +294,7 @@ async function main(): Promise<void>
 
 		try
 		{
-			console.log("[Pipeline] Qdrant enabled, initializing vector services...");
+			vectorLogger.info("Qdrant enabled, initializing vector services...");
 
 			// Initialize services
 			embeddingService = new EmbeddingService(vectorConfig.openaiApiKey!);
@@ -337,15 +309,17 @@ async function main(): Promise<void>
 			if (firstHarness)
 			{
 				const info = await qdrantService.getCollectionInfo(firstHarness);
+				// Business logic: collection details are meaningful only when Qdrant returned
+				// a response and that response confirms the active harness collection exists.
 				if (info && info.exists)
 				{
-					console.log(
-						`[Pipeline] Qdrant connected. Collection "${qdrantService.getCollectionName(firstHarness)}" has ${info.pointsCount} points.`
+					vectorLogger.info(
+						`Qdrant connected. Collection "${qdrantService.getCollectionName(firstHarness)}" has ${info.pointsCount} points.`
 					);
 				} else
 				{
-					console.log(
-						`[Pipeline] Qdrant connected. Collection "${qdrantService.getCollectionName(firstHarness)}" does not exist yet.`
+					vectorLogger.info(
+						`Qdrant connected. Collection "${qdrantService.getCollectionName(firstHarness)}" does not exist yet.`
 					);
 				}
 			}
@@ -356,7 +330,7 @@ async function main(): Promise<void>
 
 			if (skipStartupQdrantUpdate)
 			{
-				console.log("[Pipeline] Startup vector indexing skipped (SKIP_STARTUP_UPDATING_QDRANT=true).");
+				vectorLogger.info("Startup vector indexing skipped (SKIP_STARTUP_UPDATING_QDRANT=true).");
 			} else
 			{
 				// Summary embedding pass: pre-compute session summary vectors before chunk indexing.
@@ -366,8 +340,8 @@ async function main(): Promise<void>
 					embeddingService,
 					vectorConfig.batchDelayMs
 				);
-				console.log(
-					`[Pipeline] Summary embeddings: embedded=${cacheStats.summariesEmbedded}, ` +
+				vectorLogger.info(
+					`Summary embeddings: embedded=${cacheStats.summariesEmbedded}, ` +
 					`skipped=${cacheStats.summariesSkipped}, failed=${cacheStats.summariesFailed}`
 				);
 
@@ -393,16 +367,16 @@ async function main(): Promise<void>
 				]);
 				if (unsyncedSessionIds.size > 0)
 				{
-					console.log(
-						`[Pipeline] Summary vector backfill: ${unsyncedSessionIds.size} sessions cached but not yet applied to Qdrant.`
+					vectorLogger.info(
+						`Summary vector backfill: ${unsyncedSessionIds.size} sessions cached but not yet applied to Qdrant.`
 					);
 				}
 				const allMessages = messageDB.getAllMessages();
 				const stats = await vectorPipeline.processMessages(allMessages, forceSessionIds);
 
 				const vectorElapsedMs = Date.now() - vectorStartMs;
-				console.log(
-					`[Pipeline] Vector indexing complete: processed=${stats.messagesProcessed}, ` +
+				vectorLogger.info(
+					`Vector indexing complete: processed=${stats.messagesProcessed}, ` +
 					`enhanced=${stats.messagesEnhanced}, forceEmbed=${stats.forceFullEmbed}, ` +
 					`chunks=${stats.chunksGenerated}, embeddings=${stats.embeddingsCreated}, ` +
 					`skipped=${stats.skipped}, errors=${stats.errors}, ` +
@@ -412,8 +386,8 @@ async function main(): Promise<void>
 			}
 		} catch (error)
 		{
-			console.warn(`[Pipeline] Vector initialization failed: ${(error as Error).message}`);
-			console.warn("[Pipeline] Continuing without vector search...");
+			vectorLogger.warn(`Vector initialization failed: ${(error as Error).message}`);
+			vectorLogger.warn("Continuing without vector search...");
 			embeddingService = undefined;
 			qdrantService = undefined;
 			vectorPipeline = undefined;
@@ -421,24 +395,36 @@ async function main(): Promise<void>
 		}
 	} else
 	{
-		console.log("[Pipeline] Qdrant not enabled (QDRANT_URL or OPENAI_API_KEY missing).");
+		vectorLogger.info("Qdrant not enabled (QDRANT_URL or OPENAI_API_KEY missing).");
 	}
 
 	// === AgentBuilder Initialization ===
 	let agentBuilder: AgentBuilder | undefined;
-	console.log(`[AgentBuilder] cc.json loaded from: ${settings.configPath}`);
-	console.log(`[AgentBuilder] matched machine: "${machine.machine}", hostname: "${hostname}"`);
-	console.log(`[AgentBuilder] dataSources keys: ${Object.keys(machine.dataSources ?? {}).join(", ") || "(none)"}`);
-	const agentBuilderSources = Object.values(machine.dataSources ?? {})
-		.flat()
-		.filter((s) => s.purpose === "AgentBuilder");
-	if (agentBuilderSources.length > 0)
+	let agentPublisher: AgentPublisher | undefined;
+	const canonicalAgentStore = new CanonicalAgentStore(settings.storage);
+	const storeWarning = canonicalAgentStore.load();
+	if (storeWarning) agentBuilderLogger.warn(storeWarning);
+
+	const agentBuilderRuntime = new AgentBuilderRuntime(
+		settings.configPath,
+		settings.storage,
+		canonicalAgentStore,
+		machine,
+	);
+	await agentBuilderRuntime.initializeFromMachine(machine);
+	agentBuilder = agentBuilderRuntime.getAgentBuilder();
+	agentPublisher = agentBuilderRuntime.getAgentPublisher();
+
+	agentBuilderLogger.info(`cc.json loaded from: ${settings.configPath}`);
+	agentBuilderLogger.info(`matched machine: "${machine.machine}", hostname: "${hostname}"`);
+	agentBuilderLogger.info(`dataSources keys: ${Object.keys(machine.dataSources ?? {}).join(", ") || "(none)"}`);
+	if (agentBuilder)
 	{
-		agentBuilder = new AgentBuilder(machine);
-		await agentBuilder.index();
-	} else
+		agentBuilderLogger.info("AgentBuilder initialized with publish ledger and index callback.");
+	}
+	else
 	{
-		console.log("[AgentBuilder] No AgentBuilder data sources configured — skipping.");
+		agentBuilderLogger.info("No AgentBuilder data sources configured — vault routes still available.");
 	}
 
 	const portFile = resolve(process.cwd(), ".cxc-port");
@@ -448,6 +434,8 @@ async function main(): Promise<void>
 		embeddingService && qdrantService ? { embeddingService, qdrantService } : undefined,
 		topicStore,
 		agentBuilder,
+		agentPublisher,
+		agentBuilderRuntime,
 		scopeStore,
 		favoriteStore,
 		summaryEmbeddingCache
@@ -456,6 +444,8 @@ async function main(): Promise<void>
 	// Write actual port so Vite dev proxy and other tools can discover it.
 	writeFileSync(portFile, String(actualPort), "utf-8");
 
+	// Business logic: the network MCP transport is mounted only when both the MCP
+	// subsystem and its SSE transport are enabled for this local process.
 	if (settings.MCP_ENABLED && settings.MCP_SSE_ENABLED)
 	{
 		// Mount MCP SSE transport on the Express app (network MCP clients).
@@ -470,11 +460,11 @@ async function main(): Promise<void>
 	}
 	else if (!settings.MCP_ENABLED)
 	{
-		console.log("[MCP] Disabled (MCP_ENABLED=false)");
+		logger.info("MCP disabled (MCP_ENABLED=false)");
 	}
 	else
 	{
-		console.log("[MCP/SSE] Disabled (set MCP_SSE_ENABLED=true to enable)");
+		logger.info("MCP/SSE disabled (set MCP_SSE_ENABLED=true to enable)");
 	}
 
 	// Keep a lightweight timer so Bun does not exit after startup on this runtime.
@@ -528,6 +518,12 @@ async function main(): Promise<void>
 	fileWatcher.start();
 
 	let isShuttingDown = false;
+
+	/**
+	 * Handles gracefulShutdown behavior for this CXC module.
+	 * @param signal - Value consumed by gracefulShutdown.
+	 * @returns Result produced by gracefulShutdown.
+	 */
 	const gracefulShutdown = async (signal: string): Promise<void> =>
 	{
 		if (isShuttingDown)
@@ -536,11 +532,11 @@ async function main(): Promise<void>
 		}
 		isShuttingDown = true;
 
-		console.log(`[Shutdown] Received ${signal}. Stopping services...`);
+		logger.info(`Received ${signal}. Stopping services...`);
 
 		const fallbackTimer = setTimeout(() =>
 		{
-			console.warn("[Shutdown] Timed out waiting for clean close, forcing exit.");
+			logger.warn("Timed out waiting for clean close, forcing exit.");
 			process.exit(0);
 		}, 10_000);
 		fallbackTimer.unref();
@@ -575,13 +571,13 @@ async function main(): Promise<void>
 			messageDB.close();
 			try { unlinkSync(portFile); } catch { /* already gone */ }
 			clearTimeout(fallbackTimer);
-			console.log("[Shutdown] Complete.");
+			logger.info("Shutdown complete.");
 			process.exit(0);
 		}
 		catch (error)
 		{
 			clearTimeout(fallbackTimer);
-			console.error(`[Shutdown] Error: ${(error as Error).message}`);
+			logger.error(`Shutdown error: ${(error as Error).message}`, { error: serializeError(error) });
 			process.exit(1);
 		}
 	};
@@ -596,8 +592,8 @@ async function main(): Promise<void>
 	});
 
 	const elapsedMs = Date.now() - startMs;
-	console.log(`[Pipeline] Loaded ${loadedCount} messages into DB (${messageDB.getMessageCount()} total).`);
-	console.log(`[Pipeline] Total wall-clock time: ${elapsedMs} ms`);
+	logger.info(`Loaded ${loadedCount} messages into DB (${messageDB.getMessageCount()} total).`);
+	logger.info(`Total wall-clock time: ${elapsedMs} ms`);
 
 
 }
@@ -608,7 +604,6 @@ async function main(): Promise<void>
  */
 main().catch((err) =>
 {
-	console.error("ContextCore startup failed.");
-	console.error(err);
+	logger.error("ContextCore startup failed.", { error: serializeError(err) });
 	process.exit(1);
 });

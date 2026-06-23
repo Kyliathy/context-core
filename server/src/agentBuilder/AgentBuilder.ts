@@ -1,6 +1,33 @@
+/**
+ * AgentBuilder – indexes content sources and manages agent file lifecycle.
+ *
+ * Architecture: server/zz-reach2/architecture/agents/archi-agent-builder.md
+ * Upgrade: server/zz-reach2/upgrades/2026-06/r2ab3-agent-builder-3.md, r2ap-agent-publisher-2.md
+ * Logging: server/zz-reach2/upgrades/2026-06/r2wl-winston-logging.md
+ */
+
 import { readdirSync, statSync, readFileSync, writeFileSync, existsSync, mkdirSync, renameSync, unlinkSync } from "fs";
+import { getLogger } from "../logging/logger.js";
+
+const logger = getLogger("agentBuilder:AgentBuilder");
 import { join, relative, dirname } from "path";
 import type { MachineConfig, DataSourceEntry } from "../types.js";
+import { toCanonicalAgentDefinition } from "../agentPublisher/canonical.js";
+import type { CanonicalAgentStore } from "../agentPublisher/CanonicalAgentStore.js";
+import type { CanonicalAgentDefinition, RenderedArtifact } from "../agentPublisher/types.js";
+import { PublishLedger } from "../agentPublisher/PublishLedger.js";
+import {
+	classifyAgentArtifactPath,
+	isListableAgentDefinitionPath,
+} from "../agentPublisher/agentArtifactClassifier.js";
+import { CXC_GENERATED_MARKER } from "../agentPublisher/generatedMarker.js";
+import { mapCanonicalAgentList } from "../agentPublisher/canonicalListMapper.js";
+export type {
+	AgentListResponse,
+	CanonicalAgentListEntry,
+	CanonicalAgentListEntry as AgentListEntry,
+	PublishedTargetSummary,
+} from "../agentPublisher/canonicalListMapper.js";
 
 /** A single indexed file from a data source directory. */
 export interface IndexedFile
@@ -50,60 +77,25 @@ export interface CreateAgentInput
 	codexEntryId?: string;
 	/** Explicit Codex output directory (must be one of the source's allowed Codex directories). */
 	codexDirectory?: string;
-	/** Target platform for the generated agent file. "github" writes .agent.md; "claude" writes a Claude Code sub-agent .md; "codex" writes AGENTS.md. */
-	platform: "github" | "claude" | "codex";
+	/** Target platform for legacy platform-specific create. Omit for canonical-only save. */
+	platform?: "github" | "claude" | "codex" | "cursor" | "windsurf" | "kiro" | "antigravity";
+	/** When editing an existing catalog entry, preserve this canonical id on save. */
+	canonicalId?: string;
 }
 
 /** Response shape for POST /api/agent-builder/create. */
 export interface CreateAgentResponse
 {
 	created: boolean;
-	path: string;
 	agentName: string;
+	path?: string;
+	canonicalId?: string;
+	canonicalDefinition?: CanonicalAgentDefinition;
+	/** True when canonical-only create persisted to CanonicalAgentStore. */
+	persisted?: boolean;
+	/** Absolute path to agent-definitions.json when canonical-only create succeeded. */
+	canonicalStoragePath?: string;
 	codexEntryId?: string;
-}
-
-/** Per-platform location info within a consolidated agent list entry. */
-export interface AgentListPlatformEntry
-{
-	platform: "github" | "claude" | "codex";
-	path: string;
-	codexEntryId?: string;
-	codexDirectory?: string;
-	/** Byte size of the agent definition file (used to pick primary version for editing). */
-	dataLength: number;
-}
-
-/** Summary entry for GET /api/agent-builder/list (consolidated across platforms). */
-export interface AgentListEntry
-{
-	/** Agent name (filename stem, e.g. cxc-ui-worker). */
-	name: string;
-	/** Absolute path to the primary platform's agent file (biggest dataLength). */
-	path: string;
-	/** Optional entry id (set when primary platform is Codex). */
-	codexEntryId?: string;
-	/** Optional Codex directory (set when primary platform is Codex). */
-	codexDirectory?: string;
-	/** Primary platform (the one with the biggest dataLength). */
-	platform?: "github" | "claude" | "codex";
-	/** All platforms this logical agent exists on. */
-	platforms: AgentListPlatformEntry[];
-	/** True when the agent content differs between platforms (knowledge, description, etc.). */
-	contentDiverged: boolean;
-	/** Agent description from JSON or frontmatter (from primary platform). */
-	description: string;
-	/** Argument hint from JSON or frontmatter (from primary platform). */
-	hint: string;
-	/** First 1000 characters of primary platform file content. */
-	excerpt: string;
-}
-
-/** Response shape for GET /api/agent-builder/list. */
-export interface AgentListResponse
-{
-	totalAgents: number;
-	agents: AgentListEntry[];
 }
 
 /** Structured payload returned by GET /api/agent-builder/get-agent. */
@@ -174,6 +166,13 @@ const CODEX_ENTRY_END = "<!-- /CXC-CODEX-ENTRY -->";
 const CODEX_COLLECTION_VERSION = 2 as const;
 const CODEX_COLLECTION_GENERATOR = "ContextCore AgentBuilder";
 
+/**
+ * Formats data for formatBackupTimestamp.
+ * @param date - Value consumed by formatBackupTimestamp.
+ * @returns Result produced by formatBackupTimestamp.
+ */
+
+
 function formatBackupTimestamp(date: Date): string
 {
 	const y = String(date.getFullYear());
@@ -205,11 +204,25 @@ type CodexAgentCollection = {
 	agents: CodexAgentEntry[];
 };
 
+/**
+ * Handles normalizeList behavior for this CXC module.
+ * @param values - Value consumed by normalizeList.
+ * @returns Result produced by normalizeList.
+ */
+
+
 function normalizeList(values: unknown): string[]
 {
 	if (!Array.isArray(values)) return [];
 	return values.filter((v): v is string => typeof v === "string").map((v) => v.trim()).filter(Boolean);
 }
+
+/**
+ * Handles slugifyId behavior for this CXC module.
+ * @param raw - Value consumed by slugifyId.
+ * @returns Result produced by slugifyId.
+ */
+
 
 function slugifyId(raw: string): string
 {
@@ -220,6 +233,14 @@ function slugifyId(raw: string): string
 	return normalized || "codex-agent";
 }
 
+/**
+ * Handles makeUniqueCodexEntryId behavior for this CXC module.
+ * @param existingIds - Value consumed by makeUniqueCodexEntryId.
+ * @param base - Value consumed by makeUniqueCodexEntryId.
+ * @returns Result produced by makeUniqueCodexEntryId.
+ */
+
+
 function makeUniqueCodexEntryId(existingIds: Set<string>, base: string): string
 {
 	const seed = slugifyId(base);
@@ -229,6 +250,8 @@ function makeUniqueCodexEntryId(existingIds: Set<string>, base: string): string
 		return seed;
 	}
 	let suffix = 2;
+	// Business logic: this iteration walks every relevant item so agent builder artifact integrity reflects the complete source set instead of a partial snapshot.
+
 	while (existingIds.has(`${seed}-${suffix}`))
 	{
 		suffix++;
@@ -237,6 +260,14 @@ function makeUniqueCodexEntryId(existingIds: Set<string>, base: string): string
 	existingIds.add(id);
 	return id;
 }
+
+/**
+ * Handles normalizeCodexEntry behavior for this CXC module.
+ * @param input - Value consumed by normalizeCodexEntry.
+ * @param fallbackProjectName - Value consumed by normalizeCodexEntry.
+ * @returns Result produced by normalizeCodexEntry.
+ */
+
 
 function normalizeCodexEntry(input: {
 	id: string;
@@ -264,6 +295,13 @@ function normalizeCodexEntry(input: {
 	};
 }
 
+/**
+ * Handles toCodexCollection behavior for this CXC module.
+ * @param agents - Value consumed by toCodexCollection.
+ * @returns Result produced by toCodexCollection.
+ */
+
+
 function toCodexCollection(agents: CodexAgentEntry[]): CodexAgentCollection
 {
 	return {
@@ -274,6 +312,14 @@ function toCodexCollection(agents: CodexAgentEntry[]): CodexAgentCollection
 		agents,
 	};
 }
+
+/**
+ * Handles toCodexEntryFromInput behavior for this CXC module.
+ * @param input - Value consumed by toCodexEntryFromInput.
+ * @param id - Value consumed by toCodexEntryFromInput.
+ * @returns Result produced by toCodexEntryFromInput.
+ */
+
 
 function toCodexEntryFromInput(input: CreateAgentInput, id: string): CodexAgentEntry
 {
@@ -290,6 +336,14 @@ function toCodexEntryFromInput(input: CreateAgentInput, id: string): CodexAgentE
 	};
 }
 
+/**
+ * Parses input into the shape expected by parseCodexCollectionFromJson.
+ * @param jsonContent - Value consumed by parseCodexCollectionFromJson.
+ * @param fallbackProjectName - Value consumed by parseCodexCollectionFromJson.
+ * @returns Result produced by parseCodexCollectionFromJson.
+ */
+
+
 function parseCodexCollectionFromJson(jsonContent: string, fallbackProjectName: string): CodexAgentCollection | null
 {
 	let parsed: unknown;
@@ -299,7 +353,8 @@ function parseCodexCollectionFromJson(jsonContent: string, fallbackProjectName: 
 	} catch
 	{
 		return null;
-	}
+	}	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting agent builder artifact integrity from partial or invalid state.
+
 
 	// v2: { version: 2, platform: "codex", agents: [...] }
 	if (parsed && typeof parsed === "object" && Array.isArray((parsed as { agents?: unknown }).agents))
@@ -334,7 +389,8 @@ function parseCodexCollectionFromJson(jsonContent: string, fallbackProjectName: 
 			updatedAt: typeof obj.updatedAt === "string" && obj.updatedAt.trim() !== "" ? obj.updatedAt : new Date().toISOString(),
 			agents,
 		};
-	}
+	}	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting agent builder artifact integrity from partial or invalid state.
+
 
 	// Legacy v1: CreateAgentInput-like payload
 	if (parsed && typeof parsed === "object")
@@ -358,6 +414,13 @@ function parseCodexCollectionFromJson(jsonContent: string, fallbackProjectName: 
 
 	return null;
 }
+
+/**
+ * Builds the value produced by buildCodexEntryMarkdown.
+ * @param entry - Value consumed by buildCodexEntryMarkdown.
+ * @returns Result produced by buildCodexEntryMarkdown.
+ */
+
 
 function buildCodexEntryMarkdown(entry: CodexAgentEntry): string
 {
@@ -387,6 +450,13 @@ function buildCodexEntryMarkdown(entry: CodexAgentEntry): string
 	].join("\n");
 }
 
+/**
+ * Builds the value produced by buildCodexCollectionMarkdown.
+ * @param collection - Value consumed by buildCodexCollectionMarkdown.
+ * @returns Result produced by buildCodexCollectionMarkdown.
+ */
+
+
 function buildCodexCollectionMarkdown(collection: CodexAgentCollection): string
 {
 	const ordered = [...collection.agents].sort((a, b) => a.agentName.localeCompare(b.agentName));
@@ -399,21 +469,35 @@ function buildCodexCollectionMarkdown(collection: CodexAgentCollection): string
 	].join("\n");
 }
 
+/**
+ * Parses input into the shape expected by parseCodexCollectionFromMarkdown.
+ * @param content - Value consumed by parseCodexCollectionFromMarkdown.
+ * @param sourceName - Value consumed by parseCodexCollectionFromMarkdown.
+ * @returns Result produced by parseCodexCollectionFromMarkdown.
+ */
+
+
 function parseCodexCollectionFromMarkdown(content: string, sourceName: string): CodexAgentCollection | null
 {
 	const lines = content.split("\n");
 	const entries: CodexAgentEntry[] = [];
 	const usedIds = new Set<string>();
+	// Business logic: this iteration walks every relevant item so agent builder artifact integrity reflects the complete source set instead of a partial snapshot.
+
 
 	for (let i = 0; i < lines.length; i++)
 	{
 		const raw = lines[i]?.trim() ?? "";
+		// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting agent builder artifact integrity from partial or invalid state.
+
 		if (!raw.startsWith(CODEX_ENTRY_BEGIN_PREFIX) || !raw.endsWith("-->")) continue;
 
 		const idRaw = raw.slice(CODEX_ENTRY_BEGIN_PREFIX.length, -"-->".length).trim();
 		const id = makeUniqueCodexEntryId(usedIds, idRaw || "codex-agent");
 
 		const blockLines: string[] = [];
+		// Business logic: this iteration walks every relevant item so agent builder artifact integrity reflects the complete source set instead of a partial snapshot.
+
 		for (let j = i + 1; j < lines.length; j++)
 		{
 			const line = lines[j] ?? "";
@@ -447,6 +531,8 @@ function parseCodexCollectionFromMarkdown(content: string, sourceName: string): 
 
 	// Legacy single-frontmatter Codex markdown fallback.
 	const legacy = reconstructAgentInput(content, sourceName, `/tmp/${CODEX_AGENTS_FILE}`);
+	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting agent builder artifact integrity from partial or invalid state.
+
 	if (!legacy.agentName && !legacy.description && legacy.agentKnowledge.length === 0)
 	{
 		return null;
@@ -463,6 +549,14 @@ function parseCodexCollectionFromMarkdown(content: string, sourceName: string): 
 		updatedAt: new Date().toISOString(),
 	}]);
 }
+
+/**
+ * Loads data needed by loadCodexCollection from the configured CXC source.
+ * @param agentMdPath - Path used by loadCodexCollection to locate the relevant CXC resource.
+ * @param sourceName - Value consumed by loadCodexCollection.
+ * @returns Result produced by loadCodexCollection.
+ */
+
 
 function loadCodexCollection(agentMdPath: string, sourceName: string): CodexAgentCollection
 {
@@ -510,10 +604,13 @@ function collectFiles(dir: string): string[]
 	} catch
 	{
 		return results;
-	}
+	}	// Business logic: this iteration walks every relevant item so agent builder artifact integrity reflects the complete source set instead of a partial snapshot.
+
 
 	for (const entry of entries)
 	{
+		// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting agent builder artifact integrity from partial or invalid state.
+
 		// Skip hidden dirs except .github and .claude
 		if (entry.startsWith(".") && !ALLOWED_HIDDEN_DIRS.has(entry)) continue;
 		if (SKIP_DIRS.has(entry)) continue;
@@ -633,6 +730,8 @@ type FrontmatterBounds = { start: number; end: number };
 function getFrontmatterBounds(lines: string[]): FrontmatterBounds | null
 {
 	let start = -1;
+	// Business logic: this iteration walks every relevant item so agent builder artifact integrity reflects the complete source set instead of a partial snapshot.
+
 	for (let i = 0; i < lines.length; i++)
 	{
 		const line = lines[i]?.trim() ?? "";
@@ -640,11 +739,14 @@ function getFrontmatterBounds(lines: string[]): FrontmatterBounds | null
 		{
 			start = i;
 			break;
-		}
+		}		// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting agent builder artifact integrity from partial or invalid state.
+
 		if (line === "" || line.startsWith("<!--")) continue;
 		break;
 	}
 	if (start < 0) return null;
+	// Business logic: this iteration walks every relevant item so agent builder artifact integrity reflects the complete source set instead of a partial snapshot.
+
 
 	for (let i = start + 1; i < lines.length; i++)
 	{
@@ -663,6 +765,8 @@ function parseFrontmatter(content: string): Record<string, string>
 	const lines = content.split("\n");
 	const bounds = getFrontmatterBounds(lines);
 	if (!bounds) return result;
+	// Business logic: this iteration walks every relevant item so agent builder artifact integrity reflects the complete source set instead of a partial snapshot.
+
 
 	for (let i = bounds.start + 1; i < bounds.end; i++)
 	{
@@ -686,6 +790,8 @@ function parseToolsFromFrontmatter(content: string): string[]
 	const lines = content.split("\n");
 	const bounds = getFrontmatterBounds(lines);
 	if (!bounds) return [];
+	// Business logic: this iteration walks every relevant item so agent builder artifact integrity reflects the complete source set instead of a partial snapshot.
+
 
 	for (let i = bounds.start + 1; i < bounds.end; i++)
 	{
@@ -718,11 +824,15 @@ function parseKnowledgeLinks(content: string): string[]
 	const links: string[] = [];
 	const bounds = getFrontmatterBounds(lines);
 	const startIdx = bounds ? bounds.end + 1 : 0;
+	// Business logic: this iteration walks every relevant item so agent builder artifact integrity reflects the complete source set instead of a partial snapshot.
+
 
 	for (let i = startIdx; i < lines.length; i++)
 	{
 		const line = lines[i] ?? "";
 		const matches = line.matchAll(/\[[^\]]*\]\(([^)]+)\)/g);
+		// Business logic: this iteration walks every relevant item so agent builder artifact integrity reflects the complete source set instead of a partial snapshot.
+
 		for (const match of matches)
 		{
 			if (match[1]) links.push(match[1].trim());
@@ -730,6 +840,49 @@ function parseKnowledgeLinks(content: string): string[]
 	}
 
 	return links;
+}
+
+/**
+ * Reconstructs a Cursor plain AGENTS.md agent from disk content and optional canonical store data.
+ * @param content - Raw AGENTS.md file content.
+ * @param sourceName - Project/source label.
+ * @param agentMdPath - Absolute path to AGENTS.md.
+ * @param canonicalDef - Optional canonical definition from publish ledger id.
+ */
+function reconstructCursorPlainAgent(
+	content: string,
+	sourceName: string,
+	agentMdPath: string,
+	canonicalDef?: CanonicalAgentDefinition,
+): CreateAgentInput & { platform: "cursor" }
+{
+	if (canonicalDef)
+	{
+		return {
+			projectName: canonicalDef.projectName,
+			agentName: canonicalDef.name,
+			description: canonicalDef.description,
+			"argument-hint": canonicalDef["argument-hint"] ?? "",
+			tools: canonicalDef.tools ?? [],
+			agentKnowledge: canonicalDef.knowledge.map((k) => k.value),
+			platform: "cursor",
+		};
+	}
+
+	const lines = content.replace(CXC_GENERATED_MARKER, "").split("\n");
+	const heading = lines.find((line) => line.trim().startsWith("# "))?.trim().slice(2).trim();
+	const bodyStart = lines.findIndex((line) => line.trim() !== "" && !line.trim().startsWith("#") && !line.trim().startsWith("<!--"));
+	const description = bodyStart >= 0 ? lines.slice(bodyStart).join("\n").trim().split("\n\n")[0]?.trim() ?? "" : "";
+
+	return {
+		projectName: sourceName,
+		agentName: heading || getAgentNameFromPath(agentMdPath),
+		description,
+		"argument-hint": "",
+		tools: [],
+		agentKnowledge: parseKnowledgeLinks(content),
+		platform: "cursor",
+	};
 }
 
 /** Reconstructs CreateAgentInput from a legacy agent file without companion JSON. */
@@ -787,10 +940,17 @@ function resolveCodexAgentPaths(source: DataSourceEntry): string[]
 {
 	const candidates: string[] = [];
 	const seen = new Set<string>();
+
+	/**
+	 * Handles add behavior for this CXC module.
+	 * @param value - Value consumed by add.
+	 */
 	const add = (value: string | undefined): void =>
 	{
 		if (!value) return;
 		const trimmed = value.trim();
+		// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting agent builder artifact integrity from partial or invalid state.
+
 		if (!trimmed || seen.has(trimmed)) return;
 		seen.add(trimmed);
 		candidates.push(trimmed);
@@ -798,12 +958,16 @@ function resolveCodexAgentPaths(source: DataSourceEntry): string[]
 
 	if (Array.isArray(source.codexAgentPaths))
 	{
+		// Business logic: this iteration walks every relevant item so agent builder artifact integrity reflects the complete source set instead of a partial snapshot.
+
 		for (const item of source.codexAgentPaths)
 		{
 			if (typeof item === "string") add(item);
 		}
 	}
 	add(source.codexAgentPath);
+	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting agent builder artifact integrity from partial or invalid state.
+
 
 	if (source.agentPath && source.agentPath.trim() !== "")
 	{
@@ -829,7 +993,8 @@ function resolveCodexAgentPath(source: DataSourceEntry, selectedDirectory?: stri
 	if (allowed.length === 0)
 	{
 		throw Object.assign(new Error(`Data source "${source.name}" has no resolvable Codex output path`), { status: 400 });
-	}
+	}	// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting agent builder artifact integrity from partial or invalid state.
+
 
 	if (selectedDirectory && selectedDirectory.trim() !== "")
 	{
@@ -871,6 +1036,8 @@ function backupUnmanagedCodexAgentsFileIfNeeded(agentPath: string): void
 	const stamp = formatBackupTimestamp(new Date());
 	let backupPath = `${agentPath}.bak.${stamp}`;
 	let suffix = 1;
+	// Business logic: this iteration walks every relevant item so agent builder artifact integrity reflects the complete source set instead of a partial snapshot.
+
 	while (existsSync(backupPath))
 	{
 		backupPath = `${agentPath}.bak.${stamp}-${suffix}`;
@@ -878,7 +1045,7 @@ function backupUnmanagedCodexAgentsFileIfNeeded(agentPath: string): void
 	}
 
 	writeFileSync(backupPath, currentContent, "utf8");
-	console.log(`[AgentBuilder] Backed up unmanaged Codex AGENTS file: ${backupPath}`);
+	logger.debug(`Backed up unmanaged Codex AGENTS file: ${backupPath}`);
 }
 
 /**
@@ -935,6 +1102,13 @@ function formatGithubKnowledgeEntry(entry: string): string
 	return isFilePath(entry) ? `- [${entry}](${entry})` : `- ${entry}`;
 }
 
+/**
+ * Builds the value produced by buildClaudeAgentContent.
+ * @param input - Value consumed by buildClaudeAgentContent.
+ * @returns Result produced by buildClaudeAgentContent.
+ */
+
+
 function buildClaudeAgentContent(input: CreateAgentInput): string
 {
 	const knowledgeLines = input.agentKnowledge.length > 0
@@ -965,27 +1139,86 @@ export class AgentBuilder
 	private indexedFiles: IndexedFile[] = [];
 	private sources: DataSourceEntry[] = [];
 
-	constructor(machineConfig: MachineConfig)
+	/**
+	 * Creates an instance with the dependencies needed by this CXC component.
+	 * @param machineConfig - Configuration object used by constructor.
+	 * @param canonicalStore - Value consumed by constructor.
+	 */
+
+
+	constructor(
+		machineConfig: MachineConfig,
+		private readonly canonicalStore?: CanonicalAgentStore,
+		private readonly storagePath?: string,
+	)
 	{
 		this.sources = this.extractAgentBuilderSources(machineConfig);
 	}
 
-	/** Extracts all DataSourceEntry items with purpose "AgentBuilder". */
-	private extractAgentBuilderSources(machineConfig: MachineConfig): DataSourceEntry[]
+	/**
+	 * Extracts AgentBuilder dataSources from a machine config (shared with AgentBuilderRuntime).
+	 * @param machineConfig - Machine row from cc.json.
+	 */
+	static extractAgentBuilderSourcesFromMachine(machineConfig: MachineConfig): DataSourceEntry[]
 	{
 		if (!machineConfig.dataSources) return [];
 		const results: DataSourceEntry[] = [];
+		// Business logic: vault categories are arbitrary keys — flatten every bucket with purpose AgentBuilder.
 		for (const entries of Object.values(machineConfig.dataSources))
 		{
 			for (const entry of entries)
 			{
-				if (entry.purpose === "AgentBuilder")
-				{
-					results.push(entry);
-				}
+				if (entry.purpose === "AgentBuilder") results.push(entry);
 			}
 		}
 		return results;
+	}
+
+	/**
+	 * Reloads dataSources from an updated machine config and rebuilds the file index.
+	 * @param machineConfig - Machine row after Add Vault cc.json mutation.
+	 */
+	async refreshSources(machineConfig: MachineConfig): Promise<void>
+	{
+		this.sources = AgentBuilder.extractAgentBuilderSourcesFromMachine(machineConfig);
+		await this.index();
+	}
+
+	/** Exposes publish ledger for canonical list joins without lazy-init side effects in tests. */
+	getPublishLedgerForList(): PublishLedger | undefined
+	{
+		return this.getPublishLedger();
+	}
+
+	/** Lazy publish ledger reader for AGENTS.md provenance classification. */
+	private getPublishLedger(): PublishLedger | undefined
+	{
+		if (!this.storagePath) return undefined;
+		if (!this.publishLedger)
+		{
+			this.publishLedger = new PublishLedger(this.storagePath);
+			this.publishLedger.load();
+		}
+		return this.publishLedger;
+	}
+
+	/** Clears cached publish ledger so the next read reflects Publisher writes. */
+	invalidatePublishLedger(): void
+	{
+		this.publishLedger = undefined;
+	}
+
+	private publishLedger?: PublishLedger;
+
+	/** Returns a persisted canonical definition by id. */
+	getCanonicalDefinition(canonicalId: string): CanonicalAgentDefinition | undefined
+	{
+		return this.canonicalStore?.get(canonicalId);
+	}
+
+	private extractAgentBuilderSources(machineConfig: MachineConfig): DataSourceEntry[]
+	{
+		return AgentBuilder.extractAgentBuilderSourcesFromMachine(machineConfig);
 	}
 
 	/**
@@ -997,11 +1230,15 @@ export class AgentBuilder
 		const seen = new Set<string>();
 		const indexByPath = new Map<string, number>();
 		this.indexedFiles = [];
+		// Business logic: this iteration walks every relevant item so agent builder artifact integrity reflects the complete source set instead of a partial snapshot.
+
 
 		for (const source of this.sources)
 		{
 			// Index content files from path
 			const contentFiles = collectFiles(source.path);
+			// Business logic: this iteration walks every relevant item so agent builder artifact integrity reflects the complete source set instead of a partial snapshot.
+
 			for (const absPath of contentFiles)
 			{
 				if (seen.has(absPath)) continue;
@@ -1025,20 +1262,26 @@ export class AgentBuilder
 
 			// Index agent files from agentPath, claudeAgentPath, and codexAgentPath/source.path.
 			const agentDirs = new Set<string>();
+			// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting agent builder artifact integrity from partial or invalid state.
+
 			if (source.agentPath && source.agentPath.trim() !== "") agentDirs.add(source.agentPath);
 			try
 			{
 				const claudeDir = resolveClaudeAgentPath(source);
 				if (claudeDir.trim() !== "") agentDirs.add(claudeDir);
-			} catch { /* no claudeAgentPath resolvable — skip */ }
+			} catch { /* no claudeAgentPath resolvable — skip */ }			// Business logic: this iteration walks every relevant item so agent builder artifact integrity reflects the complete source set instead of a partial snapshot.
+
 			for (const codexDir of resolveCodexAgentPaths(source))
 			{
 				if (codexDir.trim() !== "") agentDirs.add(codexDir);
-			}
+			}			// Business logic: this iteration walks every relevant item so agent builder artifact integrity reflects the complete source set instead of a partial snapshot.
+
 
 			for (const dir of agentDirs)
 			{
 				const agentFiles = collectFiles(dir);
+				// Business logic: this iteration walks every relevant item so agent builder artifact integrity reflects the complete source set instead of a partial snapshot.
+
 				for (const absPath of agentFiles)
 				{
 					if (!isAnyAgentDefinitionPath(absPath)) continue;
@@ -1050,6 +1293,8 @@ export class AgentBuilder
 						if (idx !== undefined)
 						{
 							const existing = this.indexedFiles[idx];
+							// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting agent builder artifact integrity from partial or invalid state.
+
 							if (existing && existing.origin !== "agent")
 							{
 								let stat;
@@ -1089,7 +1334,7 @@ export class AgentBuilder
 			}
 		}
 
-		console.log(`[AgentBuilder] Indexed ${this.indexedFiles.length} files across ${this.sources.length} sources`);
+		logger.info(`Indexed ${this.indexedFiles.length} files across ${this.sources.length} sources`);
 	}
 
 	/**
@@ -1102,10 +1347,14 @@ export class AgentBuilder
 		const nonAgentEntries = this.indexedFiles.filter((f) => f.origin !== "agent");
 		const agentEntriesByPath = new Map<string, IndexedFile>();
 		const uniqueAgentDirs = new Map<string, DataSourceEntry>();
+		// Business logic: this iteration walks every relevant item so agent builder artifact integrity reflects the complete source set instead of a partial snapshot.
+
 
 		for (const source of this.sources)
 		{
 			const dirs: string[] = [];
+			// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting agent builder artifact integrity from partial or invalid state.
+
 			if (source.agentPath && source.agentPath.trim() !== "")
 			{
 				dirs.push(source.agentPath);
@@ -1121,12 +1370,14 @@ export class AgentBuilder
 			} catch
 			{
 				// No resolvable Claude agent path for this source.
-			}
+			}			// Business logic: this iteration walks every relevant item so agent builder artifact integrity reflects the complete source set instead of a partial snapshot.
+
 
 			for (const codexDir of resolveCodexAgentPaths(source))
 			{
 				if (codexDir.trim() !== "") dirs.push(codexDir);
-			}
+			}			// Business logic: this iteration walks every relevant item so agent builder artifact integrity reflects the complete source set instead of a partial snapshot.
+
 
 			for (const dir of dirs)
 			{
@@ -1135,11 +1386,14 @@ export class AgentBuilder
 					uniqueAgentDirs.set(dir, source);
 				}
 			}
-		}
+		}		// Business logic: this iteration walks every relevant item so agent builder artifact integrity reflects the complete source set instead of a partial snapshot.
+
 
 		for (const [dir, source] of uniqueAgentDirs)
 		{
 			const files = collectFiles(dir);
+			// Business logic: this iteration walks every relevant item so agent builder artifact integrity reflects the complete source set instead of a partial snapshot.
+
 			for (const absPath of files)
 			{
 				if (!isAnyAgentDefinitionPath(absPath)) continue;
@@ -1185,6 +1439,33 @@ export class AgentBuilder
 				new Error(`No AgentBuilder source found for project "${projectName}"`),
 				{ status: 404 }
 			);
+		}
+
+		// Canonical-only save path — persist definition; platform files written by Publisher.
+		if (!platform)
+		{
+			const canonicalDefinition = toCanonicalAgentDefinition({
+				...input,
+				id: input.canonicalId,
+			});
+			if (!this.canonicalStore)
+			{
+				throw Object.assign(
+					new Error("Canonical agent store is not configured"),
+					{ status: 503 },
+				);
+			}
+			this.canonicalStore.upsert(canonicalDefinition);
+			this.canonicalStore.save();
+			const persisted = this.canonicalStore.get(canonicalDefinition.id) ?? canonicalDefinition;
+			return {
+				created: true,
+				agentName,
+				canonicalId: persisted.id,
+				canonicalDefinition: persisted,
+				persisted: true,
+				canonicalStoragePath: this.canonicalStore.getStorePath(),
+			};
 		}
 
 		// Resolve output directory and file names based on platform
@@ -1287,6 +1568,8 @@ export class AgentBuilder
 			const existingIds = new Set(existingCollection.agents.map((a) => a.id));
 
 			let nextId: string;
+			// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting agent builder artifact integrity from partial or invalid state.
+
 			if (input.codexEntryId && input.codexEntryId.trim() !== "")
 			{
 				nextId = slugifyId(input.codexEntryId);
@@ -1348,182 +1631,84 @@ export class AgentBuilder
 			excerpt: content.slice(0, 1000),
 		});
 
-		console.log(`[AgentBuilder] Created ${platform} agent files: ${mdAbsPath}, ${jsonAbsPath}`);
+		logger.info(`Created ${platform} agent files: ${mdAbsPath}, ${jsonAbsPath}`);
 		return { created: true, path: mdAbsPath, agentName, codexEntryId: createdCodexEntryId };
 	}
 
-	/** Returns all agent entries consolidated by name across platforms (GitHub, Claude, Codex). */
-	list(): AgentListResponse
+	/**
+	 * Returns the canonical agent catalog from agent-definitions.json joined with publish ledger rows.
+	 * Disk artifacts are publish output only — they do not determine catalog membership.
+	 */
+	list(): import("../agentPublisher/canonicalListMapper.js").AgentListResponse
 	{
-		this.refreshAgentEntriesFromDisk();
-
-		const mdEntries = this.indexedFiles.filter((f) => f.origin === "agent" && isAnyAgentDefinitionPath(f.absolutePath));
-
-		// Step 1: Build flat intermediate list with per-entry platform info + content fingerprint.
-		type FlatEntry = {
-			name: string;
-			platform: "github" | "claude" | "codex";
-			path: string;
-			codexEntryId?: string;
-			codexDirectory?: string;
-			dataLength: number;
-			description: string;
-			hint: string;
-			excerpt: string;
-			contentFingerprint: string;
-		};
-		const flat: FlatEntry[] = [];
-
-		for (const entry of mdEntries)
+		if (!this.canonicalStore)
 		{
-			if (isCodexAgentsMdPath(entry.absolutePath) || isCodexOverrideMdPath(entry.absolutePath))
-			{
-				const codexCollection = loadCodexCollection(entry.absolutePath, entry.sourceName);
-				if (codexCollection.agents.length > 0)
-				{
-					for (const codexEntry of codexCollection.agents)
-					{
-						flat.push({
-							name: codexEntry.agentName || codexEntry.id,
-							platform: "codex",
-							path: entry.absolutePath,
-							codexEntryId: codexEntry.id,
-							codexDirectory: dirname(entry.absolutePath),
-							dataLength: entry.size,
-							description: codexEntry.description,
-							hint: codexEntry["argument-hint"],
-							excerpt: entry.excerpt,
-							contentFingerprint: JSON.stringify({
-								d: codexEntry.description,
-								h: codexEntry["argument-hint"],
-								k: codexEntry.agentKnowledge ?? [],
-								t: codexEntry.tools ?? [],
-							}),
-						});
-					}
-					continue;
-				}
-			}
-
-			const jsonPath = toAgentJsonPath(entry.absolutePath);
-			let description = "";
-			let hint = "";
-			let fingerprint = "";
-
-			if (existsSync(jsonPath))
-			{
-				try
-				{
-					const raw = readFileSync(jsonPath, "utf8");
-					const parsed = JSON.parse(raw) as Record<string, unknown>;
-					description = typeof parsed.description === "string" ? parsed.description : "";
-					hint = typeof parsed["argument-hint"] === "string" ? parsed["argument-hint"] : "";
-					const knowledge = Array.isArray(parsed.agentKnowledge) ? parsed.agentKnowledge : [];
-					const tools = Array.isArray(parsed.tools) ? parsed.tools : [];
-					fingerprint = JSON.stringify({ d: description, h: hint, k: knowledge, t: tools });
-				} catch
-				{
-					// Fall through to frontmatter parsing.
-				}
-			}
-
-			if (!description && !hint)
-			{
-				try
-				{
-					const content = readFileSync(entry.absolutePath, "utf8");
-					const frontmatter = parseFrontmatter(content);
-					description = frontmatter["description"] ?? "";
-					hint = frontmatter["argument-hint"] ?? "";
-				} catch
-				{
-					// Keep defaults when unreadable.
-				}
-			}
-
-			if (!fingerprint)
-			{
-				fingerprint = JSON.stringify({ d: description, h: hint, size: entry.size });
-			}
-
-			flat.push({
-				name: getAgentNameFromPath(entry.absolutePath),
-				platform: isClaudeAgentMdPath(entry.absolutePath) ? "claude" : "github",
-				path: entry.absolutePath,
-				dataLength: entry.size,
-				description,
-				hint,
-				excerpt: entry.excerpt,
-				contentFingerprint: fingerprint,
-			});
+			return { totalAgents: 0, agents: [] };
 		}
 
-		// Step 2: Group by agent name and consolidate across platforms.
-		const grouped = new Map<string, FlatEntry[]>();
-		for (const fe of flat)
+		const definitions = this.canonicalStore.list();
+		const ledger = this.getPublishLedger();
+		const byId = new Map<string, ReturnType<PublishLedger["getByCanonicalId"]>>();
+
+		if (ledger)
 		{
-			const existing = grouped.get(fe.name);
-			if (existing) existing.push(fe);
-			else grouped.set(fe.name, [fe]);
+			// Business logic: pre-group ledger rows per canonical id so list mapping avoids repeated full-ledger scans.
+			for (const def of definitions)
+			{
+				byId.set(def.id, ledger.getByCanonicalId(def.id));
+			}
 		}
 
-		const agents: AgentListEntry[] = [];
-		for (const [name, entries] of grouped)
-		{
-			// Pick primary: the platform variant with the biggest dataLength.
-			entries.sort((a, b) => b.dataLength - a.dataLength);
-			const primary = entries[0];
-
-			// Detect content divergence: if any fingerprint differs from the primary's.
-			const contentDiverged = entries.length > 1 &&
-				entries.some((e) => e.contentFingerprint !== primary.contentFingerprint);
-
-			const platforms: AgentListPlatformEntry[] = entries.map((e) => ({
-				platform: e.platform,
-				path: e.path,
-				...(e.codexEntryId ? { codexEntryId: e.codexEntryId } : {}),
-				...(e.codexDirectory ? { codexDirectory: e.codexDirectory } : {}),
-				dataLength: e.dataLength,
-			}));
-
-			agents.push({
-				name,
-				path: primary.path,
-				...(primary.codexEntryId ? { codexEntryId: primary.codexEntryId } : {}),
-				...(primary.codexDirectory ? { codexDirectory: primary.codexDirectory } : {}),
-				platform: primary.platform,
-				platforms,
-				contentDiverged,
-				description: primary.description,
-				hint: primary.hint,
-				excerpt: primary.excerpt,
-			});
-		}
-
-		agents.sort((a, b) => a.name.localeCompare(b.name));
-		return { totalAgents: agents.length, agents };
+		return mapCanonicalAgentList(definitions, byId, true);
 	}
 
 	/** Returns one structured agent definition by absolute path (.agent.md for GitHub, .md for Claude, AGENTS*.md for Codex). */
 	getAgent(agentPath: string, codexEntryId?: string): GetAgentResponse
 	{
 		this.refreshAgentEntriesFromDisk();
+		// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting agent builder artifact integrity from partial or invalid state.
 
-		if (!agentPath || !isAnyAgentDefinitionPath(agentPath))
+
+		if (!agentPath)
 		{
-			throw Object.assign(new Error("path must point to a .agent.md (GitHub), .claude/agents/*.md (Claude), or AGENTS*.md (Codex) file"), { status: 400 });
+			throw Object.assign(new Error("path must point to a supported agent artifact (.agent.md, .claude/agents/*.md, provenance-backed AGENTS.md, or Codex collection)"), { status: 400 });
+		}
+
+		const ledgerEntry = this.getPublishLedger()?.getByAbsolutePath(agentPath);
+		const classification = classifyAgentArtifactPath(agentPath, ledgerEntry);
+		if (!isListableAgentDefinitionPath(agentPath, ledgerEntry))
+		{
+			throw Object.assign(new Error("path must point to a supported agent artifact (.agent.md, .claude/agents/*.md, provenance-backed AGENTS.md, or Codex collection)"), { status: 400 });
 		}
 
 		const indexed = this.indexedFiles.find(
-			(f) => f.origin === "agent" && f.absolutePath === agentPath &&
-				isAnyAgentDefinitionPath(f.absolutePath)
+			(f) => f.origin === "agent" && f.absolutePath === agentPath,
 		);
 		if (!indexed)
 		{
 			throw Object.assign(new Error(`Agent not found in index: ${agentPath}`), { status: 404 });
 		}
 
-		const isCodexPath = isCodexAgentsMdPath(agentPath) || isCodexOverrideMdPath(agentPath);
+		if (classification.platform === "cursor"
+			|| classification.platform === "windsurf"
+			|| classification.platform === "kiro"
+			|| classification.platform === "antigravity")
+		{
+			const content = readFileSync(agentPath, "utf8");
+			const canonicalDef = ledgerEntry?.canonicalId
+				? this.canonicalStore?.get(ledgerEntry.canonicalId)
+				: undefined;
+			const reconstructed = reconstructCursorPlainAgent(content, indexed.sourceName, agentPath, canonicalDef);
+			return {
+				agent: {
+					...reconstructed,
+					platform: classification.platform,
+					fromJson: false,
+				},
+			};
+		}
+
+		const isCodexPath = classification.platform === "codex" && classification.artifactFormat === "codex-collection";
 		if (isCodexPath)
 		{
 			const jsonPath = toAgentJsonPath(agentPath);
@@ -1552,7 +1737,8 @@ export class AgentBuilder
 				{
 					collection = null;
 				}
-			}
+			}			// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting agent builder artifact integrity from partial or invalid state.
+
 
 			if (!collection || collection.agents.length === 0)
 			{
@@ -1563,6 +1749,8 @@ export class AgentBuilder
 			const selected = requestedId
 				? collection.agents.find((entry) => entry.id === requestedId)
 				: collection.agents.length === 1 ? collection.agents[0] : null;
+			// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting agent builder artifact integrity from partial or invalid state.
+
 
 			if (!selected && !requestedId && collection.agents.length > 1)
 			{
@@ -1687,13 +1875,30 @@ export class AgentBuilder
 			? this.indexedFiles.filter((f) => f.sourceName === filterName)
 			: this.indexedFiles;
 
-		// Build per-source summaries for sources that have at least one matching file
+		const configuredSources = filterName
+			? this.sources.filter((s) => s.name === filterName)
+			: this.sources;
+
 		const sourceMap = new Map<string, PrepareSource>();
+		// Business logic: seed every configured AgentBuilder source so empty vaults still appear in prepare.sources after Save.
+		for (const sourceEntry of configuredSources)
+		{
+			sourceMap.set(sourceEntry.name, {
+				name: sourceEntry.name,
+				type: sourceEntry.type,
+				path: sourceEntry.path ?? "",
+				agentPath: sourceEntry.agentPath,
+				codexDirectories: resolveCodexAgentPaths(sourceEntry),
+				codexDefaultDirectory: resolveCodexAgentPath(sourceEntry),
+				fileCount: 0,
+			});
+		}
+
+		// Business logic: this iteration walks indexed files so per-source fileCount reflects the live index, including sources discovered only via files.
 		for (const file of files)
 		{
 			if (!sourceMap.has(file.sourceName))
 			{
-				// Find the original source entry for path/agentPath metadata
 				const sourceEntry = this.sources.find((s) => s.name === file.sourceName);
 				sourceMap.set(file.sourceName, {
 					name: file.sourceName,
@@ -1737,7 +1942,7 @@ export class AgentBuilder
 		};
 
 		writeFileSync(filePath, JSON.stringify(payload, null, 2), "utf8");
-		console.log(`[AgentBuilder] Template written: ${filePath}`);
+		logger.debug(`Template written: ${filePath}`);
 
 		return { created: true, templateName: input.templateName, path: filePath };
 	}
@@ -1766,15 +1971,19 @@ export class AgentBuilder
 		}
 
 		const templates: CreateTemplateInput[] = [];
+		// Business logic: this iteration walks every relevant item so agent builder artifact integrity reflects the complete source set instead of a partial snapshot.
+
 		for (const fileName of fileNames)
 		{
 			const filePath = join(templatesDir, fileName);
 			try
 			{
 				const parsed = JSON.parse(readFileSync(filePath, "utf8")) as Record<string, unknown>;
+				// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting agent builder artifact integrity from partial or invalid state.
+
 				if (typeof parsed.templateName !== "string" || !parsed.templateName)
 				{
-					console.warn(`[AgentBuilder] Skipping malformed template (missing templateName): ${filePath}`);
+					logger.warn(`Skipping malformed template (missing templateName): ${filePath}`);
 					continue;
 				}
 				templates.push({
@@ -1790,11 +1999,67 @@ export class AgentBuilder
 				});
 			} catch
 			{
-				console.warn(`[AgentBuilder] Skipping malformed template JSON: ${filePath}`);
+				logger.warn(`Skipping malformed template JSON: ${filePath}`);
 			}
 		}
 
 		templates.sort((a, b) => a.templateName.localeCompare(b.templateName));
 		return { totalTemplates: templates.length, templates };
+	}
+
+	/**
+	 * Finds an indexed content file by relative knowledge path within a project.
+	 * @param knowledgeValue - Relative path from prepare listing or absolute path.
+	 * @param projectName - Data source name filter.
+	 */
+	findIndexedFile(knowledgeValue: string, projectName: string): IndexedFile | undefined
+	{
+		const normalized = knowledgeValue.replace(/\\/g, "/").replace(/^\.\//, "");
+		return this.indexedFiles.find((f) =>
+		{
+			if (f.sourceName !== projectName) return false;
+			const rel = f.relativePath.replace(/\\/g, "/");
+			return rel === normalized
+				|| f.absolutePath === knowledgeValue
+				|| rel.endsWith(`/${normalized}`)
+				|| f.absolutePath.replace(/\\/g, "/").endsWith(`/${normalized}`);
+		});
+	}
+
+	/**
+	 * Updates in-memory index after AgentPublisher materializes markdown artifacts.
+	 * Companion .json files are excluded from indexedFiles.
+	 */
+	upsertPublishedArtifacts(sourceName: string, artifacts: RenderedArtifact[]): void
+	{
+		const source = this.sources.find((s) => s.name === sourceName);
+		if (!source) return;
+
+		const markdownArtifacts = artifacts.filter((a) => !a.isCompanionJson);
+		const paths = new Set(markdownArtifacts.map((a) => a.absolutePath));
+		this.indexedFiles = this.indexedFiles.filter((f) => !paths.has(f.absolutePath));
+		// Business logic: this iteration walks every relevant item so agent builder artifact integrity reflects the complete source set instead of a partial snapshot.
+
+
+		for (const artifact of markdownArtifacts)
+		{
+			let stat;
+			try { stat = statSync(artifact.absolutePath); } catch { stat = null; }
+
+			const outputDir = dirname(artifact.absolutePath);
+			this.indexedFiles.push({
+				relativePath: relative(outputDir, artifact.absolutePath).replace(/\\/g, "/"),
+				absolutePath: artifact.absolutePath,
+				size: stat?.size ?? artifact.content.length,
+				lastModified: stat?.mtime.toISOString() ?? new Date().toISOString(),
+				sourceName,
+				sourceType: source.type,
+				origin: "agent",
+				excerpt: artifact.content.slice(0, 1000),
+			});
+		}
+
+		// Business logic: Publisher updates the ledger on disk; drop cache so list/get-agent see fresh provenance.
+		this.invalidatePublishLedger();
 	}
 }

@@ -8,9 +8,15 @@
  *   Pass 1 (runPipeline): summarize sessions with no aiSummary yet.
  *   Pass 2 (runPass2):    re-summarize sessions whose aiSummary exceeds a char limit,
  *                         using a smarter model to produce tighter output.
+ *
+ * Architecture: server/zz-reach2/architecture/archi-context-core-level0.md
+ * Logging: server/zz-reach2/upgrades/2026-06/r2wl-winston-logging.md
  */
 
 import { generateText } from "ai";
+import { getLogger } from "../logging/logger.js";
+
+const logger = getLogger("analysis:TopicSummarizer");
 import { openai } from "@ai-sdk/openai";
 import { buildContext } from "./TopicContextBuilder.js";
 import type { TopicStore } from "../settings/TopicStore.js";
@@ -67,6 +73,15 @@ export class TopicSummarizer
 	private readonly delayMs: number;
 	private readonly modelName: string;
 
+	/**
+	 * Creates an instance with the dependencies needed by this CXC component.
+	 * @param topicStore - Value consumed by constructor.
+	 * @param messageDB - Message data processed by constructor.
+	 * @param delayMs - Value consumed by constructor.
+	 * @param modelName - Value consumed by constructor.
+	 */
+
+
 	constructor(
 		topicStore: TopicStore,
 		messageDB: IMessageStore,
@@ -115,8 +130,8 @@ export class TopicSummarizer
 			};
 		} catch (error)
 		{
-			console.warn(
-				`[Topics] Failed to summarize session ${sessionId}: ${(error as Error).message}`
+			logger.warn(
+				`Failed to summarize session ${sessionId}: ${(error as Error).message}`
 			);
 			return null;
 		}
@@ -174,14 +189,16 @@ export class TopicSummarizer
 		});
 		const total = allSessions.length;
 
-		console.log(
-			`[Topics] Starting summarization pipeline: ${pending.length} to process, ` +
+		logger.info(
+			`Starting summarization pipeline: ${pending.length} to process, ` +
 			`${summarizedSkips} already summarized, ${customTopicSkips} custom-named, ` +
 			`${tooYoungSkips} too young (${total} total)`
 		);
 
 		let summarized = 0;
 		let errors = 0;
+		// Business logic: this iteration walks every relevant item so topic summarization progress reflects the complete source set instead of a partial snapshot.
+
 
 		for (let i = 0; i < pending.length; i++)
 		{
@@ -197,18 +214,19 @@ export class TopicSummarizer
 				const preview = entry.aiSummary.length > 80
 					? entry.aiSummary.slice(0, 80) + "…"
 					: entry.aiSummary;
-				console.log(`[Topics] [${i + 1}/${pending.length}] ${session.sessionId} → "${preview}"`);
+				logger.debug(`[${i + 1}/${pending.length}] ${session.sessionId} → "${preview}"`);
 			} else
 			{
 				errors++;
-				console.log(`[Topics] [${i + 1}/${pending.length}] ${session.sessionId} → (failed)`);
-			}
+				logger.debug(`[${i + 1}/${pending.length}] ${session.sessionId} → (failed)`);
+			}			// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting topic summarization progress from partial or invalid state.
+
 
 			// Progress log every 10 sessions and at the very end
 			if ((i + 1) % 10 === 0 || i === pending.length - 1)
 			{
-				console.log(
-					`[Topics] Progress: ${summarized}/${pending.length} summarized (${errors} errors)`
+				logger.debug(
+					`Progress: ${summarized}/${pending.length} summarized (${errors} errors)`
 				);
 			}
 
@@ -219,8 +237,8 @@ export class TopicSummarizer
 			}
 		}
 
-		console.log(
-			`[Topics] Pipeline complete: ${summarized} summarized, ${summarizedSkips} already summarized, ` +
+		logger.info(
+			`Pipeline complete: ${summarized} summarized, ${summarizedSkips} already summarized, ` +
 			`${customTopicSkips} custom-named, ${tooYoungSkips} too young, ${errors} errors`
 		);
 	}
@@ -237,18 +255,20 @@ export class TopicSummarizer
 	{
 		const candidates = this.topicStore.getVerboseEntries(maxSummaryChars);
 
-		console.log(
-			`[Topics/Pass2] Starting pass 2 re-summarization (model: ${this.modelName}): ${candidates.length} sessions with aiSummary > ${maxSummaryChars} chars`
+		logger.info(
+			`Pass 2 re-summarization (model: ${this.modelName}): ${candidates.length} sessions with aiSummary > ${maxSummaryChars} chars`
 		);
 
 		if (candidates.length === 0)
 		{
-			console.log("[Topics/Pass2] Nothing to re-summarize.");
+			logger.info("Pass 2: nothing to re-summarize.");
 			return;
 		}
 
 		let resimmarized = 0;
 		let errors = 0;
+		// Business logic: this iteration walks every relevant item so topic summarization progress reflects the complete source set instead of a partial snapshot.
+
 
 		for (let i = 0; i < candidates.length; i++)
 		{
@@ -274,22 +294,23 @@ export class TopicSummarizer
 				this.topicStore.save();
 				resimmarized++;
 				const strategy = useCondense ? "condense" : "rebuild";
-				console.log(
-					`[Topics/Pass2] [${i + 1}/${candidates.length}] ${candidate.sessionId} → ${oldLen} → ${entry.aiSummary.length} chars (${strategy})`
+				logger.debug(
+					`Pass 2 [${i + 1}/${candidates.length}] ${candidate.sessionId} → ${oldLen} → ${entry.aiSummary.length} chars (${strategy})`
 				);
 			} else
 			{
 				errors++;
-				console.log(
-					`[Topics/Pass2] [${i + 1}/${candidates.length}] ${candidate.sessionId} → (failed)`
+				logger.debug(
+					`Pass 2 [${i + 1}/${candidates.length}] ${candidate.sessionId} → (failed)`
 				);
-			}
+			}			// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting topic summarization progress from partial or invalid state.
+
 
 			// Progress log every 10 sessions and at the very end
 			if ((i + 1) % 10 === 0 || i === candidates.length - 1)
 			{
-				console.log(
-					`[Topics/Pass2] Progress: ${resimmarized}/${candidates.length} re-summarized (${errors} errors)`
+				logger.debug(
+					`Pass 2 progress: ${resimmarized}/${candidates.length} re-summarized (${errors} errors)`
 				);
 			}
 
@@ -300,8 +321,8 @@ export class TopicSummarizer
 			}
 		}
 
-		console.log(
-			`[Topics/Pass2] Complete: ${resimmarized} re-summarized, ${errors} errors`
+		logger.info(
+			`Pass 2 complete: ${resimmarized} re-summarized, ${errors} errors`
 		);
 	}
 
@@ -322,8 +343,8 @@ export class TopicSummarizer
 			return result.text.trim();
 		} catch (error)
 		{
-			console.warn(
-				`[Topics/Pass2] Failed to condense session ${sessionId}: ${(error as Error).message}`
+			logger.warn(
+				`Pass 2 failed to condense session ${sessionId}: ${(error as Error).message}`
 			);
 			return null;
 		}
@@ -338,6 +359,8 @@ export class TopicSummarizer
 		context: string
 	): Promise<T>
 	{
+		// Business logic: this iteration walks every relevant item so topic summarization progress reflects the complete source set instead of a partial snapshot.
+
 		for (let attempt = 0; attempt < MAX_RETRY_ATTEMPTS; attempt++)
 		{
 			try
@@ -348,6 +371,8 @@ export class TopicSummarizer
 				const err = error as { status?: number; message?: string };
 				const isTransient =
 					err.status === 429 || (err.status !== undefined && err.status >= 500) || err.status === undefined;
+				// Business logic: this combined guard requires all relevant CXC preconditions before changing control flow, protecting topic summarization progress from partial or invalid state.
+
 
 				if (!isTransient || attempt === MAX_RETRY_ATTEMPTS - 1)
 				{
@@ -355,8 +380,8 @@ export class TopicSummarizer
 				}
 
 				const delay = RETRY_DELAYS_MS[attempt] ?? 4000;
-				console.warn(
-					`[Topics] Retrying session ${context} after ${delay}ms (attempt ${attempt + 1}/${MAX_RETRY_ATTEMPTS}): ${err.message ?? error}`
+				logger.warn(
+					`Retrying session ${context} after ${delay}ms (attempt ${attempt + 1}/${MAX_RETRY_ATTEMPTS}): ${err.message ?? error}`
 				);
 				await new Promise((resolve) => setTimeout(resolve, delay));
 			}
